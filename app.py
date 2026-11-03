@@ -514,12 +514,12 @@ def api_ollama_status():
                     version = json.loads(response.read().decode("utf-8")).get("version", "inconnue")
             except Exception:
                 pass
-            return jsonify({"enabled": True, "connected": True, "url": base,
+            return jsonify({"enabled": bool(settings.get("ollama_enabled")), "connected": True, "url": base,
                             "version": version, "models": models,
                             "selected_model": settings.get("ollama_model", "")})
         except Exception as exc:
             errors.append(f"{base}: {str(exc)[:160]}")
-    return jsonify({"enabled": True, "connected": False,
+    return jsonify({"enabled": bool(settings.get("ollama_enabled")), "connected": False,
                     "url": configured, "models": [],
                     "message": "Ollama non joignable depuis le conteneur Uscale",
                     "details": errors})
