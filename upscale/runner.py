@@ -150,63 +150,91 @@ def stop_process(proc: subprocess.Popen, container: str | None) -> None:
         docker_remove(container)
 
 
-def run_process(job_id: str, command: list[str], *, container: str | None = None,
-                parse_progress: Callable[[str], float | None] | None = None,
-                on_progress: Callable[[float], None] | None = None,
-                disk_dir: Path | None = None, cwd: str | None = None,
-                poll: Callable[[], None] | None = None) -> int:
-    """Lance une commande, journalise sa sortie, suit la progression, l'annulation et l'espace disque."""
-    db.log_line(job_id, "$ " + " ".join(command))
-    last_log = [0.0]
+class RunningProcess:
+    """Processus lancé en arrière-plan : sortie journalisée, progression suivie, arrêt propre."""
 
-    def handle(line: str) -> None:
+    def __init__(self, job_id: str, command: list[str], *, container: str | None = None,
+                 parse_progress: Callable[[str], float | None] | None = None,
+                 on_progress: Callable[[float], None] | None = None, cwd: str | None = None):
+        self.job_id, self.container = job_id, container
+        self.parse_progress, self.on_progress = parse_progress, on_progress
+        self.last_log = 0.0
+        db.log_line(job_id, "$ " + " ".join(command))
+        self.proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                     stdin=subprocess.DEVNULL, cwd=cwd)
+        self.thread = threading.Thread(target=self._reader, args=(self.proc.stdout,), daemon=True)
+        self.thread.start()
+
+    def _handle(self, line: str) -> None:
         if not line.strip():
             return
-        value = parse_progress(line) if parse_progress else None
+        value = self.parse_progress(line) if self.parse_progress else None
         if value is None:
             if not line.startswith(FFMPEG_PROGRESS_KEYS):
-                db.log_line(job_id, ANSI_RE.sub("", line))
+                db.log_line(self.job_id, ANSI_RE.sub("", line))
             return
-        if time.monotonic() - last_log[0] >= 60:
-            db.log_line(job_id, f"[{db.now()}] progression de l'étape {value * 100:.1f} %")
-            last_log[0] = time.monotonic()
-        if on_progress:
-            on_progress(value)
+        if time.monotonic() - self.last_log >= 60:
+            db.log_line(self.job_id, f"[{db.now()}] progression de l'étape {value * 100:.1f} %")
+            self.last_log = time.monotonic()
+        if self.on_progress:
+            self.on_progress(value)
 
-    def reader(stream: Any) -> None:
+    def _reader(self, stream: Any) -> None:
         buffer = b""
         for chunk in iter(lambda: stream.read1(65536), b""):
             buffer += chunk
             parts = re.split(rb"[\r\n]", buffer)
             buffer = parts.pop()
             for part in parts:
-                handle(part.decode("utf-8", errors="replace"))
+                self._handle(part.decode("utf-8", errors="replace"))
         if buffer:
-            handle(buffer.decode("utf-8", errors="replace"))
+            self._handle(buffer.decode("utf-8", errors="replace"))
 
-    proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                            cwd=cwd)
-    thread = threading.Thread(target=reader, args=(proc.stdout,), daemon=True)
-    thread.start()
+    def running(self) -> bool:
+        return self.proc.poll() is None
+
+    @property
+    def returncode(self) -> int | None:
+        return self.proc.returncode
+
+    def stop(self) -> None:
+        stop_process(self.proc, self.container)
+        self.finish()
+
+    def finish(self) -> None:
+        self.thread.join(timeout=10)
+
+
+def check_disk(disk_dir: Path) -> None:
+    free = shutil.disk_usage(disk_dir).free
+    if free < config.MIN_FREE_BYTES:
+        raise JobError(f"Espace disque presque plein ({human_size(free)} libres) : traitement arrêté")
+
+
+def run_process(job_id: str, command: list[str], *, container: str | None = None,
+                parse_progress: Callable[[str], float | None] | None = None,
+                on_progress: Callable[[float], None] | None = None,
+                disk_dir: Path | None = None, cwd: str | None = None,
+                poll: Callable[[], None] | None = None) -> int:
+    """Lance une commande et attend sa fin, en suivant progression, annulation et espace disque."""
+    process = RunningProcess(job_id, command, container=container, parse_progress=parse_progress,
+                             on_progress=on_progress, cwd=cwd)
     last_disk_check = 0.0
     try:
-        while proc.poll() is None:
+        while process.running():
             if is_cancel_requested(job_id):
                 raise JobCancelled("Traitement annulé")
             if poll:
                 poll()
             if disk_dir and time.monotonic() - last_disk_check >= 15:
                 last_disk_check = time.monotonic()
-                free = shutil.disk_usage(disk_dir).free
-                if free < config.MIN_FREE_BYTES:
-                    raise JobError(f"Espace disque presque plein ({human_size(free)} libres) : traitement arrêté")
+                check_disk(disk_dir)
             time.sleep(0.3)
     except BaseException:
-        stop_process(proc, container)
+        process.stop()
         raise
-    finally:
-        thread.join(timeout=10)
-    return proc.returncode
+    process.finish()
+    return process.proc.returncode
 
 
 def check(code: int, message: str) -> None:

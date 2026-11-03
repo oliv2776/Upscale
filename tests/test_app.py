@@ -403,6 +403,25 @@ def test_cover_art_is_not_processed(env, fake_docker):
 
 
 @needs_ffmpeg
+def test_upscaling_starts_during_cut(env, fake_docker, monkeypatch):
+    # Découpe volontairement lente (débruitage fort) : l'IA doit commencer avant qu'elle soit finie.
+    monkeypatch.setattr(config, "SEGMENT_SECONDS", 1)
+    st.save_settings({"denoise": "strong"})
+    make_video(env / "videos" / "long.mp4", width=320, height=240, seconds=8, rate=25)
+    [row] = process_all(env)
+    assert row["status"] == "completed" and row["warning"] is None, job_log(row)
+    log = job_log(row).splitlines()
+    first_ai = next(i for i, line in enumerate(log) if line.startswith("$ docker run"))
+    cut_done = next(i for i, line in enumerate(log) if "Découpe terminée" in line)
+    assert first_ai < cut_done, "l'IA aurait dû démarrer pendant la découpe"
+    assert row["segments_total"] == 8
+    frames = subprocess.run(["ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries",
+                             "stream=nb_read_frames", "-of", "csv=p=0", str(env / "out" / "long.mkv")],
+                            capture_output=True, text=True, check=True).stdout.strip()
+    assert frames == "200"  # aucune image perdue entre les segments
+
+
+@needs_ffmpeg
 def test_segments_resume_after_pause(env, fake_docker, monkeypatch):
     monkeypatch.setattr(config, "SEGMENT_SECONDS", 1)
     make_video(env / "videos" / "long.mp4", seconds=3)

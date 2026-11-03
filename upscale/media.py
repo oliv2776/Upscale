@@ -32,6 +32,8 @@ DENOISE_FILTERS = {
     "strong": "nlmeans=s=3:p=7:r=15",
 }
 IMAGE_CODECS = {"mjpeg", "png", "bmp", "gif", "webp", "tiff"}
+# Intermédiaire sans perte FFV1 intra (chaque image est une image clé), encodé sur tous les cœurs.
+FFV1_ARGS = ["-c:v", "ffv1", "-level", "3", "-slices", "16", "-threads", "0", "-g", "1"]
 SVT_PRESETS = {"ultrafast": 12, "fast": 8, "medium": 6, "slow": 4, "slower": 3}
 FFMPEG_BASE = ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-nostats", "-progress", "pipe:1"]
 
@@ -173,13 +175,21 @@ def scale_filter(width: int, height: int) -> str:
     return f"scale={width}:{height}:flags=lanczos+accurate_rnd+full_chroma_int,setsar=1"
 
 
-def segment_command(source: Path, pattern: Path, filters: list[str], seconds: int, stream: str = "0:v:0") -> list[str]:
-    """Découpe la vidéo (après filtres) en segments FFV1 intra : chaque image est une image clé."""
+def segment_command(source: Path, pattern: Path, filters: list[str], seconds: int, stream: str = "0:v:0",
+                    segment_list: Path | None = None) -> list[str]:
+    """Découpe la vidéo (après filtres) en segments FFV1 intra : chaque image est une image clé.
+
+    Avec segment_list, FFmpeg ajoute le nom de chaque segment au fichier dès qu'il est terminé : l'IA peut
+    alors commencer sans attendre la fin de la découpe.
+    """
     command = [*FFMPEG_BASE, "-i", str(source), "-map", stream, "-an", "-sn", "-dn"]
     if filters:
         command += ["-vf", ",".join(filters)]
-    return command + ["-c:v", "ffv1", "-g", "1", "-f", "segment", "-segment_time", str(seconds),
-                      "-reset_timestamps", "1", "-segment_format", "matroska", str(pattern)]
+    command += [*FFV1_ARGS, "-f", "segment", "-segment_time", str(seconds),
+                "-reset_timestamps", "1", "-segment_format", "matroska"]
+    if segment_list is not None:
+        command += ["-segment_list", str(segment_list), "-segment_list_type", "flat"]
+    return command + [str(pattern)]
 
 
 def prefilter_command(source: Path, output: Path, filters: list[str], stream: str = "0:v:0") -> list[str]:
@@ -187,7 +197,7 @@ def prefilter_command(source: Path, output: Path, filters: list[str], stream: st
     if filters:
         command += ["-vf", ",".join(filters)]
     # FFV1 intra : Video2X lit toutes les images (sur du H.264 il peut perdre les dernières).
-    return command + ["-c:v", "ffv1", "-g", "1", str(output)]
+    return command + [*FFV1_ARGS, str(output)]
 
 
 GRAIN_FILTERS = {"light": "noise=c0s=4:c0f=t+u", "medium": "noise=c0s=7:c0f=t+u"}
@@ -287,7 +297,7 @@ def clip_command(source: Path, output: Path, start: float, duration: float, filt
                "-map", stream, "-an", "-sn", "-dn"]
     if filters:
         command += ["-vf", ",".join(filters)]
-    return command + ["-c:v", "ffv1", "-g", "1", str(output)]
+    return command + [*FFV1_ARGS, str(output)]
 
 
 def preview_encode_command(source: Path, output: Path, size: tuple[int, int], original: Path | None = None,

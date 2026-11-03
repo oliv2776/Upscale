@@ -168,7 +168,7 @@ En mode standard, Upscale lit ses propres montages et donne exactement les même
 
 ### Comment se déroule une tâche
 
-1. Préparation : filtres éventuels puis découpe de la vidéo en segments sans perte (FFV1) à la résolution source. Avec RIFE, l'interpolation est faite sur la vidéo entière à la résolution source avant la découpe.
+1. Préparation : filtres éventuels puis découpe de la vidéo en segments sans perte (FFV1, sur tous les cœurs du processeur) à la résolution source. **La découpe et l'IA avancent en même temps** : chaque segment est agrandi par la carte graphique dès que le processeur l'a terminé (la file affiche alors « segment 3/~40 · découpe 35 % »). Avec RIFE, l'interpolation est faite sur la vidéo entière à la résolution source avant la découpe.
 2. Pour chaque segment : Video2X agrandit le segment (intermédiaire sans perte), puis FFmpeg l'encode à la taille finale. L'intermédiaire est aussitôt supprimé.
 3. Assemblage : les segments encodés sont concaténés sans réencodage, avec l'audio, les sous-titres, les chapitres et les polices de l'original.
 4. Vérification : durée, nombre de pistes audio et de sous-titres (et images/s avec RIFE). Une anomalie est signalée par ⚠ dans la file, sans supprimer le fichier.

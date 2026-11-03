@@ -13,8 +13,10 @@ puis « Relancer ») reprend au segment suivant.
 from __future__ import annotations
 
 import json
+import math
 import shutil
 import sqlite3
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -180,7 +182,8 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
     }
     prepare_work_dir(work, fingerprint)
     segmented = (work / "segments.json").exists()
-    progress = Progress(job_id, start=float(job["progress"] or 0) if segmented else 0.0)
+    resumed = segmented or any((work / "enc").glob("seg_*.mkv"))  # segments déjà encodés conservés
+    progress = Progress(job_id, start=float(job["progress"] or 0) if resumed else 0.0)
 
     frames = info["frames"] * multiplier
     segment_frames = min(frames, int(segment_seconds * info["fps"] * multiplier) + 1)
@@ -204,26 +207,27 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
     if not custom or multiplier > 1:  # Video2X sert aussi à l'interpolation RIFE
         runner.ensure_image(job_id)
 
-    prep_share = 0.15 if multiplier > 1 else 0.05
-    if not segmented:
-        prepare_segments(job_id, source, work, info, filters, multiplier, progress, prep_share, disk_dir,
-                         segment_seconds)
-    segments = json.loads((work / "segments.json").read_text(encoding="utf-8"))["segments"]
-    total = len(segments)
-    db.set_job(job_id, segments_total=total)
-
+    overlap = not segmented and multiplier == 1
+    prep_share = 0.15 if multiplier > 1 else (0.0 if overlap else 0.05)
     span = 0.97 - prep_share
-    for index, name in enumerate(segments):
+    estimated = max(1, math.ceil(info["duration"] / segment_seconds)) if info["duration"] > 0 else 1
+
+    def process_segment(index: int, name: str, total: int, approximate: bool, note: str = "") -> None:
+        """Agrandit puis encode un segment (sauf s'il l'a déjà été lors d'une exécution précédente)."""
         encoded = work / "enc" / name
+        segment = work / "src" / name
+        total = max(total, index + 1)
+        base = prep_share + span * index / total
+        width = span / total
         if encoded.exists():
-            continue
+            segment.unlink(missing_ok=True)
+            progress.update(base + width)
+            return
         reason = defer_reason()
         if reason:
             raise JobDeferred(reason)
-        base = prep_share + span * index / total
-        width = span / total
-        db.set_job(job_id, stage=f"Upscaling IA ×{scale} · segment {index + 1}/{total}", segments_done=index)
-        segment = work / "src" / name
+        count = f"{index + 1}/{'~' if approximate else ''}{total}"
+        db.set_job(job_id, stage=f"Upscaling IA ×{scale} · segment {count}{note}", segments_done=index)
         ai = work / f"ai_{name}"
         upscale_video(job_id, model, segment, ai, scale, info["fps"] * multiplier,
                       on_progress=progress.span(base, width * 0.85), disk_dir=disk_dir)
@@ -236,6 +240,20 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
         segment.unlink(missing_ok=True)
         db.set_job(job_id, segments_done=index + 1)
         progress.update(base + width, force=True)
+
+    if overlap:
+        # La découpe (processeur) et l'IA (carte graphique) avancent en même temps : chaque segment est
+        # agrandi dès que FFmpeg l'a terminé.
+        cut_segments_while_upscaling(job_id, source, work, info, filters, segment_seconds, estimated,
+                                     disk_dir, process_segment)
+    elif not segmented:
+        prepare_segments(job_id, source, work, info, filters, multiplier, progress, prep_share, disk_dir,
+                         segment_seconds)
+    segments = json.loads((work / "segments.json").read_text(encoding="utf-8"))["segments"]
+    total = len(segments)
+    db.set_job(job_id, segments_total=total)
+    for index, name in enumerate(segments):
+        process_segment(index, name, total, approximate=False)
 
     db.set_job(job_id, stage="Assemblage MKV / audio, sous-titres, chapitres", eta_seconds=None)
     concat = work / "concat.txt"
@@ -327,6 +345,57 @@ def render_label(settings: dict[str, Any]) -> str:
 
 def media_progress(duration: float) -> Callable[[str], float | None]:
     return runner.ffmpeg_progress_parser(duration)
+
+
+def cut_segments_while_upscaling(job_id: str, source: Path, work: Path, info: dict[str, Any], filters: list[str],
+                                 segment_seconds: int, estimated: int, disk_dir: Path,
+                                 process_segment: Callable[..., None]) -> None:
+    """Découpe en arrière-plan et traite chaque segment dès qu'il est prêt ; écrit segments.json à la fin."""
+    for old in (work / "src").glob("*"):
+        old.unlink(missing_ok=True)
+    listing = work / "segments.list"
+    listing.unlink(missing_ok=True)
+    cut = {"value": 0.0}
+    db.set_job(job_id, stage="Découpe en segments (l'IA démarre dès le premier)", segments_total=estimated)
+    cutter = runner.RunningProcess(
+        job_id, media.segment_command(source, work / "src" / "seg_%05d.mkv", filters, segment_seconds,
+                                      media.video_stream(info), segment_list=listing),
+        parse_progress=media_progress(info["duration"]), on_progress=lambda v: cut.update(value=v))
+
+    def ready() -> list[str]:
+        try:
+            return [line.strip() for line in listing.read_text(encoding="utf-8").splitlines() if line.strip()]
+        except OSError:
+            return []
+
+    done = 0
+    try:
+        while True:
+            names = ready()
+            if done < len(names):
+                note = f" · découpe {cut['value'] * 100:.0f} %" if cutter.running() else ""
+                process_segment(done, names[done], max(estimated, len(names)), approximate=cutter.running(),
+                                note=note)
+                done += 1
+                continue
+            if not cutter.running():
+                cutter.finish()
+                check(cutter.returncode or 0, "La découpe en segments a échoué")
+                if done >= len(ready()):
+                    break
+                continue
+            if runner.is_cancel_requested(job_id):
+                raise JobCancelled("Traitement annulé")
+            runner.check_disk(disk_dir)
+            time.sleep(0.5)
+    finally:
+        if cutter.running():
+            cutter.stop()
+    segments = ready()
+    if not segments:
+        raise JobError("Aucun segment produit")
+    db.log_line(job_id, f"[{db.now()}] Découpe terminée : {len(segments)} segment(s)")
+    (work / "segments.json").write_text(json.dumps({"segments": segments}), encoding="utf-8")
 
 
 def prepare_segments(job_id: str, source: Path, work: Path, info: dict[str, Any], filters: list[str],
