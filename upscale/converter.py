@@ -36,8 +36,8 @@ log = logging.getLogger("upscale.converter")
 
 # Environnement du convertisseur. torch/torchvision viennent de l'index « CPU » de PyTorch (sans CUDA,
 # environ 5 fois plus léger) ; le reste de PyPI. Versions figées : testées ensemble en CI.
-TORCH_PACKAGES = ["torch", "torchvision"]
-CONVERTER_PACKAGES = ["spandrel", "pnnx", "onnx", "numpy"]
+TORCH_PACKAGES = ["torch==2.15.0", "torchvision==0.29.2"]
+CONVERTER_PACKAGES = ["spandrel==0.4.2", "pnnx==20261020", "onnx==1.23.2", "numpy==2.5.4"]
 CONVERTER_FREE_BYTES = 3 * 1024**3
 CONVERT_SCRIPT = Path(__file__).with_name("convert_model.py")
 MODEL_EXTENSIONS = {".pth", ".pt", ".ckpt", ".safetensors", ".onnx"}

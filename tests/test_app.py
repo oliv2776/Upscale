@@ -1093,8 +1093,9 @@ def test_converter_environment_is_installed_once(env, monkeypatch):
     python = converter.ensure_converter(task)
     assert python == config.converter_dir() / "bin" / "python"
     pip_torch = next(c for c in commands if "--index-url" in c)
-    assert pip_torch[pip_torch.index("--index-url") + 1] == config.TORCH_INDEX and "torch" in pip_torch
-    assert any("spandrel" in c and "pnnx" in c for c in commands)
+    assert pip_torch[pip_torch.index("--index-url") + 1] == config.TORCH_INDEX
+    assert any(p.startswith("torch==") for p in pip_torch)
+    assert any(any(p.startswith("spandrel==") for p in c) and any(p.startswith("pnnx==") for p in c) for c in commands)
     commands.clear()
     assert converter.ensure_converter(task) == python and not commands  # déjà prêt : rien à installer
     assert converter.converter_status()["installed"] is True

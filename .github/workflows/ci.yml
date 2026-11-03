@@ -20,7 +20,7 @@ jobs:
         run: |
           pip install -r requirements-dev.txt
           # Pour tester l'écriture ncnn directe face à PyTorch (convertisseur de modèles).
-          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
           pip install spandrel ncnn
       - name: Lint Python
         run: ruff check .
