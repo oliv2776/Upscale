@@ -34,7 +34,7 @@ def job_settings(job: sqlite3.Row) -> dict[str, Any]:
     if job["settings_json"]:
         result = dict(settings_mod.DEFAULT_SETTINGS)
         result.update(json.loads(job["settings_json"]))
-        return result
+        return settings_mod.normalize(result)
     return settings_mod.effective_settings(settings_mod.get_settings(), Path(job["source"]))
 
 

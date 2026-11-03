@@ -64,7 +64,7 @@ jobs:
           cat help.txt
           grep -q -- "--list-devices" help.txt
           grep -q -- "--frame-rate-mul" help.txt
-          for model in realesrgan-plus realesrgan-plus-anime realesr-animevideov3 realesr-generalv3; do
+          for model in realesrgan-plus realesrgan-plus-anime realesr-animevideov3; do
             grep -q "$model" help.txt || { echo "Modèle absent : $model"; exit 1; }
           done
       - name: Real Video2X on CPU Vulkan (lavapipe)

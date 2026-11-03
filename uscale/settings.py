@@ -11,11 +11,11 @@ MODEL_SCALES: dict[str, tuple[int, ...]] = {
     "realesrgan-plus": (4,),
     "realesrgan-plus-anime": (4,),
     "realesr-animevideov3": (2, 3, 4),
-    "realesr-generalv3": (4,),
 }
+# Modèles retirés (absents de Video2X 6.4) : remplacés à la lecture des réglages et des tâches.
+RETIRED_MODELS = {"realesr-generalv3": "realesrgan-plus"}
 MODEL_LABELS = {
     "realesrgan-plus": "Real-ESRGAN Plus",
-    "realesr-generalv3": "General v3",
     "realesr-animevideov3": "AnimeVideo v3",
     "realesrgan-plus-anime": "Plus Anime",
 }
@@ -68,10 +68,22 @@ DEFAULT_SETTINGS: dict[str, Any] = {
 TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
+def normalize_model(model: Any) -> Any:
+    return RETIRED_MODELS.get(model, model)
+
+
+def normalize(settings: dict[str, Any]) -> dict[str, Any]:
+    settings["model"] = normalize_model(settings.get("model"))
+    for profile in settings.get("profiles") or []:
+        if "model" in profile:
+            profile["model"] = normalize_model(profile["model"])
+    return settings
+
+
 def get_settings() -> dict[str, Any]:
     result = dict(DEFAULT_SETTINGS)
     result.update(db.load_settings_payload())
-    return result
+    return normalize(result)
 
 
 def public_settings(settings: dict[str, Any]) -> dict[str, Any]:
@@ -133,6 +145,7 @@ def _url(value: Any, key: str) -> str:
 
 
 def validate_model(value: Any) -> str:
+    value = normalize_model(value)
     if value != AUTO_MODEL and value not in MODEL_SCALES:
         raise ValueError("Modèle non pris en charge")
     return value

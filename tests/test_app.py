@@ -56,6 +56,15 @@ def test_secrets_are_masked_and_kept(env):
     assert st.get_settings()["notify_token"] == ""
 
 
+def test_retired_model_is_migrated(env):
+    stored = st.get_settings()
+    db.store_settings_payload({**stored, "model": "realesr-generalv3",
+                               "profiles": [{"path": str(env / "videos"), "model": "realesr-generalv3"}]})
+    settings = st.get_settings()
+    assert settings["model"] == "realesrgan-plus" and settings["profiles"][0]["model"] == "realesrgan-plus"
+    assert st.save_settings({"model": "realesr-generalv3"})["model"] == "realesrgan-plus"
+
+
 def test_validation_errors(env):
     for payload in ({"codec": "mpeg2"}, {"denoise": "extreme"}, {"schedule_start": "25:00"},
                     {"output_suffix": "a/b"}, {"interpolate": 4}, {"model": "nope"}, {"notify_url": "ftp://x"}):
