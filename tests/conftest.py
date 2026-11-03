@@ -120,13 +120,13 @@ FAKE_VIDEO2X = textwrap.dedent("""\
 
 FAKE_NCNN = textwrap.dedent("""\
     #!{python}
-    # Faux realesrgan-ncnn-vulkan : agrandit les images PNG d'un dossier avec FFmpeg.
+    # Faux upscayl-bin : agrandit les images PNG d'un dossier (ou une image) avec FFmpeg.
     import json, os, subprocess, sys
     args = sys.argv[1:]
     with open(os.environ["FAKE_DOCKER_LOG"], "a") as log:
         log.write(json.dumps(["ncnn", *args]) + "\\n")
     opt = lambda name: args[args.index(name) + 1]
-    folder, name, scale = opt("-m"), opt("-n"), int(opt("-s"))
+    folder, name, scale = opt("-m"), opt("-n"), int(opt("-z"))
     if not os.path.exists(os.path.join(folder, name + ".param")):
         sys.exit("modèle introuvable")
     if "\\nGelu " in open(os.path.join(folder, name + ".param")).read():
@@ -154,7 +154,7 @@ def fake_docker(tmp_path, monkeypatch):
     monkeypatch.setenv("FAKE_DOCKER_LOG", str(log))
     monkeypatch.setenv("FAKE_DOCKER_IMAGE", config.VIDEO2X_IMAGE)
     monkeypatch.setattr(config, "VIDEO2X_BIN", str(bindir / "video2x"))
-    ncnn = bindir / "realesrgan-ncnn-vulkan"
+    ncnn = bindir / "upscayl-bin"
     ncnn.write_text(FAKE_NCNN.format(python=sys.executable))
     ncnn.chmod(ncnn.stat().st_mode | stat.S_IEXEC)
     monkeypatch.setattr(config, "NCNN_BIN", str(ncnn))

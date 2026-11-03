@@ -45,8 +45,8 @@ VIDEO2X_BIN = _env("VIDEO2X_BIN", "video2x")
 # Dossier courant de Video2X en mode local (il y cherche models/...). Vide = inchangé.
 VIDEO2X_WORKDIR = _env("VIDEO2X_WORKDIR")
 VIDEO2X_GPU = _env("VIDEO2X_GPU")
-# Moteur des modèles personnalisés (realesrgan-ncnn-vulkan, installé dans l'image).
-NCNN_BIN = _env("UPSCALE_NCNN_BIN", "/opt/realesrgan/realesrgan-ncnn-vulkan")
+# Moteur des modèles personnalisés : upscayl-bin (fork de realesrgan-ncnn-vulkan à ncnn récent), dans l'image.
+NCNN_BIN = _env("UPSCALE_NCNN_BIN", "/opt/upscayl/upscayl-bin")
 # Convertisseur des modèles PyTorch/ONNX en ncnn (torch + spandrel + pnnx). Installé à la première conversion
 # dans le dossier d'état (environ 1 Go), sauf si UPSCALE_CONVERTER_PYTHON désigne un interpréteur déjà prêt.
 CONVERTER_PYTHON = _env("UPSCALE_CONVERTER_PYTHON")

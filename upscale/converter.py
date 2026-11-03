@@ -4,7 +4,7 @@
 1. téléchargement (lien OpenModelDB ou lien direct) avec contrôle de taille et d'empreinte SHA-256 ;
 2. conversion en ncnn si besoin, par convert_model.py dans un environnement séparé (torch CPU + spandrel + pnnx)
    installé automatiquement à la première conversion ;
-3. vérification avec le vrai moteur Vulkan sur une image de test : il doit charger le modèle, produire la
+3. vérification avec le vrai moteur Vulkan (upscayl-bin) sur une image de test : il doit charger le modèle, produire la
    bonne taille et, quand le modèle PyTorch d'origine est disponible, une image identique à sa référence ;
 4. enregistrement comme modèle personnalisé (models.py), avec sa provenance et sa licence.
 """

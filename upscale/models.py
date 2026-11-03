@@ -1,8 +1,8 @@
 """Modèles personnalisés (format ncnn .param + .bin), gérés depuis l'interface.
 
 Video2X n'accepte que ses trois modèles intégrés : les modèles personnalisés passent par le moteur
-realesrgan-ncnn-vulkan (Vulkan, compatible AMD). Ils arrivent soit déjà au format ncnn, soit en PyTorch/ONNX
-convertis sur place par converter.py (OpenModelDB, fichier .pth...).
+ncnn upscayl-bin (fork de realesrgan-ncnn-vulkan, Vulkan, compatible AMD). Ils arrivent soit déjà au format
+ncnn, soit en PyTorch/ONNX convertis sur place par converter.py (OpenModelDB, fichier .pth...).
 """
 from __future__ import annotations
 
@@ -17,10 +17,11 @@ from typing import Any
 from . import config
 
 PREFIX = "perso-"
-# Nom des fichiers sur disque (le facteur réel est celui passé en -s). realesrgan-ncnn-vulkan exige par ailleurs
-# que le chemin du dossier du modèle contienne « models » (sinon « unknown model dir type ») : c'est garanti
-# par models_dir().
-NCNN_NAME = "realesrgan-x4plus-perso"
+# Nom des fichiers sur disque. Sans chiffre de facteur : upscayl-bin déduit le facteur d'un nom contenant
+# « x2 », « 4x »... Le moteur exige aussi que le chemin du dossier contienne « models » (marge entre tuiles,
+# et « unknown model dir type » pour l'ancien moteur) : c'est garanti par models_dir().
+NCNN_NAME = "modele"
+LEGACY_NCNN_NAMES = ("realesrgan-x4plus-perso",)  # versions ≤ 2.6
 NCNN_MAGIC = "7767517"  # première ligne de tout fichier .param ncnn
 SCALES = (2, 3, 4)
 TILES = (0, 512, 256, 128, 64)
@@ -29,7 +30,7 @@ ID_RE = re.compile(r"^perso-[a-z0-9-]{1,48}$")
 
 
 def models_dir() -> Path:
-    return config.STATE_DIR / "models"  # le nom « models » est exigé par realesrgan-ncnn-vulkan
+    return config.STATE_DIR / "models"  # le nom « models » est exigé par le moteur
 
 
 def is_custom(model: Any) -> bool:
@@ -48,6 +49,11 @@ def get(model_id: str) -> dict[str, Any] | None:
         meta = json.loads((folder / "meta.json").read_text(encoding="utf-8"))
     except (ValueError, OSError):
         return None
+    for legacy in LEGACY_NCNN_NAMES:  # renommage des fichiers des versions précédentes
+        for ext in (".param", ".bin"):
+            old = folder / f"{legacy}{ext}"
+            if old.exists() and not (folder / f"{NCNN_NAME}{ext}").exists():
+                old.rename(folder / f"{NCNN_NAME}{ext}")
     if not (folder / f"{NCNN_NAME}.param").exists() or not (folder / f"{NCNN_NAME}.bin").exists():
         return None
     meta["folder"] = str(folder)

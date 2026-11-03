@@ -678,6 +678,14 @@ def test_custom_model_management(env):
     with pytest.raises(ValueError):
         st.save_settings({"model": model_id})
     assert client.post("/api/models/..%2f..%2fetc/delete", json={}).status_code in {400, 404}
+    legacy = models.models_dir() / "perso-ancien"  # modèle importé par la version 2.6
+    legacy.mkdir()
+    (legacy / "realesrgan-x4plus-perso.param").write_bytes(TINY_PARAM)
+    (legacy / "realesrgan-x4plus-perso.bin").write_bytes(b"\0" * 4096)
+    (legacy / "meta.json").write_text(json.dumps({"id": "perso-ancien", "label": "Ancien", "scale": 2, "tile": 0,
+                                                  "param_size": 1, "bin_size": 4096}))
+    assert models.get("perso-ancien")["scale"] == 2
+    assert (legacy / "modele.param").exists() and not (legacy / "realesrgan-x4plus-perso.param").exists()
 
 
 @needs_ffmpeg
@@ -690,8 +698,8 @@ def test_custom_model_end_to_end_and_preview(env, fake_docker, monkeypatch):
     [row] = process_all(env)
     assert row["status"] == "completed" and row["warning"] is None, job_log(row)
     ncnn_calls = [c for c in calls(fake_docker) if c[0] == "ncnn"]
-    assert len(ncnn_calls) == 2 and ncnn_calls[0][ncnn_calls[0].index("-s") + 1] == "2"  # 2 segments de 1 s
-    assert "models" in ncnn_calls[0][ncnn_calls[0].index("-m") + 1]  # exigé par realesrgan-ncnn-vulkan
+    assert len(ncnn_calls) == 2 and ncnn_calls[0][ncnn_calls[0].index("-z") + 1] == "2"  # 2 segments de 1 s
+    assert "models" in ncnn_calls[0][ncnn_calls[0].index("-m") + 1]  # exigé par le moteur
     assert not any(c[:2] == ["docker", "run"] for c in calls(fake_docker))  # Video2X inutile ici
     out = env / "out" / "scene.mkv"
     assert video_stream(out)["height"] == 720 and abs(media.probe_source(out)["duration"] - 2.0) < 0.3
@@ -988,7 +996,7 @@ def test_install_from_openmodeldb_link(env, fake_converter, http_server, monkeyp
     assert listed["installs"][0]["id"] == install_id and "_upload" not in listed["installs"][0]
     assert listed["suggestions"][0]["id"] == "2x-LiveActionV1-SPAN"
     ncnn = [c for c in calls(fake_converter) if c[0] == "ncnn"]
-    assert ncnn and ncnn[-1][ncnn[-1].index("-s") + 1] == "2"
+    assert ncnn and ncnn[-1][ncnn[-1].index("-z") + 1] == "2"
     st.save_settings({"model": meta["id"]})  # utilisable tout de suite
     assert not list(models.models_dir().glob(".installation-*"))  # dossier de travail nettoyé
 

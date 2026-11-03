@@ -9,7 +9,7 @@ Le projet cible notamment les NAS sous Ubuntu équipés d'un GPU AMD compatible 
 ## Fonctionnalités
 
 **Qualité**
-- Real-ESRGAN via Video2X (Plus, Plus Anime, AnimeVideo v3) et **modèles personnalisés** importés depuis l'interface (OpenModelDB…), avec le plus petit facteur suffisant (×2, ×3 ou ×4 selon le modèle).
+- Real-ESRGAN via Video2X (Plus, Plus Anime, AnimeVideo v3) et **modèles personnalisés** installés depuis l'interface en collant un lien OpenModelDB (conversion et vérification automatiques), avec le plus petit facteur suffisant (×2, ×3 ou ×4 selon le modèle).
 - Modèle **Automatique** : un modèle de vision Ollama regarde trois images de la vidéo et choisit entre animation et prise de vue réelle.
 - Désentrelacement automatique (bwdif), débruitage optionnel avant l'IA (hqdn3d ou nlmeans), doublement des images par seconde (RIFE, expérimental).
 - Rendu **Peau normale** : mélange IA / original et grain léger contre l'effet « peau cireuse ».
@@ -193,15 +193,25 @@ Le mélange se fait image par image pendant l'encodage, sans calcul IA suppléme
 
 ### Modèles personnalisés
 
-En plus des trois modèles de Video2X, Upscale accepte des modèles de la communauté, gérés entièrement depuis l'interface (panneau **Modèles IA**) : import, nom, facteur, taille des tuiles, suppression. Un modèle importé apparaît partout (modèle général, profils par dossier, Aperçu).
+En plus des trois modèles de Video2X, Upscale accepte des modèles de la communauté, gérés entièrement depuis l'interface (panneau **Modèles IA**) : installation, nom, facteur, taille des tuiles, suppression. Un modèle installé apparaît partout (modèle général, profils par dossier, Aperçu).
 
-- **Où les trouver** : [OpenModelDB](https://openmodeldb.info), catégories *Realistic*, *Faces*, *Compression Removal*, *Video Frame*. Pour des vidéos filmées dégradées, cherche les modèles « real web photo », « compression », « faces ».
-- **Format** : ncnn (.param + .bin). La plupart des modèles sont publiés en PyTorch (.pth) : convertis-les sur ton PC avec [chaiNNer](https://chainner.app) (nœud *Convert to NCNN*), puis importe les deux fichiers.
-- **Architectures** : ESRGAN et Compact (les plus courantes pour la vidéo, rapides sur une RX 5500 XT). Les architectures lourdes (DAT, HAT, ATD, RGT) ne sont pas utilisables.
-- **Facteur** : celui pour lequel le modèle a été entraîné (indiqué dans son nom, « 2x… », « 4x… »). Un facteur erroné donne une erreur claire dans le journal.
+**Installer un modèle OpenModelDB** : ouvre la page du modèle sur [openmodeldb.info](https://openmodeldb.info), copie son adresse (par ex. `https://openmodeldb.info/models/2x-LiveActionV1-SPAN`), colle-la dans **Lien du modèle** puis clique sur **Installer**. Upscale :
+
+1. lit la fiche du modèle (nom, facteur, architecture, licence) et télécharge le fichier, en vérifiant sa taille et son empreinte SHA-256 ;
+2. le convertit au format ncnn si besoin. La première conversion installe le convertisseur (torch CPU, spandrel, pnnx : environ 1 Go dans le volume d'état, une seule fois) ;
+3. le fait tourner sur le moteur Vulkan avec une image de test : il doit se charger, produire la bonne taille et le même résultat que le modèle PyTorch d'origine. Sinon, l'installation échoue avec une explication et rien n'est ajouté ;
+4. l'enregistre avec son auteur, sa licence et un lien vers sa fiche.
+
+Le suivi (téléchargement, conversion, vérification) s'affiche sous le formulaire ; le journal détaillé est disponible en cas d'échec. Un lien direct vers un fichier `.pth`, `.safetensors`, `.onnx` ou `.zip` fonctionne aussi (GitHub, Hugging Face, fichier Google Drive). On peut enfin importer un fichier depuis l'ordinateur (**Importer un fichier depuis cet ordinateur**) : `.pth`, `.safetensors`, `.onnx`, `.zip`, ou la paire ncnn `.param` + `.bin`.
+
+- **Modèle conseillé pour la vidéo filmée** : [2xLiveActionV1_SPAN](https://openmodeldb.info/models/2x-LiveActionV1-SPAN), installable en un clic depuis le panneau. Entraîné sur les défauts de la vidéo compressée (H.264, H.265, MPEG-4, VP9, sous-échantillonnage des couleurs, flou de redimensionnements successifs, halos, crénelage) ; il ne débruite pas : garde le débruitage « Moyen ». Licence non commerciale (CC BY-NC-SA 4.0).
+- **Facteur** : préfère un modèle ×2 pour du 360p → 720p, bien plus rapide qu'un ×4 réduit ensuite. Le moteur accepte ×2, ×3 et ×4.
+- **Architectures** : SPAN, Compact et ESRGAN fonctionnent et sont rapides. Les architectures lourdes (DAT, HAT, ATD, RGT...) sont refusées si le moteur ne sait pas les exécuter, et seraient de toute façon très lentes sur une RX 5500 XT.
+- **Hébergeurs** : les dossiers Google Drive et Mega ne sont pas téléchargeables automatiquement ; télécharge alors le fichier toi-même et importe-le.
 - **Tuiles** : en cas de mémoire vidéo insuffisante, choisis 256 ou 128 px (un peu plus lent).
+- **Licences** : chaque modèle a la sienne (affichée dans le tableau). Beaucoup interdisent l'usage commercial.
 
-Video2X n'acceptant que ses propres modèles, les modèles personnalisés passent par le moteur realesrgan-ncnn-vulkan (Vulkan, compatible AMD), installé dans l'image. Il travaille image par image : les segments sont alors plus courts (30 s, UPSCALE_CUSTOM_SEGMENT_SECONDS) pour limiter l'espace disque, et le traitement est un peu plus lent qu'avec Video2X. Les fichiers des modèles sont conservés dans le volume uscale-state.
+Video2X n'acceptant que ses propres modèles, les modèles personnalisés passent par le moteur ncnn [upscayl-bin](https://github.com/upscayl/upscayl-ncnn) (fork maintenu de realesrgan-ncnn-vulkan, Vulkan, compatible AMD), installé dans l'image. Il travaille image par image : les segments sont alors plus courts (30 s, UPSCALE_CUSTOM_SEGMENT_SECONDS) pour limiter l'espace disque, et le traitement est un peu plus lent qu'avec Video2X. Les fichiers des modèles sont conservés dans le volume uscale-state.
 
 ### Aperçu fidèle : « Votre configuration »
 
@@ -261,6 +271,9 @@ N'expose pas le port 11434 sur Internet.
 | UPSCALE_MIN_FREE_GB | 5 | Espace libre minimal conservé |
 | UPSCALE_SEGMENT_SECONDS | 180 | Durée des segments |
 | UPSCALE_LOG_RETENTION_DAYS | 90 | Conservation des journaux des tâches terminées |
+| UPSCALE_CONVERTER_PYTHON | (vide) | Interpréteur déjà équipé de torch, spandrel et pnnx (sinon installé automatiquement à la première conversion) |
+| UPSCALE_TORCH_INDEX | https://download.pytorch.org/whl/cpu | Index de paquets pour torch (version CPU) |
+| UPSCALE_MODEL_MAX_MB | 2048 | Taille maximale d'un modèle téléchargé |
 | PUID / PGID | (vide) | Propriétaire imposé des fichiers produits (vide = propriétaire de la vidéo d'origine) |
 | TZ | Europe/Paris | Fuseau horaire (plage horaire) |
 | UPSCALE_PULL_POLICY / UPSCALE_VERSION | build / latest | Construire l'image ou utiliser celle de GHCR |

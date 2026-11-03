@@ -49,7 +49,7 @@ jobs:
           curl -fsS http://127.0.0.1:27000/api/config | grep -q '"version"'
           docker exec upscale-ci docker --version
           docker exec upscale-ci ffmpeg -hide_banner -encoders | grep -E "libx265|libsvtav1|hevc_vaapi"
-          docker exec upscale-ci sh -c '/opt/realesrgan/realesrgan-ncnn-vulkan -h 2>&1 | head -n 5' | grep -i usage
+          docker exec upscale-ci sh -c '/opt/upscayl/upscayl-bin -h 2>&1 | head -n 20' | grep -i -- "-z model-scale"
           docker rm -f upscale-ci
       - name: Install real OpenModelDB models and upscale with them (CPU Vulkan)
         run: |
@@ -111,9 +111,14 @@ jobs:
           for model in realesrgan-plus realesrgan-plus-anime realesr-animevideov3; do
             grep -q "$model" help.txt || { echo "Modèle absent : $model"; exit 1; }
           done
+      - name: Sample ncnn model (realesr-animevideov3 x2) for the custom-model engine
+        run: |
+          curl -fsSL -o ncnn.zip https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-ubuntu.zip
+          mkdir -p ncnn-models && unzip -j -o ncnn.zip "*/realesr-animevideov3-x2.*" -d ncnn-models || unzip -j -o ncnn.zip "*realesr-animevideov3-x2.*" -d ncnn-models
+          ls -la ncnn-models
       - name: Real Video2X on CPU Vulkan (lavapipe)
         run: |
-          docker run --rm --entrypoint sh -w /usr/share/video2x upscale-local:ci -c '
+          docker run --rm -v "$PWD/ncnn-models:/tmp/xmodels:ro" --entrypoint sh -w /usr/share/video2x upscale-local:ci -c '
             set -e
             ls -la /usr/share/video2x/models/ /usr/share/video2x/models/realesrgan | head -n 30
             ffmpeg -v error -f lavfi -i testsrc=size=96x64:rate=10:duration=1 -c:v libx264 -pix_fmt yuv420p /tmp/in.mp4
@@ -128,13 +133,11 @@ jobs:
             up=$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of csv=p=0 /tmp/up2.mkv)
             echo "Real-ESRGAN depuis FFV1 : $up images (attendu : 10)"
             test "$up" = 10
-            echo "== realesrgan-ncnn-vulkan (modèles personnalisés)"
-            find /opt/realesrgan -maxdepth 2 | head -n 30
-            models=$(dirname "$(find /opt/realesrgan -name "realesr-animevideov3-x2.param" | head -n 1)")
-            mkdir -p /tmp/models/perso && cp "$models/realesr-animevideov3-x2.param" /tmp/models/perso/realesrgan-x4plus-perso.param
-            cp "$models/realesr-animevideov3-x2.bin" /tmp/models/perso/realesrgan-x4plus-perso.bin
+            echo "== upscayl-bin (modèles personnalisés)"
+            mkdir -p /tmp/models/perso && cp /tmp/xmodels/realesr-animevideov3-x2.param /tmp/models/perso/modele.param
+            cp /tmp/xmodels/realesr-animevideov3-x2.bin /tmp/models/perso/modele.bin
             mkdir -p /tmp/fin /tmp/fout && ffmpeg -v error -i /tmp/in.mp4 -frames:v 2 -start_number 0 /tmp/fin/%08d.png
-            /opt/realesrgan/realesrgan-ncnn-vulkan -i /tmp/fin -o /tmp/fout -m /tmp/models/perso -n realesrgan-x4plus-perso -s 2 -f png
+            /opt/upscayl/upscayl-bin -i /tmp/fin -o /tmp/fout -m /tmp/models/perso -n modele -z 2 -f png
             ls /tmp/fout && ffprobe -v error -show_entries stream=width,height -of csv /tmp/fout/00000000.png
           '
       - name: Full pipeline with real Video2X (local mode)
@@ -161,10 +164,8 @@ jobs:
           }
           run_job '{"source":"/data/videos","destination":"/data/out","max_input_height":480,"output_height":240,"model":"realesr-animevideov3","preset":"ultrafast"}'
           run_job '{"source":"/data/videos","destination":"/data/out2","max_input_height":480,"output_height":240,"model":"realesr-animevideov3","preset":"ultrafast","interpolate":2,"denoise":"light","codec":"hevc","output_suffix":" - IA","render":"peau-normale"}'
-          # Modèle personnalisé importé par l'API (comme depuis l'interface) : moteur realesrgan-ncnn-vulkan.
-          models=$(docker exec upscale-e2e sh -c 'dirname "$(find /opt/realesrgan -name realesr-animevideov3-x2.param | head -n 1)"')
-          docker cp "upscale-e2e:$models/realesr-animevideov3-x2.param" perso.param
-          docker cp "upscale-e2e:$models/realesr-animevideov3-x2.bin" perso.bin
+          # Modèle ncnn importé par l'API (comme depuis l'interface) : moteur upscayl-bin.
+          cp ncnn-models/realesr-animevideov3-x2.param perso.param && cp ncnn-models/realesr-animevideov3-x2.bin perso.bin
           curl -fsS -X POST -H "X-Upscale-Upload: 1" -F label="Test perso" -F scale=2 -F tile=0 \
             -F param=@perso.param -F bin=@perso.bin http://127.0.0.1:27002/api/models
           run_job '{"source":"/data/videos","destination":"/data/out3","max_input_height":480,"output_height":240,"model":"perso-test-perso","preset":"ultrafast","render":"custom","ai_strength":80,"grain":"medium","output_suffix":"","interpolate":1}'

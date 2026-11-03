@@ -389,11 +389,16 @@ def chown(path: Path, owner: Owner | None) -> None:
         pass
 
 
-# ---------------------------------------------------------------- modèles personnalisés (realesrgan-ncnn-vulkan)
+# ---------------------------------------------------------------- modèles personnalisés (moteur ncnn)
+
+def scale_flag() -> str:
+    """Facteur du modèle : -z pour upscayl-bin (-s y redimensionne la sortie), -s pour realesrgan-ncnn-vulkan."""
+    return "-s" if "realesrgan-ncnn-vulkan" in Path(config.NCNN_BIN).name else "-z"
+
 
 def ncnn_command(frames_in: Path, frames_out: Path, meta: dict[str, Any]) -> list[str]:
     command = [config.NCNN_BIN, "-i", str(frames_in), "-o", str(frames_out), "-m", meta["folder"],
-               "-n", models.NCNN_NAME, "-s", str(meta["scale"]), "-f", "png"]
+               "-n", models.NCNN_NAME, scale_flag(), str(meta["scale"]), "-f", "png"]
     if int(meta.get("tile") or 0):
         command += ["-t", str(meta["tile"])]
     if config.VIDEO2X_GPU:
@@ -405,7 +410,7 @@ def run_custom_upscale(job_id: str, source: Path, output: Path, meta: dict[str, 
                        on_progress: Callable[[float], None] | None = None, disk_dir: Path | None = None) -> None:
     """Agrandit une vidéo courte (un segment) avec un modèle personnalisé, image par image.
 
-    Images extraites en PNG -> realesrgan-ncnn-vulkan -> nouveau segment FFV1 intra sans perte.
+    Images extraites en PNG -> moteur ncnn (upscayl-bin) -> nouveau segment FFV1 intra sans perte.
     """
     work = output.with_name(output.stem + ".frames")
     shutil.rmtree(work, ignore_errors=True)
