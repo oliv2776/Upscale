@@ -1,5 +1,5 @@
 # Seul le client Docker est nécessaire (binaire statique) : pas besoin du daemon complet.
-FROM docker:27-cli AS docker-cli
+FROM docker:29-cli AS docker-cli
 
 FROM python:3.12-slim
 
