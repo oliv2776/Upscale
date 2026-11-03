@@ -69,8 +69,9 @@ jobs:
           done
       - name: Real Video2X on CPU Vulkan (lavapipe)
         run: |
-          docker run --rm --entrypoint sh uscale-local:ci -c '
+          docker run --rm --entrypoint sh -w /usr/share/video2x uscale-local:ci -c '
             set -e
+            ls -la /usr/share/video2x/models/ /usr/share/video2x/models/realesrgan | head -n 30
             ffmpeg -v error -f lavfi -i testsrc=size=96x64:rate=10:duration=1 -c:v libx264 -pix_fmt yuv420p /tmp/in.mp4
             /opt/video2x/AppRun --list-devices
             /opt/video2x/AppRun -i /tmp/in.mp4 -o /tmp/up.mkv -p realesrgan -s 2 --realesrgan-model realesr-animevideov3 -c ffv1 2>&1 | tr "\r" "\n" | tail -n 25

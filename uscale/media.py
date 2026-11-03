@@ -31,6 +31,7 @@ DENOISE_FILTERS = {
     "medium": "hqdn3d=3:3:9:9",
     "strong": "nlmeans=s=3:p=7:r=15",
 }
+IMAGE_CODECS = {"mjpeg", "png", "bmp", "gif", "webp", "tiff"}
 SVT_PRESETS = {"ultrafast": 12, "fast": 8, "medium": 6, "slow": 4, "slower": 3}
 FFMPEG_BASE = ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-nostats", "-progress", "pipe:1"]
 
@@ -74,8 +75,9 @@ def probe_source(path: Path) -> dict[str, Any]:
                         "stream=index,codec_type,codec_name,width,height,sample_aspect_ratio,field_order,"
                         "avg_frame_rate,r_frame_rate,nb_frames,start_time,disposition:format=duration")
     streams = data.get("streams", [])
-    video = next((s for s in streams if s.get("codec_type") == "video"
-                  and not s.get("disposition", {}).get("attached_pic")), None)
+    videos = [s for s in streams if s.get("codec_type") == "video" and not s.get("disposition", {}).get("attached_pic")]
+    # Une image fixe (couverture) n'est jamais la vidéo à traiter, même placée en premier.
+    video = next((s for s in videos if s.get("codec_name") not in IMAGE_CODECS), videos[0] if videos else None)
     if not video:
         raise ProbeError("Aucune piste vidéo dans la source")
     width, height = int(video["width"]), int(video["height"])
@@ -87,7 +89,7 @@ def probe_source(path: Path) -> dict[str, Any]:
     video_start = parse_ratio(video.get("start_time"))
     starts = [parse_ratio(s.get("start_time")) for s in [video, *audio, *subtitles] if s.get("start_time") not in (None, "N/A")]
     return {
-        "width": width, "height": height,
+        "width": width, "height": height, "video_index": int(video.get("index", 0)),
         "sar": parse_ratio(video.get("sample_aspect_ratio"), 1.0) or 1.0,
         "fps": fps, "duration": duration, "frames": frames,
         "field_order": str(video.get("field_order", "unknown")),
@@ -171,17 +173,17 @@ def scale_filter(width: int, height: int) -> str:
     return f"scale={width}:{height}:flags=lanczos+accurate_rnd+full_chroma_int,setsar=1"
 
 
-def segment_command(source: Path, pattern: Path, filters: list[str], seconds: int) -> list[str]:
+def segment_command(source: Path, pattern: Path, filters: list[str], seconds: int, stream: str = "0:v:0") -> list[str]:
     """Découpe la vidéo (après filtres) en segments FFV1 intra : chaque image est une image clé."""
-    command = [*FFMPEG_BASE, "-i", str(source), "-map", "0:v:0", "-an", "-sn", "-dn"]
+    command = [*FFMPEG_BASE, "-i", str(source), "-map", stream, "-an", "-sn", "-dn"]
     if filters:
         command += ["-vf", ",".join(filters)]
     return command + ["-c:v", "ffv1", "-g", "1", "-f", "segment", "-segment_time", str(seconds),
                       "-reset_timestamps", "1", "-segment_format", "matroska", str(pattern)]
 
 
-def prefilter_command(source: Path, output: Path, filters: list[str]) -> list[str]:
-    command = [*FFMPEG_BASE, "-i", str(source), "-map", "0:v:0", "-an", "-sn", "-dn"]
+def prefilter_command(source: Path, output: Path, filters: list[str], stream: str = "0:v:0") -> list[str]:
+    command = [*FFMPEG_BASE, "-i", str(source), "-map", stream, "-an", "-sn", "-dn"]
     if filters:
         command += ["-vf", ",".join(filters)]
     return command + ["-c:v", "ffv1", str(output)]
@@ -218,6 +220,11 @@ def audio_args(codecs: list[str], input_index: int = 1) -> list[str]:
     return args
 
 
+def video_stream(info: dict[str, Any]) -> str:
+    """Flux vidéo exact de la source (évite une image de couverture placée en premier)."""
+    return f"0:{info.get('video_index', 0)}" if "video_index" in info else "0:v:0"
+
+
 def final_mux_command(concat_list: Path, source: Path, output: Path,
                       info: dict[str, Any]) -> tuple[list[str], list[str]]:
     """Assemble les segments encodés (copie) avec l'audio, les sous-titres et les chapitres de l'original."""
@@ -243,9 +250,10 @@ def write_concat_list(path: Path, files: list[Path]) -> None:
 
 # ---------------------------------------------------------------- aperçus
 
-def clip_command(source: Path, output: Path, start: float, duration: float, filters: list[str]) -> list[str]:
+def clip_command(source: Path, output: Path, start: float, duration: float, filters: list[str],
+                 stream: str = "0:v:0") -> list[str]:
     command = [*FFMPEG_BASE, "-ss", f"{start:.3f}", "-i", str(source), "-t", f"{duration:.3f}",
-               "-map", "0:v:0", "-an", "-sn", "-dn"]
+               "-map", stream, "-an", "-sn", "-dn"]
     if filters:
         command += ["-vf", ",".join(filters)]
     return command + ["-c:v", "ffv1", str(output)]

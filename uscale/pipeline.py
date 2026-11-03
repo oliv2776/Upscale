@@ -255,7 +255,7 @@ def prepare_segments(job_id: str, source: Path, work: Path, info: dict[str, Any]
         if filters:
             db.set_job(job_id, stage="Filtres (désentrelacement / débruitage)")
             prepped = work / "prep.mkv"
-            check(runner.run_process(job_id, media.prefilter_command(source, prepped, filters),
+            check(runner.run_process(job_id, media.prefilter_command(source, prepped, filters, media.video_stream(info)),
                                      parse_progress=media_progress(info["duration"]),
                                      on_progress=progress.span(0, share * 0.2), disk_dir=disk_dir),
                   "Le filtrage a échoué")
@@ -270,8 +270,10 @@ def prepare_segments(job_id: str, source: Path, work: Path, info: dict[str, Any]
         segment_input = interpolated
     db.set_job(job_id, stage="Découpe en segments")
     cut_start, cut_width = (share * 0.8, share * 0.2) if multiplier > 1 else (0.0, share)
+    # Après interpolation, l'entrée ne contient plus qu'un flux vidéo.
+    stream = media.video_stream(info) if segment_input == source else "0:v:0"
     check(runner.run_process(job_id, media.segment_command(segment_input, work / "src" / "seg_%05d.mkv",
-                                                           segment_filters, config.SEGMENT_SECONDS),
+                                                           segment_filters, config.SEGMENT_SECONDS, stream),
                              parse_progress=media_progress(info["duration"]),
                              on_progress=progress.span(cut_start, cut_width), disk_dir=disk_dir),
           "La découpe en segments a échoué")
@@ -310,7 +312,8 @@ def run_preview(job: sqlite3.Row, settings: dict[str, Any]) -> None:
         runner.ensure_image(job_id)
         db.set_job(job_id, stage="Extraction de l'extrait")
         clip = work / "clip.mkv"
-        check(runner.run_process(job_id, media.clip_command(source, clip, start, duration, filters)),
+        check(runner.run_process(job_id, media.clip_command(source, clip, start, duration, filters,
+                                                            media.video_stream(info))),
               "Extraction de l'extrait impossible")
         steps = len(models) + 1
         check(runner.run_process(job_id, media.preview_encode_command(clip, out_dir / "original.mp4", size)),

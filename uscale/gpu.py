@@ -23,7 +23,7 @@ def check_command() -> list[str]:
 
 def _run_check() -> None:
     try:
-        check = subprocess.run(check_command(), capture_output=True, text=True, timeout=1800)
+        check = subprocess.run(check_command(), capture_output=True, text=True, timeout=1800, cwd=runner.video2x_cwd())
         lines = [line.strip() for line in check.stdout.splitlines() if line.strip()]
         result = {"status": "ok" if check.returncode == 0 and lines else "error", "devices": lines,
                   "error": None if check.returncode == 0 else (check.stderr or check.stdout).strip()[-700:]}

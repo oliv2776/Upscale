@@ -151,7 +151,7 @@ def stop_process(proc: subprocess.Popen, container: str | None) -> None:
 def run_process(job_id: str, command: list[str], *, container: str | None = None,
                 parse_progress: Callable[[str], float | None] | None = None,
                 on_progress: Callable[[float], None] | None = None,
-                disk_dir: Path | None = None) -> int:
+                disk_dir: Path | None = None, cwd: str | None = None) -> int:
     """Lance une commande, journalise sa sortie, suit la progression, l'annulation et l'espace disque."""
     db.log_line(job_id, "$ " + " ".join(command))
     last_log = [0.0]
@@ -181,7 +181,8 @@ def run_process(job_id: str, command: list[str], *, container: str | None = None
         if buffer:
             handle(buffer.decode("utf-8", errors="replace"))
 
-    proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+    proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                            cwd=cwd)
     thread = threading.Thread(target=reader, args=(proc.stdout,), daemon=True)
     thread.start()
     last_disk_check = 0.0
@@ -248,7 +249,13 @@ def run_video2x(job_id: str, args: list[str], *, on_progress: Callable[[float], 
     if container:
         docker_remove(container)
     return run_process(job_id, command, container=container, parse_progress=parse_video2x_progress,
-                       on_progress=on_progress, disk_dir=disk_dir)
+                       on_progress=on_progress, disk_dir=disk_dir, cwd=video2x_cwd())
+
+
+def video2x_cwd() -> str | None:
+    if config.RUNNER == "local" and config.VIDEO2X_WORKDIR and Path(config.VIDEO2X_WORKDIR).is_dir():
+        return config.VIDEO2X_WORKDIR
+    return None
 
 
 def ensure_image(job_id: str) -> None:

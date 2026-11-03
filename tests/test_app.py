@@ -367,6 +367,23 @@ def test_end_to_end_mp4_with_mov_text(env, fake_docker):
 
 
 @needs_ffmpeg
+def test_cover_art_is_not_processed(env, fake_docker):
+    plain = make_video(env.parent / "plain.mkv")
+    cover = env.parent / "cover.jpg"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=red:size=600x600", "-frames:v", "1",
+                    str(cover)], check=True)
+    target = env / "videos" / "avec-couverture.mp4"
+    # La couverture est le PREMIER flux vidéo du fichier.
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(cover), "-i", str(plain), "-map", "0:v", "-map", "1:v",
+                    "-map", "1:a", "-c", "copy", "-disposition:v:0", "attached_pic", str(target)], check=True)
+    info = media.probe_source(target)
+    assert (info["width"], info["height"]) == (320, 240)
+    [row] = process_all(env)
+    assert row["status"] == "completed", job_log(row)
+    assert video_stream(env / "out" / "avec-couverture.mkv")["height"] == 720
+
+
+@needs_ffmpeg
 def test_segments_resume_after_pause(env, fake_docker, monkeypatch):
     monkeypatch.setattr(config, "SEGMENT_SECONDS", 1)
     make_video(env / "videos" / "long.mp4", seconds=3)

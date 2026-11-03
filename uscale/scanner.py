@@ -18,7 +18,6 @@ from . import settings as settings_mod
 scan_state: dict[str, Any] = {"running": False}
 _lock = threading.Lock()
 worker_wakeup = threading.Event()
-on_enqueued: list[Callable[[], None]] = []
 
 
 def list_candidates(source_root: Path, recursive: bool) -> list[Path]:
@@ -136,8 +135,6 @@ def enqueue(files: list[dict[str, Any]], settings: dict[str, Any]) -> dict[str, 
             active[item["destination"]] = item["source"]
             added += 1
     worker_wakeup.set()
-    for callback in on_enqueued:
-        callback()
     return {"added": added, "conflicts": conflicts}
 
 

@@ -14,7 +14,11 @@ RUN curl -fsSL -o /tmp/video2x.AppImage \
       "https://github.com/k4yt3x/video2x/releases/download/${VIDEO2X_VERSION}/Video2X-x86_64.AppImage" \
     && chmod +x /tmp/video2x.AppImage \
     && cd /opt && /tmp/video2x.AppImage --appimage-extract > /dev/null \
-    && mv /opt/squashfs-root /opt/video2x && rm /tmp/video2x.AppImage
+    && mv /opt/squashfs-root /opt/video2x && rm /tmp/video2x.AppImage \
+    # Video2X cherche « models/... » relativement au dossier courant : on expose le dossier des modèles.
+    && models="$(find /opt/video2x -type d -name models -path '*video2x*' | head -n 1)" \
+    && test -n "${models}" && echo "Modèles Video2X : ${models}" \
+    && mkdir -p /usr/share/video2x && ln -s "${models}" /usr/share/video2x/models
 
 WORKDIR /app
 COPY requirements.txt .
@@ -23,7 +27,8 @@ COPY VERSION app.py ./
 COPY uscale ./uscale
 COPY static ./static
 RUN mkdir -p /app/state
-ENV USCALE_RUNNER=local VIDEO2X_BIN=/opt/video2x/AppRun VIDEO2X_IMAGE="video2x ${VIDEO2X_VERSION} (AppImage)"
+ENV USCALE_RUNNER=local VIDEO2X_BIN=/opt/video2x/AppRun VIDEO2X_WORKDIR=/usr/share/video2x \
+    VIDEO2X_IMAGE="video2x ${VIDEO2X_VERSION} (AppImage)"
 EXPOSE 27000
 HEALTHCHECK --interval=60s --timeout=5s --start-period=20s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:27000/api/ping', timeout=4)"
