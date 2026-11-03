@@ -46,6 +46,31 @@ jobs:
             sleep 1
           done
           curl -fsS http://127.0.0.1:27000/ | grep -q Uscale
+          curl -fsS http://127.0.0.1:27000/api/config | grep -q '"version"'
           docker exec uscale-ci docker --version
-          docker exec uscale-ci ffprobe -version | head -n 1
+          docker exec uscale-ci ffmpeg -hide_banner -encoders | grep -E "libx265|libsvtav1|hevc_vaapi"
           docker rm -f uscale-ci
+
+  docker-local:
+    # Variante sans socket Docker (Video2X AppImage dans l'image) : vérifie qu'elle se construit et démarre.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -f Dockerfile.local -t uscale-local:ci .
+      - name: Video2X runs
+        run: |
+          docker run --rm --entrypoint /opt/video2x/AppRun uscale-local:ci --help | tee help.txt | head -n 60
+          grep -qi "realesrgan" help.txt
+          grep -qi "frame-rate-mul" help.txt
+      - name: Smoke test
+        run: |
+          docker run -d --name uscale-local -p 27001:27000 uscale-local:ci
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:27001/api/ping && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:27001/api/health | tee health.json
+          grep -q '"runner":"local"' health.json
+          grep -q '"image_present":true' health.json
+          docker rm -f uscale-local

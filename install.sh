@@ -75,6 +75,17 @@ VIDEO_GID="${VIDEO_GID:-$(getent group video | cut -d: -f3 || true)}"
 RENDER_GID="${RENDER_GID:-$(getent group render | cut -d: -f3 || true)}"
 VIDEO_GID="${VIDEO_GID:-44}"
 RENDER_GID="${RENDER_GID:-109}"
+VAAPI_DEVICE="${RENDER_DEV:-/dev/dri/renderD128}"
+
+# Fichiers produits attribués à l'utilisateur qui a lancé sudo (plutôt qu'à root).
+OWNER_UID="${SUDO_UID:-}"
+OWNER_GID="${SUDO_GID:-}"
+HOST_TZ="$(timedatectl show -p Timezone --value 2>/dev/null || cat /etc/timezone 2>/dev/null || echo Europe/Paris)"
+if [[ -n "${OWNER_UID}" ]]; then
+  for dir in "${DATA_DIR}/videos" "${DATA_DIR}/videos_upscaled"; do
+    if [[ "$(stat -c '%u' "${dir}")" == "0" ]]; then chown "${OWNER_UID}:${OWNER_GID}" "${dir}"; fi
+  done
+fi
 
 if [[ ! -f "${ENV_FILE}" ]]; then
   cat > "${ENV_FILE}" <<EOF
@@ -85,11 +96,15 @@ VIDEO_GID=${VIDEO_GID}
 RENDER_GID=${RENDER_GID}
 VIDEO2X_IMAGE=ghcr.io/k4yt3x/video2x:6.4.0
 VIDEO2X_GPU=
+VAAPI_DEVICE=${VAAPI_DEVICE}
 DEFAULT_SOURCE=/data/videos
 DEFAULT_DESTINATION=/data/videos_upscaled
 USCALE_USER=admin
 USCALE_PASSWORD=
 USCALE_MIN_FREE_GB=5
+PUID=${OWNER_UID}
+PGID=${OWNER_GID}
+TZ=${HOST_TZ}
 EOF
   chmod 600 "${ENV_FILE}"
 else

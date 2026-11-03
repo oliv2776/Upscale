@@ -5,15 +5,17 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 
+# mesa-va-drivers : encodage matériel VAAPI sur GPU AMD ; tzdata : plage horaire à l'heure locale.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ffmpeg ca-certificates tini \
+      ffmpeg ca-certificates tini tzdata mesa-va-drivers \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
-COPY app.py .
+COPY VERSION app.py ./
+COPY uscale ./uscale
 COPY static ./static
 RUN mkdir -p /app/state
 EXPOSE 27000

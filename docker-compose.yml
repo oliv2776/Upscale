@@ -1,5 +1,9 @@
 services:
   uscale:
+    # Par défaut l'image est construite localement (pull_policy: build).
+    # USCALE_PULL_POLICY=always utilise l'image publiée sur GHCR (voir README).
+    image: ghcr.io/oliv2776/upscale:${USCALE_VERSION:-latest}
+    pull_policy: ${USCALE_PULL_POLICY:-build}
     build: .
     container_name: uscale
     restart: unless-stopped
@@ -15,18 +19,27 @@ services:
       VIDEO2X_GPU: "${VIDEO2X_GPU:-}"
       VIDEO_GID: "${VIDEO_GID:-44}"
       RENDER_GID: "${RENDER_GID:-109}"
+      VAAPI_DEVICE: "${VAAPI_DEVICE:-/dev/dri/renderD128}"
       DEFAULT_SOURCE: "${DEFAULT_SOURCE:-/data/videos}"
       DEFAULT_DESTINATION: "${DEFAULT_DESTINATION:-/data/videos_upscaled}"
       USCALE_USER: "${USCALE_USER:-admin}"
       USCALE_PASSWORD: "${USCALE_PASSWORD:-}"
-      USCALE_MIN_FREE_GB: "${USCALE_MIN_FREE_GB:-5}"
       USCALE_TRUSTED_HOSTS: "${USCALE_TRUSTED_HOSTS:-}"
+      USCALE_MIN_FREE_GB: "${USCALE_MIN_FREE_GB:-5}"
+      USCALE_SEGMENT_SECONDS: "${USCALE_SEGMENT_SECONDS:-180}"
+      USCALE_LOG_RETENTION_DAYS: "${USCALE_LOG_RETENTION_DAYS:-90}"
+      PUID: "${PUID:-}"
+      PGID: "${PGID:-}"
+      TZ: "${TZ:-Europe/Paris}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${USCALE_HOST_DATA:-/data}:${USCALE_DATA_ROOT:-/data}
       - uscale-state:/app/state
+    # /dev/dri : encodage matériel VAAPI et statistiques du GPU.
+    devices:
+      - /dev/dri:/dev/dri
     group_add:
       - "${VIDEO_GID:-44}"
       - "${RENDER_GID:-109}"

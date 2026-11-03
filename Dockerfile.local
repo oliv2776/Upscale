@@ -1,0 +1,31 @@
+# Variante EXPÉRIMENTALE sans socket Docker : Video2X (AppImage officielle) est installé dans l'image
+# et lancé directement, avec accès au GPU par /dev/dri. Voir docker-compose.local.yml.
+FROM python:3.12-slim
+
+ARG VIDEO2X_VERSION=6.4.0
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ffmpeg ca-certificates curl tini tzdata libvulkan1 mesa-vulkan-drivers mesa-va-drivers \
+    && rm -rf /var/lib/apt/lists/*
+
+# L'AppImage est extraite à la construction : pas besoin de FUSE à l'exécution.
+RUN curl -fsSL -o /tmp/video2x.AppImage \
+      "https://github.com/k4yt3x/video2x/releases/download/${VIDEO2X_VERSION}/Video2X-x86_64.AppImage" \
+    && chmod +x /tmp/video2x.AppImage \
+    && cd /opt && /tmp/video2x.AppImage --appimage-extract > /dev/null \
+    && mv /opt/squashfs-root /opt/video2x && rm /tmp/video2x.AppImage
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY VERSION app.py ./
+COPY uscale ./uscale
+COPY static ./static
+RUN mkdir -p /app/state
+ENV USCALE_RUNNER=local VIDEO2X_BIN=/opt/video2x/AppRun VIDEO2X_IMAGE="video2x ${VIDEO2X_VERSION} (AppImage)"
+EXPOSE 27000
+HEALTHCHECK --interval=60s --timeout=5s --start-period=20s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:27000/api/ping', timeout=4)"
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["python", "app.py"]
