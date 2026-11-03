@@ -14,7 +14,7 @@ from typing import Any
 from . import config, db, pipeline, runner, scanner
 from . import settings as settings_mod
 
-log = logging.getLogger("uscale")
+log = logging.getLogger("upscale")
 _threads: dict[str, threading.Thread] = {}
 _threads_lock = threading.Lock()
 
@@ -99,7 +99,7 @@ def _ensure_thread(name: str, target: Any) -> None:
     with _threads_lock:
         thread = _threads.get(name)
         if thread is None or not thread.is_alive():
-            thread = threading.Thread(target=target, name=f"uscale-{name}", daemon=True)
+            thread = threading.Thread(target=target, name=f"upscale-{name}", daemon=True)
             _threads[name] = thread
             thread.start()
 
@@ -152,9 +152,29 @@ def watcher_loop() -> None:
 
 # ---------------------------------------------------------------- maintenance
 
+def fix_ownership() -> int:
+    """Rend à leur propriétaire les vidéos déjà produites qui appartiennent encore à root."""
+    fixed = 0
+    with db.connect() as conn:
+        rows = conn.execute("SELECT * FROM jobs WHERE kind='upscale' AND status='completed'").fetchall()
+    for row in rows:
+        destination = Path(row["destination"])
+        try:
+            if destination.stat().st_uid != 0:
+                continue
+        except OSError:
+            continue
+        settings = pipeline.job_settings(row)
+        owner = pipeline.output_owner(Path(row["source"]), settings, destination)
+        if owner and owner[0] not in (0, -1):
+            pipeline.chown_tree(destination, Path(settings.get("destination", destination.parent)), owner)
+            fixed += 1
+    return fixed
+
+
 def maintenance() -> dict[str, int]:
-    """Supprime les vieux journaux, le cache ffprobe obsolète et les anciens aperçus."""
-    removed = {"logs": 0, "probe_cache": 0, "previews": 0}
+    """Supprime les vieux journaux, le cache ffprobe obsolète et les anciens aperçus ; corrige les propriétaires."""
+    removed = {"logs": 0, "probe_cache": 0, "previews": 0, "owners": fix_ownership()}
     cutoff = (datetime.now(UTC) - timedelta(days=config.LOG_RETENTION_DAYS)).isoformat()
     with db.connect() as conn:
         jobs = {row["id"]: row for row in conn.execute("SELECT id,status,updated_at FROM jobs")}

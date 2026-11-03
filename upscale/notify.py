@@ -8,7 +8,7 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
-log = logging.getLogger("uscale")
+log = logging.getLogger("upscale")
 
 
 def _request(url: str, *, data: bytes | None = None, headers: dict[str, str] | None = None,
@@ -52,7 +52,7 @@ def notify_job(settings: dict[str, Any], event: str, job: dict[str, Any], detail
     if event == "failed" and not settings.get("notify_on_failure", True):
         return
     name = str(job.get("source", "")).rsplit("/", 1)[-1]
-    title = "Uscale : vidéo terminée" if event == "completed" else "Uscale : échec du traitement"
+    title = "Upscale : vidéo terminée" if event == "completed" else "Upscale : échec du traitement"
     message = f"{name}\n{detail}".strip()
 
     def run() -> None:

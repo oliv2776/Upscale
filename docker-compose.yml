@@ -1,20 +1,20 @@
 services:
-  uscale:
+  upscale:
     # Par défaut l'image est construite localement (pull_policy: build).
-    # USCALE_PULL_POLICY=always utilise l'image publiée sur GHCR (voir README).
-    image: ghcr.io/oliv2776/upscale:${USCALE_VERSION:-latest}
-    pull_policy: ${USCALE_PULL_POLICY:-build}
+    # UPSCALE_PULL_POLICY=always utilise l'image publiée sur GHCR (voir README).
+    image: ghcr.io/oliv2776/upscale:${UPSCALE_VERSION:-${USCALE_VERSION:-latest}}
+    pull_policy: ${UPSCALE_PULL_POLICY:-${USCALE_PULL_POLICY:-build}}
     build: .
-    container_name: uscale
+    container_name: upscale
     restart: unless-stopped
     ports:
-      - "${USCALE_PORT:-27000}:27000"
+      - "${UPSCALE_PORT:-${USCALE_PORT:-27000}}:27000"
     environment:
-      USCALE_PORT: "27000"
-      USCALE_DATA_ROOT: "${USCALE_DATA_ROOT:-/data}"
+      UPSCALE_PORT: "27000"
+      UPSCALE_DATA_ROOT: "${UPSCALE_DATA_ROOT:-${USCALE_DATA_ROOT:-/data}}"
       # Chemin de la bibliothèque sur l'hôte : nécessaire pour que le conteneur
       # Video2X (lancé par le daemon Docker de l'hôte) monte le bon dossier.
-      USCALE_HOST_DATA: "${USCALE_HOST_DATA:-/data}"
+      UPSCALE_HOST_DATA: "${UPSCALE_HOST_DATA:-${USCALE_HOST_DATA:-/data}}"
       VIDEO2X_IMAGE: "${VIDEO2X_IMAGE:-ghcr.io/k4yt3x/video2x:6.4.0}"
       VIDEO2X_GPU: "${VIDEO2X_GPU:-}"
       VIDEO_GID: "${VIDEO_GID:-44}"
@@ -22,12 +22,12 @@ services:
       VAAPI_DEVICE: "${VAAPI_DEVICE:-/dev/dri/renderD128}"
       DEFAULT_SOURCE: "${DEFAULT_SOURCE:-/data/videos}"
       DEFAULT_DESTINATION: "${DEFAULT_DESTINATION:-/data/videos_upscaled}"
-      USCALE_USER: "${USCALE_USER:-admin}"
-      USCALE_PASSWORD: "${USCALE_PASSWORD:-}"
-      USCALE_TRUSTED_HOSTS: "${USCALE_TRUSTED_HOSTS:-}"
-      USCALE_MIN_FREE_GB: "${USCALE_MIN_FREE_GB:-5}"
-      USCALE_SEGMENT_SECONDS: "${USCALE_SEGMENT_SECONDS:-180}"
-      USCALE_LOG_RETENTION_DAYS: "${USCALE_LOG_RETENTION_DAYS:-90}"
+      UPSCALE_USER: "${UPSCALE_USER:-${USCALE_USER:-admin}}"
+      UPSCALE_PASSWORD: "${UPSCALE_PASSWORD:-${USCALE_PASSWORD:-}}"
+      UPSCALE_TRUSTED_HOSTS: "${UPSCALE_TRUSTED_HOSTS:-${USCALE_TRUSTED_HOSTS:-}}"
+      UPSCALE_MIN_FREE_GB: "${UPSCALE_MIN_FREE_GB:-${USCALE_MIN_FREE_GB:-5}}"
+      UPSCALE_SEGMENT_SECONDS: "${UPSCALE_SEGMENT_SECONDS:-${USCALE_SEGMENT_SECONDS:-180}}"
+      UPSCALE_LOG_RETENTION_DAYS: "${UPSCALE_LOG_RETENTION_DAYS:-${USCALE_LOG_RETENTION_DAYS:-90}}"
       PUID: "${PUID:-}"
       PGID: "${PGID:-}"
       TZ: "${TZ:-Europe/Paris}"
@@ -35,7 +35,7 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${USCALE_HOST_DATA:-/data}:${USCALE_DATA_ROOT:-/data}
+      - ${UPSCALE_HOST_DATA:-${USCALE_HOST_DATA:-/data}}:${UPSCALE_DATA_ROOT:-${USCALE_DATA_ROOT:-/data}}
       - uscale-state:/app/state
     # /dev/dri : encodage matériel VAAPI et statistiques du GPU.
     devices:

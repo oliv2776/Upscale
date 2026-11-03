@@ -24,10 +24,10 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 COPY VERSION app.py ./
-COPY uscale ./uscale
+COPY upscale ./upscale
 COPY static ./static
 RUN mkdir -p /app/state
-ENV USCALE_RUNNER=local VIDEO2X_BIN=/opt/video2x/AppRun VIDEO2X_WORKDIR=/usr/share/video2x \
+ENV UPSCALE_RUNNER=local VIDEO2X_BIN=/opt/video2x/AppRun VIDEO2X_WORKDIR=/usr/share/video2x \
     VIDEO2X_IMAGE="video2x ${VIDEO2X_VERSION} (AppImage)"
 EXPOSE 27000
 HEALTHCHECK --interval=60s --timeout=5s --start-period=20s --retries=3 \

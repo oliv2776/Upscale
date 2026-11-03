@@ -2,12 +2,12 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Uscale — AI Video Upscaler</title><link rel="stylesheet" href="/static/app.css">
+  <title>Upscale — AI Video Upscaler</title><link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
 <div class="shell">
   <aside class="sidebar">
-    <div class="brand"><span class="brand-mark">U</span><span>Uscale</span><small>LOCAL VIDEO LAB</small></div>
+    <div class="brand"><span class="brand-mark">U</span><span>Upscale</span><small>LOCAL VIDEO LAB</small></div>
     <nav>
       <a class="active" href="#dashboard">◫ <span>Vue d'ensemble</span></a>
       <a href="#settings">⚙ <span>Configuration</span></a>
@@ -114,7 +114,7 @@
       <div class="section-head"><div><div class="eyebrow">OPTIONNEL / ASSISTANT IA</div><h3>Connexion Ollama</h3><p>Avec un modèle de vision (llava, qwen2.5vl, gemma3…), le modèle IA « Automatique » choisit entre animation et prise de vue réelle.</p></div><span class="tag" id="ollamaBadge">DÉSACTIVÉ</span></div>
       <div class="ollama-grid">
         <div class="field"><label>ACTIVER L'INTÉGRATION</label><div class="toggle-row"><span>Utiliser Ollama (facultatif)</span><label class="switch"><input id="ollamaEnabled" type="checkbox"><span></span></label></div></div>
-        <div class="field"><label>ADRESSE DE L'API OLLAMA</label><input class="ollama-input" id="ollamaUrl" value="http://host.docker.internal:11434" placeholder="http://192.168.1.10:11434"><small>Adresse joignable depuis le conteneur Uscale.</small></div>
+        <div class="field"><label>ADRESSE DE L'API OLLAMA</label><input class="ollama-input" id="ollamaUrl" value="http://host.docker.internal:11434" placeholder="http://192.168.1.10:11434"><small>Adresse joignable depuis le conteneur Upscale.</small></div>
         <div class="field"><label>MODÈLE DE VISION</label><select id="ollamaModel"><option value="">Détecter les modèles disponibles…</option></select><small>Les modèles sont chargés depuis /api/tags.</small></div>
       </div>
       <div class="ollama-actions"><span id="ollamaStatus" class="ollama-status">Intégration facultative, désactivée par défaut.</span><button class="secondary small" id="testOllama">Tester la connexion</button><button class="secondary small" id="saveOllama">Enregistrer</button></div>
@@ -134,7 +134,7 @@
       <div class="gpu-live" id="gpuLive"></div>
       <pre id="healthDetails" class="health-details hidden"></pre>
     </section>
-    <footer>USCALE <span id="footerVersion"></span> <span>•</span> Traitement local, vos fichiers restent chez vous.</footer>
+    <footer>UPSCALE <span id="footerVersion"></span> <span>•</span> Traitement local, vos fichiers restent chez vous.</footer>
   </main>
 </div>
 <div id="picker" class="modal hidden"><div class="modal-card"><div class="modal-head"><div><div class="eyebrow">EXPLORATEUR DE FICHIERS</div><h3 id="pickerTitle">Choisir un dossier</h3></div><button id="closePicker" class="icon-btn">×</button></div><div id="currentPath" class="current-path">/data</div><div id="directoryList" class="directory-list"></div><div class="modal-actions"><button id="selectFolder" class="primary">Utiliser ce dossier</button></div></div></div>

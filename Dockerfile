@@ -15,7 +15,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 COPY VERSION app.py ./
-COPY uscale ./uscale
+COPY upscale ./upscale
 COPY static ./static
 RUN mkdir -p /app/state
 EXPOSE 27000

@@ -1,37 +1,37 @@
-# Variante EXPÉRIMENTALE sans socket Docker : Video2X tourne dans le conteneur Uscale.
+# Variante EXPÉRIMENTALE sans socket Docker : Video2X tourne dans le conteneur Upscale.
 # Utilisation : docker compose -f docker-compose.local.yml up -d --build
 # (arrêter d'abord la variante standard : docker compose down). Les données et la file sont partagées
 # avec la variante standard (même volume uscale-state).
 services:
-  uscale:
+  upscale:
     build:
       context: .
       dockerfile: Dockerfile.local
-    image: uscale-local
-    container_name: uscale
+    image: upscale-local
+    container_name: upscale
     restart: unless-stopped
     ports:
-      - "${USCALE_PORT:-27000}:27000"
+      - "${UPSCALE_PORT:-${USCALE_PORT:-27000}}:27000"
     environment:
-      USCALE_PORT: "27000"
-      USCALE_DATA_ROOT: "${USCALE_DATA_ROOT:-/data}"
+      UPSCALE_PORT: "27000"
+      UPSCALE_DATA_ROOT: "${UPSCALE_DATA_ROOT:-${USCALE_DATA_ROOT:-/data}}"
       VIDEO2X_GPU: "${VIDEO2X_GPU:-}"
       VAAPI_DEVICE: "${VAAPI_DEVICE:-/dev/dri/renderD128}"
       DEFAULT_SOURCE: "${DEFAULT_SOURCE:-/data/videos}"
       DEFAULT_DESTINATION: "${DEFAULT_DESTINATION:-/data/videos_upscaled}"
-      USCALE_USER: "${USCALE_USER:-admin}"
-      USCALE_PASSWORD: "${USCALE_PASSWORD:-}"
-      USCALE_TRUSTED_HOSTS: "${USCALE_TRUSTED_HOSTS:-}"
-      USCALE_MIN_FREE_GB: "${USCALE_MIN_FREE_GB:-5}"
-      USCALE_SEGMENT_SECONDS: "${USCALE_SEGMENT_SECONDS:-180}"
-      USCALE_LOG_RETENTION_DAYS: "${USCALE_LOG_RETENTION_DAYS:-90}"
+      UPSCALE_USER: "${UPSCALE_USER:-${USCALE_USER:-admin}}"
+      UPSCALE_PASSWORD: "${UPSCALE_PASSWORD:-${USCALE_PASSWORD:-}}"
+      UPSCALE_TRUSTED_HOSTS: "${UPSCALE_TRUSTED_HOSTS:-${USCALE_TRUSTED_HOSTS:-}}"
+      UPSCALE_MIN_FREE_GB: "${UPSCALE_MIN_FREE_GB:-${USCALE_MIN_FREE_GB:-5}}"
+      UPSCALE_SEGMENT_SECONDS: "${UPSCALE_SEGMENT_SECONDS:-${USCALE_SEGMENT_SECONDS:-180}}"
+      UPSCALE_LOG_RETENTION_DAYS: "${UPSCALE_LOG_RETENTION_DAYS:-${USCALE_LOG_RETENTION_DAYS:-90}}"
       PUID: "${PUID:-}"
       PGID: "${PGID:-}"
       TZ: "${TZ:-Europe/Paris}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - ${USCALE_HOST_DATA:-/data}:${USCALE_DATA_ROOT:-/data}
+      - ${UPSCALE_HOST_DATA:-${USCALE_HOST_DATA:-/data}}:${UPSCALE_DATA_ROOT:-${USCALE_DATA_ROOT:-/data}}
       - uscale-state:/app/state
     devices:
       - /dev/dri:/dev/dri

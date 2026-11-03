@@ -10,7 +10,11 @@ from pathlib import Path
 
 
 def _env(name: str, default: str = "") -> str:
-    return os.environ.get(name, default).strip()
+    """Lit UPSCALE_X, ou l'ancien nom USCALE_X (versions précédentes) s'il est seul défini."""
+    value = os.environ.get(name)
+    if value is None and name.startswith("UPSCALE_"):
+        value = os.environ.get("USCALE_" + name[len("UPSCALE_"):])
+    return (value if value is not None else default).strip()
 
 
 def _int_or_none(raw: str) -> int | None:
@@ -24,16 +28,16 @@ try:
 except OSError:
     VERSION = "dev"
 
-STATE_DIR = Path(_env("USCALE_STATE_DIR", "/app/state"))
-# Chemin de la bibliothèque vu depuis le conteneur Uscale.
-DATA_ROOT = Path(_env("USCALE_DATA_ROOT", "/data")).resolve()
+STATE_DIR = Path(_env("UPSCALE_STATE_DIR", "/app/state"))
+# Chemin de la bibliothèque vu depuis le conteneur Upscale.
+DATA_ROOT = Path(_env("UPSCALE_DATA_ROOT", "/data")).resolve()
 # Même dossier vu depuis l'hôte (mode docker : le daemon ne voit que les chemins de l'hôte).
-HOST_DATA = _env("USCALE_HOST_DATA") or str(DATA_ROOT)
-PORT = int(_env("USCALE_PORT", "27000"))
+HOST_DATA = _env("UPSCALE_HOST_DATA") or str(DATA_ROOT)
+PORT = int(_env("UPSCALE_PORT", "27000"))
 
 # "docker" : Video2X tourne dans un conteneur frère via le socket Docker.
-# "local"  : le binaire video2x est installé dans l'image Uscale (pas de socket).
-RUNNER = _env("USCALE_RUNNER", "docker").lower()
+# "local"  : le binaire video2x est installé dans l'image Upscale (pas de socket).
+RUNNER = _env("UPSCALE_RUNNER", "docker").lower()
 VIDEO2X_IMAGE = _env("VIDEO2X_IMAGE", "ghcr.io/k4yt3x/video2x:6.4.0")
 VIDEO2X_BIN = _env("VIDEO2X_BIN", "video2x")
 # Dossier courant de Video2X en mode local (il y cherche models/...). Vide = inchangé.
@@ -46,29 +50,31 @@ VAAPI_DEVICE = _env("VAAPI_DEVICE", "/dev/dri/renderD128")
 DEFAULT_SOURCE = _env("DEFAULT_SOURCE", "/data/videos")
 DEFAULT_DESTINATION = _env("DEFAULT_DESTINATION", "/data/videos_upscaled")
 
-AUTH_USER = _env("USCALE_USER", "admin")
-AUTH_PASSWORD = os.environ.get("USCALE_PASSWORD", "")
-TRUSTED_HOSTS = {h.strip() for h in _env("USCALE_TRUSTED_HOSTS").split(",") if h.strip()}
+AUTH_USER = _env("UPSCALE_USER", "admin")
+AUTH_PASSWORD = os.environ.get("UPSCALE_PASSWORD", os.environ.get("USCALE_PASSWORD", ""))
+TRUSTED_HOSTS = {h.strip() for h in _env("UPSCALE_TRUSTED_HOSTS").split(",") if h.strip()}
 
-MIN_FREE_BYTES = int(float(_env("USCALE_MIN_FREE_GB", "5")) * 1024**3)
+MIN_FREE_BYTES = int(float(_env("UPSCALE_MIN_FREE_GB", "5")) * 1024**3)
 # Octets par pixel et par image estimés pour un intermédiaire FFV1 (sans perte).
-FFV1_BYTES_PER_PIXEL = float(_env("USCALE_FFV1_BYTES_PER_PIXEL", "0.75"))
+FFV1_BYTES_PER_PIXEL = float(_env("UPSCALE_FFV1_BYTES_PER_PIXEL", "0.75"))
 # Durée des segments traités séparément (reprise après coupure, disque borné).
-SEGMENT_SECONDS = int(_env("USCALE_SEGMENT_SECONDS", "180"))
+SEGMENT_SECONDS = int(_env("UPSCALE_SEGMENT_SECONDS", "180"))
 
 # Propriétaire des fichiers produits (utilisateur du NAS). Vide = inchangé.
 PUID = _int_or_none(_env("PUID"))
 PGID = _int_or_none(_env("PGID"))
 
-LOG_RETENTION_DAYS = int(_env("USCALE_LOG_RETENTION_DAYS", "90"))
-PREVIEW_KEEP = int(_env("USCALE_PREVIEW_KEEP", "10"))
-SYSFS_DRM = Path(_env("USCALE_SYSFS_DRM", "/sys/class/drm"))
+LOG_RETENTION_DAYS = int(_env("UPSCALE_LOG_RETENTION_DAYS", "90"))
+PREVIEW_KEEP = int(_env("UPSCALE_PREVIEW_KEEP", "10"))
+SYSFS_DRM = Path(_env("UPSCALE_SYSFS_DRM", "/sys/class/drm"))
 
-CONTAINER_LABEL = "uscale.managed=1"
+CONTAINER_LABEL = "upscale.managed=1"
+# Étiquette des conteneurs créés par les versions précédentes (nom « Uscale »).
+LEGACY_CONTAINER_LABEL = "uscale.managed=1"
 
 
 def db_path() -> Path:
-    return STATE_DIR / "uscale.sqlite3"
+    return STATE_DIR / "upscale.sqlite3"
 
 
 def log_dir() -> Path:

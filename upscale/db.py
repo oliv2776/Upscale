@@ -5,6 +5,7 @@ import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from . import config
@@ -28,8 +29,19 @@ JOB_COLUMNS = {
 }
 
 
+def migrate_legacy_files() -> None:
+    """Ancien nom de la base (versions « Uscale »)."""
+    legacy = config.STATE_DIR / "uscale.sqlite3"
+    if legacy.exists() and not config.db_path().exists():
+        for suffix in ("", "-wal", "-shm"):
+            old = Path(str(legacy) + suffix)
+            if old.exists():
+                old.rename(str(config.db_path()) + suffix)
+
+
 def init_db() -> None:
     config.STATE_DIR.mkdir(parents=True, exist_ok=True)
+    migrate_legacy_files()
     config.log_dir().mkdir(parents=True, exist_ok=True)
     config.preview_dir().mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(config.db_path(), timeout=30)

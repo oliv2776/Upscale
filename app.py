@@ -1,5 +1,5 @@
-"""Point d'entrée d'Uscale. Le code se trouve dans le paquet uscale/."""
-from uscale.web import app, main
+"""Point d'entrée d'Upscale. Le code se trouve dans le paquet upscale/."""
+from upscale.web import app, main
 
 __all__ = ["app", "main"]
 

@@ -59,7 +59,7 @@ def status(settings: dict[str, Any]) -> dict[str, Any]:
             errors.append(f"{base}: {str(exc)[:160]}")
     return {"enabled": bool(settings.get("ollama_enabled")), "connected": False,
             "url": settings.get("ollama_url", ""), "models": [],
-            "message": "Ollama non joignable depuis le conteneur Uscale", "details": errors}
+            "message": "Ollama non joignable depuis le conteneur Upscale", "details": errors}
 
 
 def extract_frames(source: Path, duration: float, folder: Path) -> list[Path]:

@@ -12,9 +12,9 @@ from pathlib import Path
 import pytest
 from conftest import calls, make_video, needs_ffmpeg
 
-from uscale import config, db, gpu, media, notify, ollama, pipeline, runner, scanner, worker
-from uscale import settings as st
-from uscale.web import app
+from upscale import config, db, gpu, media, notify, ollama, pipeline, runner, scanner, worker
+from upscale import settings as st
+from upscale.web import app
 
 # ================================================================== réglages
 
@@ -140,7 +140,7 @@ def test_video2x_command_modes(env, monkeypatch):
     monkeypatch.setattr(config, "VIDEO2X_GPU", "1")
     command, container = runner.video2x_command("abc123def456", ["-i", "x"])
     assert command[command.index("-v") + 1] == f"/srv/nas/media:{env.resolve()}"
-    assert container == "uscale-abc123def456" and config.CONTAINER_LABEL in command
+    assert container == "upscale-abc123def456" and config.CONTAINER_LABEL in command
     assert command[-2:] == ["-d", "1"]
     monkeypatch.setattr(config, "RUNNER", "local")
     command, container = runner.video2x_command("abc123def456", ["-i", "x"])
@@ -277,7 +277,7 @@ def test_maintenance(env, monkeypatch):
         (config.preview_dir() / job_id).mkdir(parents=True)
         db.set_job(job_id, updated_at=f"2026-01-0{index + 1}T00:00:00+00:00")
     result = worker.maintenance()
-    assert result == {"logs": 1, "probe_cache": 1, "previews": 2}
+    assert result == {"logs": 1, "probe_cache": 1, "previews": 2, "owners": 0}
     assert sorted(p.name for p in config.preview_dir().iterdir()) == ["ccccccccccc2"]
 
 
@@ -299,7 +299,7 @@ def test_post_requires_json_and_same_origin(env):
     assert client.post("/api/pause", data="{}", content_type="text/plain").status_code == 415
     assert client.post("/api/pause", json={}, headers={"Origin": "http://evil.example"}).status_code == 403
     assert client.post("/api/pause", json={}, headers={"Origin": "http://localhost"}).status_code == 200
-    proxied = {"Origin": "https://uscale.maison.lan", "X-Forwarded-Host": "uscale.maison.lan"}
+    proxied = {"Origin": "https://upscale.maison.lan", "X-Forwarded-Host": "upscale.maison.lan"}
     assert client.post("/api/pause", json={}, headers=proxied).status_code == 200
 
 
@@ -470,6 +470,53 @@ def test_disk_check_and_chown(env, fake_docker, monkeypatch):
         assert (output.stat().st_uid, output.stat().st_gid) == (1234, 4321)
 
 
+root_only = pytest.mark.skipif(os.geteuid() != 0, reason="chown vers un autre utilisateur : root requis")
+
+
+@needs_ffmpeg
+@root_only
+def test_output_gets_owner_of_source_by_default(env, fake_docker):
+    source = make_video(env / "videos" / "serie" / "a.mp4")
+    os.chown(source, 1500, 1600)
+    [row] = process_all(env)
+    assert row["status"] == "completed"
+    output = env / "out" / "serie" / "a.mkv"
+    assert (output.stat().st_uid, output.stat().st_gid) == (1500, 1600)
+    assert (env / "out" / "serie").stat().st_uid == 1500  # dossier créé par Upscale
+
+    os.chown(output, 0, 0)  # comme avec une version précédente
+    assert worker.fix_ownership() == 1
+    assert output.stat().st_uid == 1500
+
+
+def test_default_owner_never_picks_root(env, monkeypatch):
+    probe = env / "videos" / "x.mkv"
+    probe.write_bytes(b"x")
+    if os.geteuid() == 0:
+        assert runner.default_owner(probe, env / "videos") is None  # tout appartient à root ici
+    monkeypatch.setattr(config, "PUID", 1000)
+    assert runner.default_owner(probe, env / "videos") == (1000, -1)
+
+
+def test_legacy_names_still_work(env, monkeypatch):
+    monkeypatch.setenv("USCALE_SEGMENT_SECONDS", "42")
+    assert config._env("UPSCALE_SEGMENT_SECONDS", "180") == "42"
+    monkeypatch.setenv("UPSCALE_SEGMENT_SECONDS", "60")
+    assert config._env("UPSCALE_SEGMENT_SECONDS", "180") == "60"
+    state = config.STATE_DIR
+    config.db_path().rename(state / "uscale.sqlite3")
+    db.init_db()
+    assert config.db_path().exists() and not (state / "uscale.sqlite3").exists()
+    assert st.get_settings()["preset"] == "ultrafast"  # réglages conservés
+    # Dossier de travail d'une tâche interrompue sous l'ancien nom : repris tel quel.
+    out = env / "out"
+    insert_job("dddddddddddd")
+    db.set_job("dddddddddddd", destination=str(out / "f.mkv"))
+    (out / ".uscale-dddddddddddd" / "enc").mkdir(parents=True)
+    work = pipeline.upscale_work_dir(db.get_job("dddddddddddd"))
+    assert work.name == ".upscale-dddddddddddd" and (work / "enc").is_dir()
+
+
 def test_verify_output_reports_problems(env):
     if not os.path.exists("/usr/bin/ffprobe") and not subprocess.run(["which", "ffprobe"]).returncode == 0:
         pytest.skip("ffprobe requis")
@@ -499,7 +546,7 @@ def test_preview_generates_variants(env, fake_docker):
     assert video_stream(config.preview_dir() / job["id"] / "realesrgan-plus.mp4")["height"] == 720
     ranged = client.get(f"/api/previews/{job['id']}/original.mp4", headers={"Range": "bytes=0-99"})
     assert ranged.status_code == 206 and len(ranged.data) == 100
-    assert not any(p.name.startswith(".uscale-preview") for p in (env / "out").iterdir())
+    assert not any(p.name.startswith(".upscale-preview") for p in (env / "out").iterdir())
 
 
 def test_recover_removes_orphan_containers(env, fake_docker):
@@ -559,10 +606,10 @@ def test_scan_endpoint_runs_in_background(env):
 
 def test_ntfy_gotify_webhook(env, http_server):
     base, recorder = http_server
-    notify.send({"notify_type": "ntfy", "notify_url": f"{base}/uscale", "notify_token": "tk"},
-                "failed", "Uscale : échec", "film.mkv")
+    notify.send({"notify_type": "ntfy", "notify_url": f"{base}/upscale", "notify_token": "tk"},
+                "failed", "Upscale : échec", "film.mkv")
     ntfy = recorder.received[-1]
-    assert ntfy["path"].startswith("/uscale?") and "title=Uscale" in ntfy["path"] and "priority=high" in ntfy["path"]
+    assert ntfy["path"].startswith("/upscale?") and "title=Upscale" in ntfy["path"] and "priority=high" in ntfy["path"]
     assert ntfy["headers"]["Authorization"] == "Bearer tk" and ntfy["body"] == b"film.mkv"
     notify.send({"notify_type": "gotify", "notify_url": base, "notify_token": "gk"}, "completed", "T", "M")
     gotify = recorder.received[-1]

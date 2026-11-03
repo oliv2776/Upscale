@@ -39,12 +39,20 @@ def job_settings(job: sqlite3.Row) -> dict[str, Any]:
 
 
 def upscale_work_dir(job: sqlite3.Row) -> Path:
-    return Path(job["destination"]).parent / f".uscale-{job['id']}"
+    folder = Path(job["destination"]).parent
+    work = folder / f".upscale-{job['id']}"
+    legacy = folder / f".uscale-{job['id']}"  # tâche interrompue avec une version précédente
+    if legacy.is_dir() and not work.exists():
+        try:
+            legacy.rename(work)
+        except OSError:
+            pass
+    return work
 
 
 def preview_work_dir(job_id: str, settings: dict[str, Any]) -> Path:
     # Sous la racine de données : le conteneur Video2X doit pouvoir y lire et écrire.
-    return Path(settings["destination"]) / f".uscale-preview-{job_id}"
+    return Path(settings["destination"]) / f".upscale-preview-{job_id}"
 
 
 def remove_tree(path: Path) -> None:
@@ -118,17 +126,22 @@ def prepare_work_dir(work: Path, fingerprint: dict[str, Any]) -> None:
     marker.write_text(json.dumps(fingerprint), encoding="utf-8")
 
 
-def chown_tree(path: Path, stop: Path) -> None:
-    """Rend à l'utilisateur du NAS le fichier produit et les dossiers créés par Uscale."""
-    runner.chown(path)
+def chown_tree(path: Path, stop: Path, owner: runner.Owner | None) -> None:
+    """Rend à l'utilisateur le fichier produit et les dossiers créés par Upscale (jusqu'à la destination)."""
+    runner.chown(path, owner)
     for parent in path.parents:
         if parent == stop.parent or parent == config.DATA_ROOT or config.DATA_ROOT not in parent.parents:
             break
         try:
             if parent.stat().st_uid == 0:
-                runner.chown(parent)
+                runner.chown(parent, owner)
         except OSError:
             break
+
+
+def output_owner(source: Path, settings: dict[str, Any], destination: Path) -> runner.Owner | None:
+    root = Path(settings.get("destination", destination.parent))
+    return runner.default_owner(source, root, Path(settings.get("source", source.parent)))
 
 
 def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
@@ -228,7 +241,8 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
     if destination.exists():
         raise JobError(f"La destination a été créée pendant le traitement, elle n'est pas écrasée : {destination}")
     temp_final.replace(destination)
-    chown_tree(destination, Path(settings.get("destination", destination.parent)))
+    chown_tree(destination, Path(settings.get("destination", destination.parent)),
+               output_owner(source, settings, destination))
     remove_tree(work)
     warning = ("Vérification : " + "; ".join(problems)) if problems else None
     if warning:

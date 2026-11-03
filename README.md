@@ -1,6 +1,6 @@
-# Uscale
+# Upscale
 
-Uscale est une application auto-hébergée qui analyse une bibliothèque vidéo et lance des traitements d'upscaling IA avec Video2X / Real-ESRGAN. Elle fournit une interface web en français sur le port **27000**, une file de tâches persistante, un comparateur avant/après et des automatisations (dossier surveillé, plage horaire, notifications, Jellyfin/Plex).
+Upscale est une application auto-hébergée qui analyse une bibliothèque vidéo et lance des traitements d'upscaling IA avec Video2X / Real-ESRGAN. Elle fournit une interface web en français sur le port **27000**, une file de tâches persistante, un comparateur avant/après et des automatisations (dossier surveillé, plage horaire, notifications, Jellyfin/Plex).
 
 Le projet cible notamment les NAS sous Ubuntu équipés d'un GPU AMD compatible Vulkan, comme la Radeon RX 5500 XT.
 
@@ -28,7 +28,7 @@ Le projet cible notamment les NAS sous Ubuntu équipés d'un GPU AMD compatible 
 - File d'attente : réordonner, relancer, supprimer, filtrer, paginer ; progression et temps restant.
 - Dossier surveillé, plage horaire (ex. 22 h – 7 h), notifications ntfy / Gotify / webhook, actualisation Jellyfin / Plex, suffixe de nom de fichier.
 - Statistiques GPU en direct (charge, température, VRAM, puissance).
-- Fichiers produits attribués à ton utilisateur (PUID/PGID) plutôt qu'à root.
+- Fichiers produits attribués au propriétaire de la vidéo d'origine (ou à PUID/PGID), jamais à root par défaut.
 - Authentification par mot de passe optionnelle, protection CSRF.
 
 ## Prérequis
@@ -53,11 +53,11 @@ Le script install.sh :
 - installe les dépendances système manquantes (Docker/Compose, Git, pilotes/outils Vulkan) et active Docker au démarrage ;
 - crée /data/videos et /data/videos_upscaled, attribués à l'utilisateur qui a lancé sudo ;
 - détecte le GPU piloté par amdgpu (même si un iGPU occupe card0), ses GID et son périphérique VAAPI ;
-- génère .env (sans écraser un fichier existant) avec ton fuseau horaire et ton PUID/PGID ;
+- génère .env avec ton fuseau horaire et ton utilisateur de session (PUID/PGID) ; si .env existe déjà, il n'ajoute que les clés manquantes ;
 - télécharge l'image Video2X à l'avance (plusieurs Go) ;
-- construit et démarre Uscale sur le port **27000** (ou celui défini dans .env).
+- construit et démarre Upscale sur le port **27000** (ou celui défini dans .env).
 
-Ouvre ensuite http://IP_DU_NAS:27000 (hostname -I donne l'adresse). Pour un autre point de montage : sudo USCALE_HOST_DATA=/chemin/du/stockage bash install.sh — l'interface affiche toujours ce stockage sous /data.
+Ouvre ensuite http://IP_DU_NAS:27000 (hostname -I donne l'adresse). Pour un autre point de montage : sudo UPSCALE_HOST_DATA=/chemin/du/stockage bash install.sh — l'interface affiche toujours ce stockage sous /data.
 
 **Mise à jour :**
 
@@ -67,6 +67,8 @@ docker compose up -d --build
 ~~~
 
 L'historique, les réglages et les tâches en attente sont conservés (migration automatique de la base).
+
+> **Ancien nom « Uscale »** : le projet s'appelle désormais Upscale. Les anciennes variables USCALE_* de ton .env restent lues (les nouvelles UPSCALE_* sont prioritaires), la base et le volume de données sont repris tels quels, et les conteneurs ou dossiers de travail d'une tâche interrompue sous l'ancien nom sont récupérés. Rien à faire ; tu peux renommer les variables à ton rythme.
 
 ## Installation manuelle
 
@@ -112,7 +114,7 @@ Les variables principales sont décrites dans .env.example et dans la section **
 
 ~~~bash
 docker compose up -d --build
-docker compose logs -f --tail=200 uscale
+docker compose logs -f --tail=200 upscale
 ~~~
 
 Au premier traitement, Docker peut télécharger l'image Video2X (plusieurs Go).
@@ -148,11 +150,11 @@ Les sorties reprennent l'arborescence du dossier source en .mkv, avec le suffixe
 3. Assemblage : les segments encodés sont concaténés sans réencodage, avec l'audio, les sous-titres, les chapitres et les polices de l'original.
 4. Vérification : durée, nombre de pistes audio et de sous-titres (et images/s avec RIFE). Une anomalie est signalée par ⚠ dans la file, sans supprimer le fichier.
 
-Les fichiers de travail sont dans un dossier caché .uscale-ID à côté de la sortie. Ils sont conservés si la tâche échoue ou est interrompue (pour reprendre) et supprimés à la fin, à l'annulation ou à la suppression de la tâche. Un changement de réglages qui affecte le résultat repart de zéro.
+Les fichiers de travail sont dans un dossier caché .upscale-ID à côté de la sortie. Ils sont conservés si la tâche échoue ou est interrompue (pour reprendre) et supprimés à la fin, à l'annulation ou à la suppression de la tâche. Un changement de réglages qui affecte le résultat repart de zéro.
 
 **Pause** : la vidéo en cours s'arrête à la fin de son segment et reprendra à partir du suivant. **Arrêter** interrompt immédiatement et supprime les fichiers de travail.
 
-**Espace disque** : Uscale estime l'espace nécessaire (segments à la résolution source, un segment agrandi, la sortie) et refuse de démarrer s'il manque de la place ; pendant le traitement, la tâche s'arrête si l'espace libre descend sous USCALE_MIN_FREE_GB.
+**Espace disque** : Upscale estime l'espace nécessaire (segments à la résolution source, un segment agrandi, la sortie) et refuse de démarrer s'il manque de la place ; pendant le traitement, la tâche s'arrête si l'espace libre descend sous UPSCALE_MIN_FREE_GB.
 
 ## Automatisation
 
@@ -165,9 +167,9 @@ Les jetons ne sont jamais renvoyés au navigateur : laisse le champ vide pour co
 
 ## Ollama (facultatif)
 
-Uscale détecte une instance Ollama (version et modèles via GET /api/version et /api/tags). Avec un modèle de vision (llava, qwen2.5vl, gemma3…) choisi dans le panneau **Connexion Ollama**, le modèle IA **Automatique** extrait trois images de chaque vidéo et demande s'il s'agit d'animation (→ AnimeVideo v3) ou de prise de vue réelle (→ Plus). En cas d'échec, Plus est utilisé ; le choix est noté dans le journal.
+Upscale détecte une instance Ollama (version et modèles via GET /api/version et /api/tags). Avec un modèle de vision (llava, qwen2.5vl, gemma3…) choisi dans le panneau **Connexion Ollama**, le modèle IA **Automatique** extrait trois images de chaque vidéo et demande s'il s'agit d'animation (→ AnimeVideo v3) ou de prise de vue réelle (→ Plus). En cas d'échec, Plus est utilisé ; le choix est noté dans le journal.
 
-Par défaut, Uscale essaie http://host.docker.internal:11434 puis http://172.17.0.1:11434. Si Ollama est installé directement sur Ubuntu, il écoute souvent sur 127.0.0.1 seulement :
+Par défaut, Upscale essaie http://host.docker.internal:11434 puis http://172.17.0.1:11434. Si Ollama est installé directement sur Ubuntu, il écoute souvent sur 127.0.0.1 seulement :
 
 ~~~bash
 sudo systemctl edit ollama   # ajouter : [Service] puis Environment="OLLAMA_HOST=0.0.0.0:11434"
@@ -180,36 +182,36 @@ N'expose pas le port 11434 sur Internet.
 
 | Variable | Défaut | Rôle |
 |---|---|---|
-| USCALE_HOST_DATA | /data | Dossier des vidéos sur l'hôte (chemin absolu) |
-| USCALE_DATA_ROOT | /data | Même dossier vu dans le conteneur et l'interface |
-| USCALE_PORT | 27000 | Port publié |
+| UPSCALE_HOST_DATA | /data | Dossier des vidéos sur l'hôte (chemin absolu) |
+| UPSCALE_DATA_ROOT | /data | Même dossier vu dans le conteneur et l'interface |
+| UPSCALE_PORT | 27000 | Port publié |
 | VIDEO_GID / RENDER_GID | 44 / 109 | GID de /dev/dri/card* et /dev/dri/renderD* |
 | VIDEO2X_IMAGE | ghcr.io/k4yt3x/video2x:6.4.0 | Image Video2X (mode standard) |
 | VIDEO2X_GPU | (vide) | Index du GPU Vulkan (voir **Tester le GPU**) |
 | VAAPI_DEVICE | /dev/dri/renderD128 | Périphérique pour l'encodage matériel |
-| USCALE_USER / USCALE_PASSWORD | admin / (vide) | Authentification de l'interface |
-| USCALE_TRUSTED_HOSTS | (vide) | Noms publics autorisés derrière un reverse proxy |
-| USCALE_MIN_FREE_GB | 5 | Espace libre minimal conservé |
-| USCALE_SEGMENT_SECONDS | 180 | Durée des segments |
-| USCALE_LOG_RETENTION_DAYS | 90 | Conservation des journaux des tâches terminées |
-| PUID / PGID | (vide) | Propriétaire des fichiers produits |
+| UPSCALE_USER / UPSCALE_PASSWORD | admin / (vide) | Authentification de l'interface |
+| UPSCALE_TRUSTED_HOSTS | (vide) | Noms publics autorisés derrière un reverse proxy |
+| UPSCALE_MIN_FREE_GB | 5 | Espace libre minimal conservé |
+| UPSCALE_SEGMENT_SECONDS | 180 | Durée des segments |
+| UPSCALE_LOG_RETENTION_DAYS | 90 | Conservation des journaux des tâches terminées |
+| PUID / PGID | (vide) | Propriétaire imposé des fichiers produits (vide = propriétaire de la vidéo d'origine) |
 | TZ | Europe/Paris | Fuseau horaire (plage horaire) |
-| USCALE_PULL_POLICY / USCALE_VERSION | build / latest | Construire l'image ou utiliser celle de GHCR |
+| UPSCALE_PULL_POLICY / UPSCALE_VERSION | build / latest | Construire l'image ou utiliser celle de GHCR |
 
 ## Image publiée sur GHCR
 
 Chaque push sur main publie ghcr.io/oliv2776/upscale:latest (et un tag par version vX.Y.Z). Pour l'utiliser au lieu de construire l'image sur le NAS, mets dans .env :
 
 ~~~dotenv
-USCALE_PULL_POLICY=always
-USCALE_VERSION=latest
+UPSCALE_PULL_POLICY=always
+UPSCALE_VERSION=latest
 ~~~
 
-puis docker compose pull && docker compose up -d. Si le dépôt est privé, le paquet l'est aussi : connecte d'abord le NAS avec un jeton GitHub ayant le droit read:packages (docker login ghcr.io -u oliv2776). Pour revenir à une version précise : USCALE_VERSION=2.0.0.
+puis docker compose pull && docker compose up -d. Si le dépôt est privé, le paquet l'est aussi : connecte d'abord le NAS avec un jeton GitHub ayant le droit read:packages (docker login ghcr.io -u oliv2776). Pour revenir à une version précise : UPSCALE_VERSION=2.0.0.
 
 ## Mode sans socket Docker (expérimental)
 
-Par défaut, Uscale lance Video2X dans un conteneur frère via /var/run/docker.sock, ce qui revient à lui donner les droits administrateur du NAS. La variante docker-compose.local.yml installe l'AppImage officielle de Video2X **dans** l'image Uscale et l'exécute directement avec /dev/dri : plus de socket Docker.
+Par défaut, Upscale lance Video2X dans un conteneur frère via /var/run/docker.sock, ce qui revient à lui donner les droits administrateur du NAS. La variante docker-compose.local.yml installe l'AppImage officielle de Video2X **dans** l'image Upscale et l'exécute directement avec /dev/dri : plus de socket Docker.
 
 ~~~bash
 docker compose down
@@ -218,16 +220,26 @@ docker compose -f docker-compose.local.yml up -d --build
 
 Mêmes .env, données, réglages et file d'attente. Pour revenir : docker compose -f docker-compose.local.yml down && docker compose up -d. La CI construit cette image et y exécute un vrai traitement Video2X (sur Vulkan logiciel), mais elle n'a pas encore été validée sur une Radeon : teste-la sur une courte vidéo.
 
+## Propriétaire des fichiers produits
+
+Le conteneur tourne en root (il a besoin du socket Docker et de /dev/dri), et un service Docker n'a pas de « session » : il ne sait pas quel utilisateur l'a lancé. Sans réglage, tout ce qu'il écrit appartiendrait donc à root. Upscale choisit plutôt, dans cet ordre :
+
+1. PUID / PGID s'ils sont définis dans .env (install.sh y met l'utilisateur qui a lancé sudo) ;
+2. sinon le propriétaire de la vidéo d'origine ;
+3. sinon celui du dossier de destination, puis du dossier source.
+
+Root n'est jamais choisi par défaut. Les dossiers créés par Upscale dans la destination reçoivent le même propriétaire, et la maintenance (au démarrage puis toutes les 6 h) rend à leur propriétaire les vidéos déjà produites qui appartiendraient encore à root.
+
 ## Gestion du service
 
 ~~~bash
 docker compose ps
-docker compose logs -f --tail=200 uscale
-docker compose restart uscale
+docker compose logs -f --tail=200 upscale
+docker compose restart upscale
 docker compose down          # conserve le volume uscale-state et les vidéos
 ~~~
 
-La file, les réglages, les journaux et les aperçus sont dans le volume Docker uscale-state (/app/state). Les journaux des tâches terminées sont supprimés après USCALE_LOG_RETENTION_DAYS jours, et seuls les 10 derniers aperçus sont gardés. Pour tout effacer sans toucher aux vidéos :
+La file, les réglages, les journaux et les aperçus sont dans le volume Docker uscale-state (/app/state). Les journaux des tâches terminées sont supprimés après UPSCALE_LOG_RETENTION_DAYS jours, et seuls les 10 derniers aperçus sont gardés. Pour tout effacer sans toucher aux vidéos :
 
 ~~~bash
 docker compose down
@@ -237,8 +249,8 @@ docker volume rm upscale_uscale-state
 
 ## Dépannage
 
-- **L'interface ne répond pas** : docker compose ps, docker compose logs --tail=200 uscale, sudo ss -ltnp | grep 27000.
-- **Le conteneur ne démarre pas (/dev/dri)** : Uscale a besoin de /dev/dri (encodage VAAPI, statistiques GPU). Vérifie ls -l /dev/dri sur l'hôte.
+- **L'interface ne répond pas** : docker compose ps, docker compose logs --tail=200 upscale, sudo ss -ltnp | grep 27000.
+- **Le conteneur ne démarre pas (/dev/dri)** : Upscale a besoin de /dev/dri (encodage VAAPI, statistiques GPU). Vérifie ls -l /dev/dri sur l'hôte.
 - **Le GPU n'est pas détecté** : **Tester le GPU** lance Video2X --list-devices avec les mêmes permissions que les traitements. S'il affiche plusieurs GPU (iGPU + Radeon), indique l'index de la Radeon dans VIDEO2X_GPU. Vérifie VIDEO_GID et RENDER_GID, puis docker compose up -d --build.
 - **Une tâche échoue** : bouton **Logs** dans la file. Corrige la cause puis **Relancer** : les segments déjà encodés sont conservés.
 - **Encodage VAAPI en erreur** : vérifie VAAPI_DEVICE (le renderD* de la Radeon) ; sinon utilise un encodeur logiciel.
@@ -248,7 +260,7 @@ docker volume rm upscale_uscale-state
 
 **Le socket Docker est extrêmement privilégié** : un processus qui le contrôle peut obtenir les droits administrateur du NAS (voir le mode sans socket ci-dessus).
 
-Définis USCALE_PASSWORD (authentification HTTP Basic). Sans mot de passe, l'interface est ouverte à tout le réseau local. Les actions de l'API exigent un corps JSON et refusent les requêtes venant d'un autre site (protection CSRF) ; derrière un reverse proxy, transmets X-Forwarded-Host ou liste le nom public dans USCALE_TRUSTED_HOSTS. L'authentification Basic n'est pas chiffrée : hors du LAN, utilise un VPN (WireGuard, Tailscale) ou un reverse proxy HTTPS. Ne publie jamais le port 27000 sur Internet.
+Définis UPSCALE_PASSWORD (authentification HTTP Basic). Sans mot de passe, l'interface est ouverte à tout le réseau local. Les actions de l'API exigent un corps JSON et refusent les requêtes venant d'un autre site (protection CSRF) ; derrière un reverse proxy, transmets X-Forwarded-Host ou liste le nom public dans UPSCALE_TRUSTED_HOSTS. L'authentification Basic n'est pas chiffrée : hors du LAN, utilise un VPN (WireGuard, Tailscale) ou un reverse proxy HTTPS. Ne publie jamais le port 27000 sur Internet.
 
 L'explorateur limite les chemins à la racine configurée (/data) et ignore les liens symboliques qui en sortiraient.
 
@@ -260,7 +272,7 @@ ruff check .
 pytest -q
 ~~~
 
-Le code est dans le paquet uscale/ : config, db, settings (réglages et profils), media (ffprobe et commandes FFmpeg), runner (processus, Video2X), scanner, pipeline (segments et aperçus), worker (file, plage horaire, surveillance, maintenance), notify, gpu, ollama, web (API Flask).
+Le code est dans le paquet upscale/ : config, db, settings (réglages et profils), media (ffprobe et commandes FFmpeg), runner (processus, Video2X), scanner, pipeline (segments et aperçus), worker (file, plage horaire, surveillance, maintenance), notify, gpu, ollama, web (API Flask).
 
 Les tests utilisent FFmpeg, un faux Video2X (Docker et local, Real-ESRGAN et RIFE) et un faux serveur HTTP : ils couvrent le pipeline complet, la reprise après pause, les aperçus, les notifications, Jellyfin/Plex, Ollama et la sécurité, sans GPU. La CI construit aussi les deux images Docker et exécute un vrai traitement Video2X sur Vulkan logiciel (lavapipe).
 

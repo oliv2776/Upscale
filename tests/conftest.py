@@ -16,7 +16,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from uscale import config, db, gpu, runner, scanner, settings  # noqa: E402
+from upscale import config, db, gpu, runner, scanner, settings  # noqa: E402
 
 HAS_FFMPEG = shutil.which("ffmpeg") is not None and shutil.which("ffprobe") is not None
 needs_ffmpeg = pytest.mark.skipif(not HAS_FFMPEG, reason="ffmpeg/ffprobe requis")
@@ -40,7 +40,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(runner, "active_job_id", None)
     monkeypatch.setattr(runner, "cancel_job_id", None)
     # Les tests pilotent le worker eux-mêmes : pas de thread de fond qui volerait les tâches.
-    from uscale import worker
+    from upscale import worker
     monkeypatch.setattr(worker, "ensure_worker", lambda: None)
     scanner.scan_state.clear()
     scanner.scan_state["running"] = False

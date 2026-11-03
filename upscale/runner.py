@@ -212,7 +212,7 @@ def check(code: int, message: str) -> None:
 # ---------------------------------------------------------------- Video2X
 
 def container_name(job_id: str) -> str:
-    return f"uscale-{job_id}"
+    return f"upscale-{job_id}"
 
 
 def video2x_command(job_id: str, args: list[str]) -> tuple[list[str], str | None]:
@@ -224,7 +224,7 @@ def video2x_command(job_id: str, args: list[str]) -> tuple[list[str], str | None
     name = container_name(job_id)
     return [
         "docker", "run", "--rm", "--name", name,
-        "--label", config.CONTAINER_LABEL, "--label", f"uscale.job={job_id}",
+        "--label", config.CONTAINER_LABEL, "--label", f"upscale.job={job_id}",
         "--device", "/dev/dri:/dev/dri",
         "--group-add", config.VIDEO_GID, "--group-add", config.RENDER_GID,
         # Le daemon Docker interprète la source du montage comme un chemin de l'hôte.
@@ -269,23 +269,48 @@ def ensure_image(job_id: str) -> None:
 
 
 def cleanup_orphan_containers() -> None:
-    """Un redémarrage d'Uscale n'arrête pas les conteneurs Video2X frères : on les supprime."""
+    """Un redémarrage d'Upscale n'arrête pas les conteneurs Video2X frères : on les supprime."""
     if config.RUNNER == "local" or not shutil.which("docker"):
         return
     try:
-        listing = subprocess.run(["docker", "ps", "-aq", "--filter", f"label={config.CONTAINER_LABEL}"],
-                                 capture_output=True, text=True, timeout=30)
-        for container_id in listing.stdout.split():
-            docker_remove(container_id)
+        for label in (config.CONTAINER_LABEL, config.LEGACY_CONTAINER_LABEL):
+            listing = subprocess.run(["docker", "ps", "-aq", "--filter", f"label={label}"],
+                                     capture_output=True, text=True, timeout=30)
+            for container_id in listing.stdout.split():
+                docker_remove(container_id)
     except (OSError, subprocess.TimeoutExpired):
         pass
 
 
-def chown(path: Path) -> None:
-    """Donne le fichier à l'utilisateur du NAS (PUID/PGID) plutôt qu'à root."""
-    if config.PUID is None and config.PGID is None:
+Owner = tuple[int, int]
+
+
+def default_owner(source: Path, *folders: Path) -> Owner | None:
+    """Propriétaire des fichiers produits.
+
+    PUID/PGID s'ils sont définis ; sinon le même propriétaire que la vidéo d'origine, puis celui du
+    dossier de destination ou source. Root n'est jamais choisi par défaut : le conteneur tourne en root,
+    mais les fichiers doivent appartenir à l'utilisateur qui gère la bibliothèque.
+    """
+    if config.PUID is not None or config.PGID is not None:
+        return (config.PUID if config.PUID is not None else -1, config.PGID if config.PGID is not None else -1)
+    candidates = [source]
+    for folder in folders:
+        candidates += [folder, *[p for p in folder.parents if config.DATA_ROOT in p.parents or p == config.DATA_ROOT]]
+    for candidate in candidates:
+        try:
+            info = candidate.stat()
+        except OSError:
+            continue
+        if info.st_uid != 0:
+            return info.st_uid, info.st_gid
+    return None
+
+
+def chown(path: Path, owner: Owner | None) -> None:
+    if owner is None:
         return
     try:
-        os.chown(path, config.PUID if config.PUID is not None else -1, config.PGID if config.PGID is not None else -1)
+        os.chown(path, owner[0], owner[1])
     except OSError:
         pass

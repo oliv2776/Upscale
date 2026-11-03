@@ -34,7 +34,7 @@ def guard_request() -> Response | tuple[Response, int] | None:
                      and hmac.compare_digest(str(auth.username or ""), config.AUTH_USER)
                      and hmac.compare_digest(str(auth.password or ""), config.AUTH_PASSWORD))
         if not valid:
-            return Response("Authentification requise", 401, {"WWW-Authenticate": 'Basic realm="Uscale"'})
+            return Response("Authentification requise", 401, {"WWW-Authenticate": 'Basic realm="Upscale"'})
     if request.method not in {"GET", "HEAD", "OPTIONS"}:
         # Un JSON explicite force un preflight CORS : un site tiers ne peut pas piloter l'API.
         if not request.is_json:
@@ -104,7 +104,7 @@ def api_browse():
         dirs, files = [], []
         for child in sorted(path.iterdir(), key=lambda p: p.name.lower()):
             try:
-                if child.is_symlink() or child.name.startswith(".uscale"):
+                if child.is_symlink() or child.name.startswith((".upscale", ".uscale")):
                     continue
                 if child.is_dir():
                     settings_mod.safe_path(str(child), must_exist=True)
@@ -353,7 +353,7 @@ def api_ollama_config():
 @app.post("/api/notify/test")
 def api_notify_test():
     try:
-        notify.send(settings_mod.get_settings(), "test", "Uscale : test", "Les notifications fonctionnent.")
+        notify.send(settings_mod.get_settings(), "test", "Upscale : test", "Les notifications fonctionnent.")
         return jsonify({"ok": True})
     except Exception as exc:  # noqa: BLE001
         return error(f"Échec de l'envoi : {str(exc)[:200]}", 502)
@@ -415,4 +415,4 @@ def main() -> None:
     db.init_db()
     worker.recover_interrupted_jobs()
     worker.start_background()
-    serve(app, host="0.0.0.0", port=config.PORT, threads=8, ident="Uscale")
+    serve(app, host="0.0.0.0", port=config.PORT, threads=8, ident="Upscale")
