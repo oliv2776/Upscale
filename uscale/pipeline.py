@@ -252,15 +252,15 @@ def prepare_segments(job_id: str, source: Path, work: Path, info: dict[str, Any]
     segment_input = source
     segment_filters = filters
     if multiplier > 1:
-        if filters:
-            db.set_job(job_id, stage="Filtres (désentrelacement / débruitage)")
-            prepped = work / "prep.mkv"
-            check(runner.run_process(job_id, media.prefilter_command(source, prepped, filters, media.video_stream(info)),
-                                     parse_progress=media_progress(info["duration"]),
-                                     on_progress=progress.span(0, share * 0.2), disk_dir=disk_dir),
-                  "Le filtrage a échoué")
-            segment_input = prepped
-            segment_filters = []
+        # Toujours passer par un FFV1 intra : Video2X peut perdre des images en lisant du H.264 directement.
+        db.set_job(job_id, stage="Préparation (filtres, FFV1 sans perte)")
+        prepped = work / "prep.mkv"
+        check(runner.run_process(job_id, media.prefilter_command(source, prepped, filters, media.video_stream(info)),
+                                 parse_progress=media_progress(info["duration"]),
+                                 on_progress=progress.span(0, share * 0.2), disk_dir=disk_dir),
+              "La préparation a échoué")
+        segment_input = prepped
+        segment_filters = []
         db.set_job(job_id, stage=f"Interpolation RIFE ×{multiplier}")
         interpolated = work / "rife.mkv"
         check(runner.run_video2x(job_id, runner.interpolate_args(segment_input, interpolated, multiplier),

@@ -76,8 +76,14 @@ jobs:
             /opt/video2x/AppRun --list-devices
             /opt/video2x/AppRun -i /tmp/in.mp4 -o /tmp/up.mkv -p realesrgan -s 2 --realesrgan-model realesr-animevideov3 -c ffv1 2>&1 | tr "\r" "\n" | tail -n 25
             ffprobe -v error -show_entries stream=codec_name,width,height -of csv /tmp/up.mkv
-            /opt/video2x/AppRun -i /tmp/in.mp4 -o /tmp/rife.mkv -p rife --frame-rate-mul 2 -c ffv1 2>&1 | tr "\r" "\n" | tail -n 10
-            ffprobe -v error -show_entries stream=codec_name,avg_frame_rate,nb_frames -count_frames -of csv /tmp/rife.mkv
+            ffmpeg -v error -i /tmp/in.mp4 -c:v ffv1 -g 1 /tmp/in.mkv
+            /opt/video2x/AppRun -i /tmp/in.mkv -o /tmp/rife.mkv -p rife --frame-rate-mul 2 -c ffv1 2>&1 | tr "\r" "\n" | tail -n 8
+            frames=$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of csv=p=0 /tmp/rife.mkv)
+            echo "RIFE : $frames images (attendu : 20)"
+            /opt/video2x/AppRun -i /tmp/in.mkv -o /tmp/up2.mkv -p realesrgan -s 2 --realesrgan-model realesr-animevideov3 -c ffv1 > /dev/null 2>&1
+            up=$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of csv=p=0 /tmp/up2.mkv)
+            echo "Real-ESRGAN depuis FFV1 : $up images (attendu : 10)"
+            test "$up" = 10
           '
       - name: Full pipeline with real Video2X (local mode)
         run: |
@@ -88,22 +94,26 @@ jobs:
           docker run -d --name uscale-e2e -p 27002:27000 -v "$PWD/ci-data:/data" \
             -e USCALE_SEGMENT_SECONDS=1 -e USCALE_MIN_FREE_GB=0 uscale-local:ci
           for i in $(seq 1 30); do curl -fsS http://127.0.0.1:27002/api/ping && break; sleep 1; done
-          curl -fsS -X POST -H "Content-Type: application/json" http://127.0.0.1:27002/api/queue \
-            -d '{"source":"/data/videos","destination":"/data/out","max_input_height":480,"output_height":240,"model":"realesr-animevideov3","preset":"ultrafast"}'
-          status=""
-          for i in $(seq 1 120); do
-            sleep 5
-            curl -fsS "http://127.0.0.1:27002/api/jobs" > jobs.json
-            status=$(python3 -c "import json; j=json.load(open('jobs.json'))['jobs']; print(j[0]['status'] if j else '')")
-            python3 -c "import json; j=json.load(open('jobs.json'))['jobs']; print(j and (j[0]['stage'], j[0]['progress']))"
-            [ "$status" = completed ] || [ "$status" = failed ] && break
-          done
-          id=$(python3 -c "import json; print(json.load(open('jobs.json'))['jobs'][0]['id'])")
-          curl -fsS "http://127.0.0.1:27002/api/logs/$id" | python3 -c "import json,sys; print(json.load(sys.stdin)['log'])"
+          run_job() {
+            curl -fsS -X POST -H "Content-Type: application/json" http://127.0.0.1:27002/api/queue -d "$1"
+            for i in $(seq 1 120); do
+              sleep 5
+              curl -fsS "http://127.0.0.1:27002/api/jobs?status=$2" > jobs.json || true
+              curl -fsS "http://127.0.0.1:27002/api/jobs" > all.json
+              python3 -c "import json; j=json.load(open('all.json'))['jobs']; print(j and (j[0]['status'], j[0]['stage'], j[0]['progress']))"
+              python3 -c "import json,sys; j=json.load(open('all.json'))['jobs']; sys.exit(0 if j and j[0]['status'] in ('completed','failed') else 1)" && break
+            done
+            id=$(python3 -c "import json; print(json.load(open('all.json'))['jobs'][0]['id'])")
+            curl -fsS "http://127.0.0.1:27002/api/logs/$id" | python3 -c "import json,sys; print(json.load(sys.stdin)['log'][-6000:])"
+            python3 -c "import json,sys; j=json.load(open('all.json'))['jobs'][0]; print('ATTENTION', j['warning']) if j['warning'] else None; sys.exit(0 if j['status']=='completed' and not j['warning'] else 1)"
+          }
+          run_job '{"source":"/data/videos","destination":"/data/out","max_input_height":480,"output_height":240,"model":"realesr-animevideov3","preset":"ultrafast"}'
+          run_job '{"source":"/data/videos","destination":"/data/out2","max_input_height":480,"output_height":240,"model":"realesr-animevideov3","preset":"ultrafast","interpolate":2,"denoise":"light","codec":"hevc","output_suffix":" - IA"}'
           docker rm -f uscale-e2e
-          test "$status" = completed
-          docker run --rm -v "$PWD/ci-data:/data" --entrypoint ffprobe uscale-local:ci -v error \
-            -show_entries stream=codec_type,codec_name,width,height:format=duration -of csv /data/out/clip.mkv
+          for f in "out/clip.mkv" "out2/clip - IA.mkv"; do
+            docker run --rm -v "$PWD/ci-data:/data" --entrypoint ffprobe uscale-local:ci -v error -count_frames \
+              -show_entries stream=codec_type,codec_name,width,height,avg_frame_rate,nb_read_frames:format=duration -of csv "/data/$f"
+          done
       - name: Smoke test
         run: |
           docker run -d --name uscale-local -p 27001:27000 uscale-local:ci

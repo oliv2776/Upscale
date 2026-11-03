@@ -186,7 +186,8 @@ def prefilter_command(source: Path, output: Path, filters: list[str], stream: st
     command = [*FFMPEG_BASE, "-i", str(source), "-map", stream, "-an", "-sn", "-dn"]
     if filters:
         command += ["-vf", ",".join(filters)]
-    return command + ["-c:v", "ffv1", str(output)]
+    # FFV1 intra : Video2X lit toutes les images (sur du H.264 il peut perdre les dernières).
+    return command + ["-c:v", "ffv1", "-g", "1", str(output)]
 
 
 def segment_encode_command(ai_segment: Path, output: Path, size: tuple[int, int],
@@ -256,7 +257,7 @@ def clip_command(source: Path, output: Path, start: float, duration: float, filt
                "-map", stream, "-an", "-sn", "-dn"]
     if filters:
         command += ["-vf", ",".join(filters)]
-    return command + ["-c:v", "ffv1", str(output)]
+    return command + ["-c:v", "ffv1", "-g", "1", str(output)]
 
 
 def preview_encode_command(source: Path, output: Path, size: tuple[int, int]) -> list[str]:
