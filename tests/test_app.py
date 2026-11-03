@@ -667,6 +667,7 @@ def test_custom_model_end_to_end_and_preview(env, fake_docker, monkeypatch):
     assert row["status"] == "completed" and row["warning"] is None, job_log(row)
     ncnn_calls = [c for c in calls(fake_docker) if c[0] == "ncnn"]
     assert len(ncnn_calls) == 2 and ncnn_calls[0][ncnn_calls[0].index("-s") + 1] == "2"  # 2 segments de 1 s
+    assert "models" in ncnn_calls[0][ncnn_calls[0].index("-m") + 1]  # exigé par realesrgan-ncnn-vulkan
     assert not any(c[:2] == ["docker", "run"] for c in calls(fake_docker))  # Video2X inutile ici
     out = env / "out" / "scene.mkv"
     assert video_stream(out)["height"] == 720 and abs(media.probe_source(out)["duration"] - 2.0) < 0.3

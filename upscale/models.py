@@ -17,8 +17,9 @@ from typing import Any
 from . import config
 
 PREFIX = "perso-"
-# Nom des fichiers sur disque : realesrgan-ncnn-vulkan refuse les noms de modèle qu'il ne connaît pas
-# (« unknown model dir type ») ; ce nom est accepté, et le facteur reste celui passé en -s.
+# Nom des fichiers sur disque (le facteur réel est celui passé en -s). realesrgan-ncnn-vulkan exige par ailleurs
+# que le chemin du dossier du modèle contienne « models » (sinon « unknown model dir type ») : c'est garanti
+# par models_dir().
 NCNN_NAME = "realesrgan-x4plus-perso"
 NCNN_MAGIC = "7767517"  # première ligne de tout fichier .param ncnn
 SCALES = (2, 3, 4)
@@ -28,7 +29,7 @@ ID_RE = re.compile(r"^perso-[a-z0-9-]{1,48}$")
 
 
 def models_dir() -> Path:
-    return config.STATE_DIR / "models"
+    return config.STATE_DIR / "models"  # le nom « models » est exigé par realesrgan-ncnn-vulkan
 
 
 def is_custom(model: Any) -> bool:

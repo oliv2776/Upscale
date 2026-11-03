@@ -88,10 +88,10 @@ jobs:
             echo "== realesrgan-ncnn-vulkan (modèles personnalisés)"
             find /opt/realesrgan -maxdepth 2 | head -n 30
             models=$(dirname "$(find /opt/realesrgan -name "realesr-animevideov3-x2.param" | head -n 1)")
-            mkdir -p /tmp/perso && cp "$models/realesr-animevideov3-x2.param" /tmp/perso/realesrgan-x4plus-perso.param
-            cp "$models/realesr-animevideov3-x2.bin" /tmp/perso/realesrgan-x4plus-perso.bin
+            mkdir -p /tmp/models/perso && cp "$models/realesr-animevideov3-x2.param" /tmp/models/perso/realesrgan-x4plus-perso.param
+            cp "$models/realesr-animevideov3-x2.bin" /tmp/models/perso/realesrgan-x4plus-perso.bin
             mkdir -p /tmp/fin /tmp/fout && ffmpeg -v error -i /tmp/in.mp4 -frames:v 2 -start_number 0 /tmp/fin/%08d.png
-            /opt/realesrgan/realesrgan-ncnn-vulkan -i /tmp/fin -o /tmp/fout -m /tmp/perso -n realesrgan-x4plus-perso -s 2 -f png
+            /opt/realesrgan/realesrgan-ncnn-vulkan -i /tmp/fin -o /tmp/fout -m /tmp/models/perso -n realesrgan-x4plus-perso -s 2 -f png
             ls /tmp/fout && ffprobe -v error -show_entries stream=width,height -of csv /tmp/fout/00000000.png
           '
       - name: Full pipeline with real Video2X (local mode)
