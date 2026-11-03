@@ -7,21 +7,45 @@ on:
     branches: ["main"]
 
 jobs:
-  syntax:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - name: Install Python dependencies
-        run: pip install -r requirements.txt
-      - name: Compile Python
-        run: python -m py_compile app.py
+        run: pip install -r requirements-dev.txt
+      - name: Lint Python
+        run: ruff check .
+      - name: Tests
+        run: pytest -q
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
       - name: Check browser JavaScript
         run: node --check static/app.js
-      - name: Check installer shell syntax
-        run: bash -n install.sh
+      - name: Check installer
+        run: |
+          bash -n install.sh
+          shellcheck install.sh
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t uscale:ci .
+      - name: Smoke test
+        run: |
+          docker run -d --name uscale-ci -p 27000:27000 uscale:ci
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:27000/api/ping && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:27000/ | grep -q Uscale
+          docker exec uscale-ci docker --version
+          docker exec uscale-ci ffprobe -version | head -n 1
+          docker rm -f uscale-ci

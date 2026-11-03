@@ -36,6 +36,7 @@
         <div class="field"><label>MODÈLE IA</label><select id="model"><option value="realesrgan-plus">Real-ESRGAN Plus · Meilleur choix général</option><option value="realesr-generalv3">Real-ESRGAN General v3 · Plus léger</option><option value="realesr-animevideov3">Real-ESRGAN AnimeVideo v3 · Animation vidéo</option><option value="realesrgan-plus-anime">Real-ESRGAN Plus Anime · Animation détaillée</option></select><small>Plus = qualité générale ; General v3 = plus léger ; AnimeVideo v3 = conçu pour les vidéos animées.</small></div>
         <div class="field"><label>QUALITÉ VIDÉO (CRF)</label><div class="range-line"><input id="crf" type="range" min="12" max="30" value="16"><b id="crfValue">16</b></div><small>Plus bas = meilleure qualité, fichier plus lourd.</small></div>
         <div class="field"><label>VITESSE D'ENCODAGE</label><select id="preset"><option value="fast">Rapide</option><option value="medium">Équilibré</option><option value="slow" selected>Lent · compression plus efficace</option></select></div>
+        <div class="field"><label>DÉSENTRELACEMENT</label><select id="deinterlace"><option value="auto" selected>Automatique · sources entrelacées détectées</option><option value="on">Toujours</option><option value="off">Jamais</option></select><small>DVD/VOB souvent entrelacés : évite d'agrandir les effets de peigne.</small></div>
         <div class="field"><label>SOUS-DOSSIERS</label><div class="toggle-row"><span>Inclure tous les sous-dossiers</span><label class="switch"><input id="recursive" type="checkbox" checked><span></span></label></div></div>
       </div>
       <div class="actions"><button class="secondary" id="scanBtn">⌕ Analyser les vidéos</button><button class="primary" id="queueBtn">Lancer le traitement <span>→</span></button></div>
@@ -52,12 +53,12 @@
       <p class="ollama-help">Si Ollama tourne directement sur le NAS, son API doit être accessible depuis Docker. Sur une installation Linux native, Ollama écoute souvent uniquement sur localhost : configure OLLAMA_HOST=0.0.0.0 puis redémarre Ollama, ou indique une adresse IP/port déjà accessible. Ne publie pas cette API sur Internet.</p>
     </section>
     <section class="panel" id="queue">
-      <div class="section-head"><div><div class="eyebrow">03 / MONITORING</div><h3>File de traitement</h3><p>Suivez les tâches et consultez les journaux en cas de problème.</p></div><div class="queue-actions"><button class="secondary small" id="pauseBtn">Ⅱ Pause</button><button class="secondary small" id="resumeBtn">▶ Reprendre</button></div></div>
-      <div class="table-wrap"><table><thead><tr><th>FICHIER</th><th>RÉSOLUTION</th><th>ÉTAT</th><th>ÉTAPE</th><th></th></tr></thead><tbody id="jobsBody"><tr><td colspan="5" class="empty">Aucun traitement pour le moment.</td></tr></tbody></table></div>
+      <div class="section-head"><div><div class="eyebrow">03 / MONITORING</div><h3>File de traitement</h3><p>Suivez les tâches et consultez les journaux en cas de problème.</p></div><div class="queue-actions"><button class="secondary small" id="pauseBtn" title="La vidéo en cours se termine, les suivantes attendent">Ⅱ Pause après la vidéo en cours</button><button class="secondary small" id="resumeBtn">▶ Reprendre</button></div></div>
+      <div class="table-wrap"><table><thead><tr><th>FICHIER</th><th>RÉSOLUTION</th><th>ÉTAT</th><th>ÉTAPE / PROGRESSION</th><th></th></tr></thead><tbody id="jobsBody"><tr><td colspan="5" class="empty">Aucun traitement pour le moment.</td></tr></tbody></table></div>
     </section>
     <section class="panel health-panel">
       <div class="section-head"><div><div class="eyebrow">SYSTÈME</div><h3>État du serveur</h3></div><button class="secondary small" id="healthBtn">Tester le GPU</button></div>
-      <div class="health-grid"><div><span class="health-label">Docker</span><strong id="dockerState">Vérification…</strong></div><div><span class="health-label">GPU Vulkan</span><strong id="gpuState">Non vérifié</strong></div><div><span class="health-label">Moteur</span><strong>Video2X 6.4.0</strong></div></div>
+      <div class="health-grid"><div><span class="health-label">Docker</span><strong id="dockerState">Vérification…</strong></div><div><span class="health-label">GPU Vulkan</span><strong id="gpuState">Non vérifié</strong></div><div><span class="health-label">Image Video2X</span><strong id="imageState">—</strong></div><div><span class="health-label">Moteur</span><strong id="engineName">Video2X</strong></div></div>
       <pre id="healthDetails" class="health-details hidden"></pre>
     </section>
     <footer>USCALE <span>•</span> Traitement local, vos fichiers restent chez vous.</footer>

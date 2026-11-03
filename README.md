@@ -11,12 +11,16 @@ Le projet cible notamment les NAS sous Ubuntu équipés d'un GPU AMD compatible 
 - Interface web responsive, accessible depuis un navigateur du réseau local.
 - Analyse des dossiers et sous-dossiers à la recherche de vidéos.
 - Filtre selon la hauteur source (jusqu'à 240p, 360p, 480p ou 720p).
-- Upscaling IA avec Real-ESRGAN via Video2X (modèles généralistes et animation).
-- Résolution de sortie configurable : 480p, 720p ou 1080p.
-- Sortie MKV H.264, conservation des pistes audio et sous-titres lorsque leurs codecs le permettent.
-- File persistante SQLite : pause, reprise, annulation et journaux par tâche.
+- Upscaling IA avec Real-ESRGAN via Video2X (modèles généralistes et animation), avec le plus petit facteur suffisant (×2, ×3 ou ×4 selon le modèle).
+- Résolution de sortie configurable : 480p, 720p ou 1080p, format d'affichage respecté (DVD anamorphiques inclus).
+- Désentrelacement automatique des sources entrelacées (DVD, VOB, TS).
+- Sortie MKV H.264, conservation des pistes audio, sous-titres (mov_text converti en SRT) et polices jointes.
+- File persistante SQLite : pause, reprise, annulation à toutes les étapes, progression avec temps restant estimé et journaux par tâche.
+- Analyse en arrière-plan avec cache ffprobe : les rescans d'une grosse bibliothèque sont rapides.
+- Vérification de l'espace disque avant et pendant chaque traitement.
 - Un seul traitement à la fois pour limiter la charge GPU.
-- Les originaux ne sont jamais écrasés et l'arborescence relative est conservée.
+- Les originaux ne sont jamais écrasés, une sortie existante n'est jamais remplacée et l'arborescence relative est conservée.
+- Authentification par mot de passe optionnelle.
 
 ## Prérequis
 
@@ -44,9 +48,10 @@ Le script install.sh :
 - installe les dépendances système manquantes (Docker/Compose, Git et pilotes/outils Vulkan) ;
 - active Docker au démarrage ;
 - crée /data/videos et /data/videos_upscaled ;
-- détecte les GID des périphériques AMD /dev/dri ;
+- détecte le GPU piloté par amdgpu (même si un iGPU occupe card0) et les GID de ses périphériques /dev/dri ;
 - génère .env automatiquement sans écraser un fichier existant ;
-- construit et démarre Uscale sur le port **27000**.
+- télécharge l'image Video2X à l'avance (plusieurs Go) ;
+- construit et démarre Uscale sur le port **27000** (ou celui défini dans .env).
 
 Une fois terminé, ouvre http://IP_DU_NAS:27000 depuis ton réseau local. Le reste se configure dans l'interface : dossiers, résolution, modèle Real-ESRGAN, file d'attente et paramètres Ollama. Pour trouver l'adresse IP du NAS : hostname -I.
 
@@ -146,8 +151,17 @@ VIDEO_GID=44
 RENDER_GID=109
 
 VIDEO2X_IMAGE=ghcr.io/k4yt3x/video2x:6.4.0
+# Index du GPU Vulkan (voir « Tester le GPU »). Vide = choix automatique.
+VIDEO2X_GPU=
 DEFAULT_SOURCE=/data/videos
 DEFAULT_DESTINATION=/data/videos_upscaled
+
+# Protection de l'interface (recommandé). Vide = pas d'authentification.
+USCALE_USER=admin
+USCALE_PASSWORD=un-mot-de-passe-long
+
+# Espace libre minimal conservé sur le disque de destination (Go).
+USCALE_MIN_FREE_GB=5
 ~~~
 
 Les valeurs 44 et 109 sont des valeurs d'exemple, pas des valeurs garanties pour ton NAS. Remplace-les par les GID réels des périphériques /dev/dri/card* et /dev/dri/renderD*. En pratique, le GID de card* va dans VIDEO_GID et celui de renderD* dans RENDER_GID.
@@ -205,7 +219,7 @@ L'interface affiche l'état de connexion au serveur et les dossiers configurés.
 7. Clique sur **Lancer le traitement** pour ajouter les fichiers à la file.
 8. Consulte la file et ouvre **Logs** sur une tâche pour voir son journal.
 
-Les sorties reprennent l'arborescence relative du dossier source et utilisent l'extension .mkv. Les vidéos déjà présentes à destination sont ignorées. La base SQLite conserve l'historique des tâches et la signature des fichiers (chemin, taille et date de modification) pour éviter de remettre en file un fichier inchangé déjà traité.
+Les sorties reprennent l'arborescence relative du dossier source et utilisent l'extension .mkv. Si deux sources du même dossier portent le même nom avec des extensions différentes (film.avi et film.mp4), les sorties deviennent film.avi.mkv et film.mp4.mkv pour ne pas s'écraser. Les vidéos déjà présentes à destination sont ignorées. La base SQLite conserve l'historique des tâches et la signature des fichiers (chemin, taille et date de modification) pour éviter de remettre en file un fichier inchangé déjà traité.
 
 ## Utiliser un autre emplacement de stockage
 
@@ -225,7 +239,7 @@ sudo mkdir -p /mnt/media/videos
 sudo mkdir -p /mnt/media/videos_upscaled
 ~~~
 
-Dans l'interface, les chemins sont ceux vus **depuis le conteneur**, donc /data/videos et /data/videos_upscaled, et non /mnt/media/.... Redémarre après modification :
+Dans l'interface, les chemins sont ceux vus **depuis le conteneur**, donc /data/videos et /data/videos_upscaled, et non /mnt/media/.... Uscale transmet USCALE_HOST_DATA au daemon Docker pour que le conteneur Video2X monte bien /mnt/media. Ce chemin doit être absolu. Redémarre après modification :
 
 ~~~bash
 docker compose up -d
@@ -242,9 +256,12 @@ Le montage /data est la racine autorisée par l'explorateur web. Les chemins ext
 | Modèle IA | Plus (général), General v3 (léger), AnimeVideo v3 (animation vidéo) ou Plus Anime (animation détaillée) |
 | CRF | Qualité H.264 : 16 est un réglage de haute qualité ; plus bas augmente la qualité et la taille du fichier |
 | Preset | slow améliore l'efficacité de compression, sans changer le modèle IA ; il prend plus de temps |
+| Désentrelacement | Automatique (selon ffprobe), toujours ou jamais. Filtre bwdif appliqué avant l'IA |
 | Sous-dossiers | Active ou désactive le parcours récursif |
 
-Real-ESRGAN effectue la reconstruction IA en facteur ×4 ; FFmpeg ajuste ensuite la hauteur à la résolution finale demandée en conservant le ratio d'image avec le filtre Lanczos. Video2X écrit d'abord un intermédiaire FFV1 sans perte ; FFmpeg réalise ensuite l'unique encodage avec perte en H.264 (CRF 16 et preset slow par défaut). Cela évite de compresser deux fois les détails reconstruits par l'IA. L'intermédiaire sans perte peut nécessiter beaucoup d'espace disque pendant le traitement ; il est supprimé automatiquement à la fin. Les pistes audio et sous-titres sont copiées depuis l'original lorsque leurs codecs sont compatibles avec le conteneur de sortie.
+Real-ESRGAN effectue la reconstruction IA avec le plus petit facteur qui atteint la hauteur demandée : AnimeVideo v3 accepte ×2, ×3 et ×4 (480p → 720p se fait en ×2, soit 4 fois moins de pixels à calculer qu'en ×4) ; Plus, Plus Anime et General v3 travaillent en ×4. FFmpeg ajuste ensuite l'image à la résolution finale avec le filtre Lanczos, en pixels carrés et en respectant le format d'affichage de la source (un DVD 720×480 16:9 devient 1280×720). Video2X écrit d'abord un intermédiaire FFV1 sans perte ; FFmpeg réalise ensuite l'unique encodage avec perte en H.264 (CRF 16 et preset slow par défaut). Cela évite de compresser deux fois les détails reconstruits par l'IA. L'intermédiaire sans perte peut nécessiter beaucoup d'espace disque pendant le traitement (plusieurs centaines de Go pour un long film agrandi en ×4) ; il est supprimé automatiquement à la fin. Avant chaque tâche, Uscale estime sa taille et refuse de démarrer si le disque de destination n'a pas assez de place ; pendant le traitement, il arrête la tâche si l'espace libre descend sous USCALE_MIN_FREE_GB (5 Go par défaut). L'estimation (0,75 octet par pixel et par image) se règle avec USCALE_FFV1_BYTES_PER_PIXEL. Les pistes audio et sous-titres sont copiées depuis l'original lorsque leurs codecs sont compatibles avec le conteneur de sortie.
+
+La **pause** laisse la vidéo en cours se terminer et bloque les suivantes ; **Arrêter** interrompt immédiatement une tâche, à n'importe quelle étape (téléchargement de l'image, désentrelacement, IA ou réencodage).
 
 Le traitement est séquentiel : une seule vidéo est envoyée à Video2X à la fois. Cela limite la consommation de VRAM et évite de saturer la RX 5500 XT. L'upscaling IA peut être lent, surtout sur les vidéos longues. Le modèle Plus est le point de départ recommandé pour les vidéos réelles ; les modèles spécialisés doivent être comparés sur un extrait court, car une netteté plus forte ne signifie pas toujours un rendu plus fidèle.
 
@@ -291,7 +308,8 @@ Pour supprimer définitivement cet historique sans supprimer les vidéos :
 
 ~~~bash
 docker compose down
-docker volume rm uscale_uscale-state
+docker volume ls | grep uscale-state   # généralement upscale_uscale-state
+docker volume rm upscale_uscale-state
 ~~~
 
 ## Dépannage
@@ -325,6 +343,8 @@ ls -l /dev/dri
 vulkaninfo --summary
 ~~~
 
+Dans l'interface, **Tester le GPU** lance Video2X --list-gpus avec les mêmes permissions que les traitements et affiche les GPU Vulkan vus. Si plusieurs GPU apparaissent (iGPU + Radeon), indique l'index de la Radeon dans VIDEO2X_GPU.
+
 Vérifie ensuite VIDEO_GID et RENDER_GID dans .env, puis reconstruis et redémarre :
 
 ~~~bash
@@ -342,6 +362,8 @@ docker compose logs -f uscale
 ~~~
 
 Teste d'abord un fichier court de quelques secondes avant de soumettre une grande collection.
+
+Si Uscale redémarre pendant un traitement, le conteneur Video2X correspondant est supprimé au démarrage et la tâche est remise en file.
 
 ## Intégration Ollama (facultative)
 
@@ -384,7 +406,9 @@ Ollama est un assistant optionnel pour des fonctions d'analyse, de classificatio
 
 **Le socket Docker est extrêmement privilégié.** Un processus qui peut contrôler le socket Docker de l'hôte peut généralement obtenir des privilèges équivalents à ceux de l'administrateur du NAS.
 
-L'interface Uscale ne possède pas encore de système d'authentification intégré. Par conséquent :
+Uscale peut demander un identifiant et un mot de passe (authentification HTTP Basic) : définis USCALE_PASSWORD (et éventuellement USCALE_USER) dans .env, puis lance docker compose up -d. Sans mot de passe, l'interface est ouverte à tout le réseau local. Les actions de l'API exigent un corps JSON et refusent les requêtes venant d'un autre site (protection CSRF). Derrière un reverse proxy, transmets l'en-tête X-Forwarded-Host ou liste le nom public dans USCALE_TRUSTED_HOSTS. L'authentification HTTP Basic n'est pas chiffrée : hors du LAN, utilise un VPN ou un reverse proxy HTTPS.
+
+Dans tous les cas :
 
 - Ne publie pas le port 27000 sur Internet.
 - N'ouvre pas ce port sur ta box ou ton routeur.
@@ -393,6 +417,16 @@ L'interface Uscale ne possède pas encore de système d'authentification intégr
 - Ne donne pas accès à l'interface à des utilisateurs non fiables.
 
 L'explorateur limite les chemins à la racine configurée (/data) et refuse les liens symboliques qui permettraient de sortir de cette racine. Cette restriction ne remplace pas les précautions réseau ci-dessus.
+
+## Développement
+
+~~~bash
+pip install -r requirements-dev.txt
+ruff check .
+pytest -q
+~~~
+
+Les tests utilisent FFmpeg et un faux client Docker qui imite Video2X : ils vérifient le pipeline complet (sous-titres, désentrelacement, format d'affichage, annulation, espace disque) sans GPU.
 
 ## Documentation et projets utilisés
 
