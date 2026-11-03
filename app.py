@@ -494,8 +494,6 @@ def api_logs(job_id: str):
 @app.get("/api/ollama/status")
 def api_ollama_status():
     settings = get_settings()
-    if not settings.get("ollama_enabled"):
-        return jsonify({"enabled": False, "connected": False, "message": "Intégration désactivée"})
     candidates = []
     configured = settings.get("ollama_url", "").strip().rstrip("/")
     if configured:
