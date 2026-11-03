@@ -48,6 +48,11 @@ write_entries() {
     done
   } > "${tmp}"
   mv "${tmp}" "${OVERRIDE}"
+  # Lisible par « docker compose » lancé sans sudo, et rendu au propriétaire du dossier Upscale.
+  chmod 644 "${OVERRIDE}"
+  local owner
+  owner="$(stat -c '%u:%g' "${PROJECT_DIR}")"
+  if [[ "${owner}" != 0:* ]]; then chown "${owner}" "${OVERRIDE}" 2> /dev/null || true; fi
 }
 
 restart() {

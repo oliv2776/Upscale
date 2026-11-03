@@ -302,6 +302,7 @@ docker volume rm upscale_uscale-state
 
 ## Dépannage
 
+- **open …/.env: permission denied** : le fichier a été créé par sudo et appartient à root. Dans le dossier Upscale : sudo chown "$USER": .env (les versions récentes d'install.sh le font d'elles-mêmes).
 - **L'interface ne répond pas** : docker compose ps, docker compose logs --tail=200 upscale, sudo ss -ltnp | grep 27000.
 - **Le conteneur ne démarre pas (/dev/dri)** : Upscale a besoin de /dev/dri (encodage VAAPI, statistiques GPU). Vérifie ls -l /dev/dri sur l'hôte.
 - **Le GPU n'est pas détecté** : **Tester le GPU** lance Video2X --list-devices avec les mêmes permissions que les traitements. S'il affiche plusieurs GPU (iGPU + Radeon), indique l'index de la Radeon dans VIDEO2X_GPU. Vérifie VIDEO_GID et RENDER_GID, puis docker compose up -d --build.

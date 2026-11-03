@@ -137,6 +137,13 @@ else
   add_missing TZ "${HOST_TZ}"
   add_missing VAAPI_DEVICE "${VAAPI_DEVICE}"
 fi
+# .env doit rester lisible par l'utilisateur qui lance « docker compose » sans sudo :
+# il appartient au propriétaire du dossier Upscale (celui qui l'a cloné), en lecture réservée.
+PROJECT_OWNER="$(stat -c '%u:%g' "${PROJECT_DIR}")"
+if [[ "${PROJECT_OWNER}" != 0:* ]]; then
+  chown "${PROJECT_OWNER}" "${ENV_FILE}"
+fi
+chmod 600 "${ENV_FILE}"
 
 PORT="$(env_value UPSCALE_PORT 27000)"
 IMAGE="$(env_value VIDEO2X_IMAGE ghcr.io/k4yt3x/video2x:6.4.0)"
