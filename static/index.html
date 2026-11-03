@@ -77,7 +77,8 @@
 
     <section class="panel" id="models">
       <div class="section-head"><div><div class="eyebrow">05 / MODÈLES IA</div><h3>Modèles personnalisés</h3><p>Installe des modèles de la communauté depuis <a href="https://openmodeldb.info" target="_blank" rel="noopener">OpenModelDB</a> en collant simplement leur lien : Upscale les télécharge, les convertit pour ta carte graphique et vérifie qu'ils fonctionnent.</p></div><span class="tag" id="engineBadge">MOTEUR NCNN</span></div>
-      <div class="table-wrap"><table class="profiles"><thead><tr><th>NOM</th><th>FACTEU      <div class="install-box">
+      <div class="table-wrap"><table class="profiles"><thead><tr><th>NOM</th><th>FACTEUR</th><th>TUILES</th><th>TAILLE</th><th></th></tr></thead><tbody id="modelsBody"></tbody></table></div>
+      <div class="install-box">
         <div class="field grow"><label>LIEN DU MODÈLE</label><input class="text-input" id="installSource" placeholder="https://openmodeldb.info/models/2x-LiveActionV1-SPAN" spellcheck="false"><small>Page d'un modèle sur openmodeldb.info, ou lien direct vers un fichier .pth, .safetensors, .onnx ou .zip.</small></div>
         <div class="field"><label>TUILES (VRAM)</label><select id="installTile"><option value="0">Automatique</option><option value="512">512 px</option><option value="256">256 px</option><option value="128">128 px · peu de VRAM</option><option value="64">64 px · très peu de VRAM</option></select></div>
         <div class="field import-action"><button class="primary small" id="installModel">Installer</button></div>
@@ -95,7 +96,6 @@
         </div>
       </details>
       <p class="ollama-help" id="modelsHelp">Choisis de préférence un modèle ×2 (360p → 720p) : beaucoup plus rapide qu'un ×4. Architectures recommandées : SPAN, Compact, ESRGAN. Les très lourdes (DAT, HAT, ATD...) sont refusées ou trop lentes. La première conversion d'un .pth installe le convertisseur (environ 1 Go, une seule fois). Teste chaque modèle dans l'Aperçu avant de l'utiliser, et respecte sa licence.</p>
-rds (DAT, HAT, ATD) ne sont pas utilisables. Teste chaque modèle dans l'Aperçu avant de l'utiliser.</p>
     </section>
 
     <section class="panel" id="preview">

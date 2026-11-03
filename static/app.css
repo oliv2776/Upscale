@@ -57,3 +57,4 @@
 .model-meta{display:block;margin-top:4px;font-size:10px;color:#969baa}.model-meta a{color:var(--accent-ink)}.model-meta .ok{color:#24895d}
 @media(max-width:1000px){.install-box{grid-template-columns:1fr 1fr}.install-box .grow{grid-column:1/-1}.import-box .field.wide{grid-column:auto}}
 @media(max-width:720px){.install-box{grid-template-columns:1fr}.suggestion{flex-wrap:wrap}.suggestion button{margin-left:0}}
+.section-head p a{color:var(--accent-ink)}
