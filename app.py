@@ -8,6 +8,8 @@ import subprocess
 import threading
 import time
 import uuid
+import urllib.request
+import urllib.error
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -46,6 +48,9 @@ DEFAULT_SETTINGS = {
     "crf": 18,
     "preset": "medium",
     "include_subfolders": True,
+    "ollama_enabled": False,
+    "ollama_url": "http://host.docker.internal:11434",
+    "ollama_model": "",
 }
 
 def now() -> str:
@@ -138,6 +143,17 @@ def save_settings(payload: dict[str, Any]) -> dict[str, Any]:
         settings["preset"] = payload["preset"]
     if "include_subfolders" in payload:
         settings["include_subfolders"] = bool(payload["include_subfolders"])
+    if "ollama_enabled" in payload:
+        settings["ollama_enabled"] = bool(payload["ollama_enabled"])
+    if "ollama_url" in payload:
+        url = str(payload["ollama_url"]).strip().rstrip("/")
+        if url and not url.startswith(("http://", "https://")):
+            raise ValueError("L'adresse Ollama doit commencer par http:// ou https://")
+        if len(url) > 500:
+            raise ValueError("Adresse Ollama trop longue")
+        settings["ollama_url"] = url
+    if "ollama_model" in payload:
+        settings["ollama_model"] = str(payload["ollama_model"])[:200]
 
     source = safe_path(settings["source"], must_exist=True)
     dest = safe_path(settings["destination"], must_exist=False)
@@ -474,6 +490,67 @@ def api_logs(job_id: str):
         return jsonify({"log": path.read_text(encoding="utf-8", errors="replace")[-30000:]})
     except OSError:
         return jsonify({"log": ""})
+
+@app.get("/api/ollama/status")
+def api_ollama_status():
+    settings = get_settings()
+    if not settings.get("ollama_enabled"):
+        return jsonify({"enabled": False, "connected": False, "message": "Intégration désactivée"})
+    candidates = []
+    configured = settings.get("ollama_url", "").strip().rstrip("/")
+    if configured:
+        candidates.append(configured)
+    for candidate in ("http://host.docker.internal:11434", "http://172.17.0.1:11434"):
+        if candidate not in candidates:
+            candidates.append(candidate)
+    errors = []
+    for base in candidates:
+        try:
+            req = urllib.request.Request(base + "/api/tags", headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=3) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            models = [item.get("name") for item in payload.get("models", []) if item.get("name")]
+            version = "inconnue"
+            try:
+                with urllib.request.urlopen(base + "/api/version", timeout=2) as response:
+                    version = json.loads(response.read().decode("utf-8")).get("version", "inconnue")
+            except Exception:
+                pass
+            return jsonify({"enabled": True, "connected": True, "url": base,
+                            "version": version, "models": models,
+                            "selected_model": settings.get("ollama_model", "")})
+        except Exception as exc:
+            errors.append(f"{base}: {str(exc)[:160]}")
+    return jsonify({"enabled": True, "connected": False,
+                    "url": configured, "models": [],
+                    "message": "Ollama non joignable depuis le conteneur Uscale",
+                    "details": errors})
+
+@app.post("/api/ollama/test")
+def api_ollama_test():
+    payload = request.get_json(force=True) or {}
+    base = str(payload.get("url", get_settings().get("ollama_url", ""))).strip().rstrip("/")
+    if not base.startswith(("http://", "https://")):
+        return jsonify({"ok": False, "error": "Adresse HTTP(S) invalide"}), 400
+    try:
+        req = urllib.request.Request(base + "/api/tags", headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        with urllib.request.urlopen(base + "/api/version", timeout=3) as response:
+            version = json.loads(response.read().decode("utf-8")).get("version", "inconnue")
+        models = [item.get("name") for item in data.get("models", []) if item.get("name")]
+        return jsonify({"ok": True, "url": base, "version": version, "models": models})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)[:400]}), 502
+
+@app.post("/api/ollama/config")
+def api_ollama_config():
+    try:
+        settings = save_settings(request.get_json(force=True) or {})
+        return jsonify({"ok": True, "enabled": settings["ollama_enabled"],
+                        "url": settings["ollama_url"], "model": settings["ollama_model"]})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
 
 @app.get("/api/health")
 def api_health():
