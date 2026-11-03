@@ -174,7 +174,8 @@ $("logModal").addEventListener("click",e=>{if(e.target.id==="logModal")$("logMod
 $("scanBtn").addEventListener("click",scan); $("scanHero").addEventListener("click",scan);
 $("queueBtn").addEventListener("click",queue);
 $("refreshBtn").addEventListener("click",()=>{refreshJobs();checkHealth();});
-$("healthBtn").addEventListener("click",checkHealth);\n$("testOllama").addEventListener("click",testOllama); $("saveOllama").addEventListener("click",saveOllama);
+$("healthBtn").addEventListener("click",checkHealth);
+$("testOllama").addEventListener("click",testOllama); $("saveOllama").addEventListener("click",saveOllama);
 $("pauseBtn").addEventListener("click",async()=>{await api("/api/pause",{method:"POST",body:"{}"});toast("File mise en pause");refreshJobs();});
 $("resumeBtn").addEventListener("click",async()=>{await api("/api/resume",{method:"POST",body:"{}"});toast("Traitement repris");refreshJobs();});
 $("crf").addEventListener("input",()=>$("crfValue").textContent=$("crf").value);
