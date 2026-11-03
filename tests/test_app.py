@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import io
 import json
 import os
 import subprocess
@@ -12,7 +13,7 @@ from pathlib import Path
 import pytest
 from conftest import calls, make_video, needs_ffmpeg
 
-from upscale import config, db, gpu, media, notify, ollama, pipeline, runner, scanner, worker
+from upscale import config, db, gpu, media, models, notify, ollama, pipeline, runner, scanner, worker
 from upscale import settings as st
 from upscale.web import app
 
@@ -623,6 +624,67 @@ def test_peau_normale_end_to_end(env, fake_docker, monkeypatch):
     assert jobs[0]["render"] == "peau-normale"
 
 
+def import_model(client, label="Peau réaliste 2x", scale=2, param=b"7767517\n3 3\nInput data 0 1 data\n"):
+    return client.post("/api/models", headers={"X-Upscale-Upload": "1"}, content_type="multipart/form-data", data={
+        "label": label, "scale": str(scale), "tile": "0",
+        "param": (io.BytesIO(param), "modele.param"), "bin": (io.BytesIO(b"\0" * 4096), "modele.bin")})
+
+
+def test_custom_model_management(env):
+    client = app.test_client()
+    bad = import_model(client, param=b"pas un modele")
+    assert bad.status_code == 400 and "ncnn" in bad.get_json()["error"]
+    no_header = client.post("/api/models", content_type="multipart/form-data", data={"label": "x"})
+    assert no_header.status_code == 415  # import impossible depuis un site tiers (CSRF)
+    created = import_model(client)
+    assert created.status_code == 201
+    model_id = created.get_json()["model"]["id"]
+    assert model_id == "perso-peau-realiste-2x"
+    listed = client.get("/api/config").get_json()["models"]
+    assert listed[model_id]["custom"] is True and listed[model_id]["scales"] == [2]
+    assert media.choose_scale(model_id, 240, 720) == 2  # facteur unique du modèle
+    assert import_model(client).get_json()["model"]["id"] == "perso-peau-realiste-2x-2"
+    assert client.post(f"/api/models/{model_id}/update", json={"label": "Peau v2", "scale": 4, "tile": 256}).status_code == 200
+    assert models.get(model_id)["label"] == "Peau v2" and models.get(model_id)["tile"] == 256
+    assert client.post(f"/api/models/{model_id}/update", json={"label": "x", "scale": 5}).status_code == 400
+    st.save_settings({"model": model_id})
+    assert client.post(f"/api/models/{model_id}/delete", json={}).status_code == 400  # encore utilisé
+    st.save_settings({"model": "realesrgan-plus"})
+    assert client.post(f"/api/models/{model_id}/delete", json={}).status_code == 200
+    with pytest.raises(ValueError):
+        st.save_settings({"model": model_id})
+    assert client.post("/api/models/..%2f..%2fetc/delete", json={}).status_code in {400, 404}
+
+
+@needs_ffmpeg
+def test_custom_model_end_to_end_and_preview(env, fake_docker, monkeypatch):
+    monkeypatch.setattr(config, "CUSTOM_SEGMENT_SECONDS", 1)
+    client = app.test_client()
+    model_id = import_model(client).get_json()["model"]["id"]
+    st.save_settings({"model": model_id, "render": "custom", "ai_strength": 80, "grain": "medium"})
+    source = make_video(env / "videos" / "scene.mp4", seconds=2)
+    [row] = process_all(env)
+    assert row["status"] == "completed" and row["warning"] is None, job_log(row)
+    ncnn_calls = [c for c in calls(fake_docker) if c[0] == "ncnn"]
+    assert len(ncnn_calls) == 2 and ncnn_calls[0][ncnn_calls[0].index("-s") + 1] == "2"  # 2 segments de 1 s
+    assert not any(c[:2] == ["docker", "run"] for c in calls(fake_docker))  # Video2X inutile ici
+    out = env / "out" / "scene.mkv"
+    assert video_stream(out)["height"] == 720 and abs(media.probe_source(out)["duration"] - 2.0) < 0.3
+
+    response = client.post("/api/preview", json={"source": str(source), "duration": 2, "models": ["realesrgan-plus"],
+                                                 "peau_normale": False})
+    assert response.status_code == 202
+    job = worker.claim_next_job()
+    pipeline.run_job(job)
+    manifest = client.get("/api/previews").get_json()["previews"][0]["manifest"]
+    assert [v["id"] for v in manifest["variants"]] == ["original", "config", "realesrgan-plus"]
+    label = manifest["variants"][1]["label"]
+    assert "Peau réaliste 2x (personnalisé)" in label and "Personnalisé (80 % IA, grain medium)" in label
+    assert "HEVC CRF 16" in label
+    log = (config.log_dir() / f"{job['id']}.log").read_text()
+    assert "blend=all_expr='A*0.80+B*0.20'" in log and "libx265" in log  # rendu et encodeur appliqués
+
+
 def test_hevc_default_and_migration(env):
     assert st.DEFAULT_SETTINGS["codec"] == "hevc"
     payload = {k: v for k, v in st.get_settings().items() if k != "settings_version"}
@@ -720,8 +782,9 @@ def test_preview_generates_variants(env, fake_docker):
     previews = client.get("/api/previews").get_json()["previews"]
     manifest = previews[0]["manifest"]
     assert manifest["complete"] and [v["id"] for v in manifest["variants"]] == [
-        "original", "realesrgan-plus", "realesrgan-plus-peau-normale",
+        "original", "config", "realesrgan-plus", "realesrgan-plus-peau-normale",
         "realesr-animevideov3", "realesr-animevideov3-peau-normale"]
+    assert manifest["variants"][1]["label"].startswith("Votre configuration · Real-ESRGAN Plus")
     assert video_stream(config.preview_dir() / job["id"] / "realesrgan-plus-peau-normale.mp4")["height"] == 720
     assert video_stream(config.preview_dir() / job["id"] / "realesrgan-plus.mp4")["height"] == 720
     ranged = client.get(f"/api/previews/{job['id']}/original.mp4", headers={"Range": "bytes=0-99"})

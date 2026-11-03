@@ -9,7 +9,7 @@ Le projet cible notamment les NAS sous Ubuntu équipés d'un GPU AMD compatible 
 ## Fonctionnalités
 
 **Qualité**
-- Real-ESRGAN via Video2X (Plus, Plus Anime, AnimeVideo v3), avec le plus petit facteur suffisant (×2, ×3 ou ×4 selon le modèle).
+- Real-ESRGAN via Video2X (Plus, Plus Anime, AnimeVideo v3) et **modèles personnalisés** importés depuis l'interface (OpenModelDB…), avec le plus petit facteur suffisant (×2, ×3 ou ×4 selon le modèle).
 - Modèle **Automatique** : un modèle de vision Ollama regarde trois images de la vidéo et choisit entre animation et prise de vue réelle.
 - Désentrelacement automatique (bwdif), débruitage optionnel avant l'IA (hqdn3d ou nlmeans), doublement des images par seconde (RIFE, expérimental).
 - Rendu **Peau normale** : mélange IA / original et grain léger contre l'effet « peau cireuse ».
@@ -190,6 +190,22 @@ Real-ESRGAN Plus reconstruit bien les détails des vidéos filmées, mais il a t
 | Personnalisé | Part de l'IA de 30 à 100 % et grain (aucun, léger, moyen) au choix |
 
 Le mélange se fait image par image pendant l'encodage, sans calcul IA supplémentaire. Le rendu se choisit globalement ou par dossier (colonne **Rendu** des profils) ; l'**Aperçu** ajoute pour chaque modèle une variante « · Peau normale » à comparer avec le curseur. Le grain augmente un peu la taille des fichiers.
+
+### Modèles personnalisés
+
+En plus des trois modèles de Video2X, Upscale accepte des modèles de la communauté, gérés entièrement depuis l'interface (panneau **Modèles IA**) : import, nom, facteur, taille des tuiles, suppression. Un modèle importé apparaît partout (modèle général, profils par dossier, Aperçu).
+
+- **Où les trouver** : [OpenModelDB](https://openmodeldb.info), catégories *Realistic*, *Faces*, *Compression Removal*, *Video Frame*. Pour des vidéos filmées dégradées, cherche les modèles « real web photo », « compression », « faces ».
+- **Format** : ncnn (.param + .bin). La plupart des modèles sont publiés en PyTorch (.pth) : convertis-les sur ton PC avec [chaiNNer](https://chainner.app) (nœud *Convert to NCNN*), puis importe les deux fichiers.
+- **Architectures** : ESRGAN et Compact (les plus courantes pour la vidéo, rapides sur une RX 5500 XT). Les architectures lourdes (DAT, HAT, ATD, RGT) ne sont pas utilisables.
+- **Facteur** : celui pour lequel le modèle a été entraîné (indiqué dans son nom, « 2x… », « 4x… »). Un facteur erroné donne une erreur claire dans le journal.
+- **Tuiles** : en cas de mémoire vidéo insuffisante, choisis 256 ou 128 px (un peu plus lent).
+
+Video2X n'acceptant que ses propres modèles, les modèles personnalisés passent par le moteur realesrgan-ncnn-vulkan (Vulkan, compatible AMD), installé dans l'image. Il travaille image par image : les segments sont alors plus courts (30 s, UPSCALE_CUSTOM_SEGMENT_SECONDS) pour limiter l'espace disque, et le traitement est un peu plus lent qu'avec Video2X. Les fichiers des modèles sont conservés dans le volume uscale-state.
+
+### Aperçu fidèle : « Votre configuration »
+
+Chaque aperçu commence par la variante **Votre configuration** : l'extrait est traité exactement comme le serait le fichier final (modèle du profil du dossier ou réglage général, débruitage, désentrelacement, rendu, encodeur et CRF), puis converti pour le navigateur. Les modèles cochés sont ajoutés pour comparaison, en IA pure et, si la case est cochée, en « Peau normale ».
 
 ### HEVC par défaut
 

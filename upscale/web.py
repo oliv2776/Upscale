@@ -7,16 +7,19 @@ import logging
 import re
 import shutil
 import subprocess
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
 from flask import Flask, Response, jsonify, request, send_from_directory
 
-from . import config, db, gpu, media, notify, ollama, runner, scanner, worker
+from . import config, db, gpu, media, models, notify, ollama, runner, scanner, worker
 from . import settings as settings_mod
 
 app = Flask(__name__, static_folder=str(config.STATIC_DIR), static_url_path="/static")
 app.json.sort_keys = False  # garder l'ordre des modèles
+app.config["MAX_CONTENT_LENGTH"] = 800 * 1024**2  # import de modèles personnalisés
+UPLOAD_PATHS = {"/api/models"}
 PREVIEW_FILE_RE = re.compile(r"[a-z0-9-]+\.(mp4|json)")
 
 
@@ -36,8 +39,10 @@ def guard_request() -> Response | tuple[Response, int] | None:
         if not valid:
             return Response("Authentification requise", 401, {"WWW-Authenticate": 'Basic realm="Upscale"'})
     if request.method not in {"GET", "HEAD", "OPTIONS"}:
-        # Un JSON explicite force un preflight CORS : un site tiers ne peut pas piloter l'API.
-        if not request.is_json:
+        # Un JSON explicite (ou l'en-tête d'import) force un preflight CORS : un site tiers ne peut pas
+        # piloter l'API.
+        upload = request.path in UPLOAD_PATHS and request.headers.get("X-Upscale-Upload") == "1"
+        if not request.is_json and not upload:
             return error("Content-Type application/json requis", 415)
         origin = request.headers.get("Origin")
         if origin:
@@ -80,7 +85,7 @@ def api_config():
         "data_root": str(config.DATA_ROOT), "disks": disk_list(), "image": config.VIDEO2X_IMAGE,
         "runner": config.RUNNER,
         "version": config.VERSION, "segment_seconds": config.SEGMENT_SECONDS,
-        "models": {k: {"label": settings_mod.MODEL_LABELS[k], "scales": list(v)} for k, v in settings_mod.MODEL_SCALES.items()},
+        "models": settings_mod.available_models(),
     })
 
 
@@ -311,7 +316,8 @@ def api_preview():
         duration = float(payload.get("duration", 10))
         if not 2 <= duration <= 60:
             return error("Durée d'aperçu entre 2 et 60 s")
-        models = [m for m in payload.get("models", []) if m in settings_mod.MODEL_SCALES]
+        available = settings_mod.available_models()
+        models = [m for m in payload.get("models", []) if m in available]
         if not models:
             return error("Choisis au moins un modèle")
         job_id = worker.create_preview(source, start, duration, models, bool(payload.get("peau_normale", True)))
@@ -345,6 +351,54 @@ def api_preview_file(job_id: str, name: str):
 
 
 # ---------------------------------------------------------------- Ollama
+
+@app.get("/api/models")
+def api_models():
+    return jsonify({"models": settings_mod.available_models(), "engine": config.NCNN_BIN,
+                    "engine_present": Path(config.NCNN_BIN).exists()})
+
+
+@app.post("/api/models")
+def api_model_import():
+    param, binary = request.files.get("param"), request.files.get("bin")
+    if not param or not binary:
+        return error("Envoie les deux fichiers du modèle : .param et .bin")
+    if not param.filename.lower().endswith(".param") or not binary.filename.lower().endswith(".bin"):
+        return error("Fichiers attendus : un .param et un .bin (format ncnn)")
+    try:
+        meta = models.create(request.form.get("label") or Path(param.filename).stem, request.form.get("scale", 4),
+                             request.form.get("tile", 0), param.stream, binary.stream)
+        return jsonify({"ok": True, "model": meta}), 201
+    except ValueError as exc:
+        return error(str(exc))
+
+
+@app.post("/api/models/<model_id>/update")
+def api_model_update(model_id: str):
+    try:
+        payload = json_body()
+        return jsonify({"ok": True, "model": models.update(model_id, payload.get("label"), payload.get("scale"),
+                                                           payload.get("tile", 0))})
+    except LookupError as exc:
+        return error(str(exc), 404)
+    except ValueError as exc:
+        return error(str(exc))
+
+
+@app.post("/api/models/<model_id>/delete")
+def api_model_delete(model_id: str):
+    in_use = [k for k, v in (("réglages généraux", settings_mod.get_settings().get("model")),) if v == model_id]
+    in_use += [p["path"] for p in settings_mod.get_settings().get("profiles", []) if p.get("model") == model_id]
+    if in_use:
+        return error("Modèle encore utilisé par : " + ", ".join(in_use) + ". Choisis un autre modèle d'abord.")
+    try:
+        models.delete(model_id)
+        return jsonify({"ok": True})
+    except LookupError as exc:
+        return error(str(exc), 404)
+    except ValueError as exc:
+        return error(str(exc))
+
 
 @app.get("/api/ollama/status")
 def api_ollama_status():

@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from . import config, db
+from . import config, db, models
 
 MODEL_SCALES: dict[str, tuple[int, ...]] = {
     "realesrgan-plus": (4,),
@@ -204,9 +204,35 @@ def _url(value: Any, key: str) -> str:
 
 def validate_model(value: Any) -> str:
     value = normalize_model(value)
-    if value != AUTO_MODEL and value not in MODEL_SCALES:
-        raise ValueError("Modèle non pris en charge")
-    return value
+    if value == AUTO_MODEL or value in MODEL_SCALES or (models.is_custom(value) and models.get(value)):
+        return value
+    raise ValueError("Modèle non pris en charge (ou modèle personnalisé supprimé)")
+
+
+def model_scales(model: str) -> tuple[int, ...]:
+    """Facteurs disponibles : ceux de Video2X, ou le facteur unique d'un modèle personnalisé."""
+    if models.is_custom(model):
+        meta = models.get(model)
+        return (int(meta["scale"]),) if meta else (4,)
+    return MODEL_SCALES.get(model, (4,))
+
+
+def model_label(model: str) -> str:
+    if models.is_custom(model):
+        meta = models.get(model)
+        return f"{meta['label']} (personnalisé)" if meta else f"{model} (supprimé)"
+    return MODEL_LABELS.get(model, model)
+
+
+def available_models() -> dict[str, dict[str, Any]]:
+    """Modèles proposés dans l'interface : intégrés puis personnalisés."""
+    result: dict[str, dict[str, Any]] = {
+        key: {"label": MODEL_LABELS[key], "scales": list(scales), "custom": False}
+        for key, scales in MODEL_SCALES.items()}
+    for meta in models.list_models():
+        result[meta["id"]] = {"label": meta["label"], "scales": [meta["scale"]], "custom": True,
+                              "tile": meta["tile"], "param_size": meta["param_size"], "bin_size": meta["bin_size"]}
+    return result
 
 
 def validate_profile(raw: Any) -> dict[str, Any]:

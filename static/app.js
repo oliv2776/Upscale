@@ -35,11 +35,17 @@ const codecLabels = { h264: "H.264", hevc: "HEVC 10 bits", av1: "AV1 10 bits", h
 
 // ------------------------------------------------------------------ réglages
 function fillModelSelects() {
-  const options = Object.entries(state.models).map(([id, m]) =>
-    '<option value="' + id + '">' + escapeHtml(m.label) + " · ×" + m.scales.join("/×") + "</option>").join("");
-  $("model").innerHTML = options + '<option value="auto">Automatique · Ollama (vision) choisit</option>';
+  const current = $("model").value;
+  const option = ([id, m]) => '<option value="' + escapeHtml(id) + '">' + escapeHtml(m.label) + (m.custom ? " · personnalisé" : "") + " · ×" + m.scales.join("/×") + "</option>";
+  const entries = Object.entries(state.models);
+  const builtin = entries.filter(([, m]) => !m.custom).map(option).join("");
+  const custom = entries.filter(([, m]) => m.custom).map(option).join("");
+  $("model").innerHTML = '<optgroup label="Video2X">' + builtin + "</optgroup>" +
+    (custom ? '<optgroup label="Modèles personnalisés">' + custom + "</optgroup>" : "") +
+    '<option value="auto">Automatique · Ollama (vision) choisit</option>';
+  if (current && [...$("model").options].some(o => o.value === current)) $("model").value = current;
   $("previewModels").innerHTML = Object.entries(state.models).map(([id, m]) =>
-    '<label class="check"><input type="checkbox" value="' + id + '"' + (["realesrgan-plus", "realesr-animevideov3"].includes(id) ? " checked" : "") + "> " + escapeHtml(m.label) + "</label>").join("");
+    '<label class="check"><input type="checkbox" value="' + escapeHtml(id) + '"' + (["realesrgan-plus", "realesr-animevideov3"].includes(id) ? " checked" : "") + "> " + escapeHtml(m.label) + (m.custom ? " · perso" : "") + "</label>").join("");
 }
 function settingsPayload() {
   return {
@@ -111,6 +117,50 @@ function updateReplaceUi() {
   $("destination").disabled = on; document.querySelector('[data-picker="destination"]').disabled = on;
   $("destination").closest(".field").classList.toggle("disabled", on);
   $("trashDays").disabled = !on;
+}
+
+// ------------------------------------------------------------------ modèles personnalisés
+const sizeMo = bytes => (bytes / 1048576).toFixed(bytes > 10485760 ? 0 : 1) + " Mo";
+function renderModels() {
+  const custom = Object.entries(state.models).filter(([, m]) => m.custom);
+  const scaleOpts = v => [2, 3, 4].map(s => '<option value="' + s + '"' + (s === v ? " selected" : "") + ">×" + s + "</option>").join("");
+  const tileOpts = v => [[0, "Automatique"], [512, "512 px"], [256, "256 px"], [128, "128 px"], [64, "64 px"]]
+    .map(([t, l]) => '<option value="' + t + '"' + (t === v ? " selected" : "") + ">" + l + "</option>").join("");
+  $("modelsBody").innerHTML = custom.length ? custom.map(([id, m]) =>
+    '<tr data-model-row="' + escapeHtml(id) + '"><td><input class="m-label" value="' + escapeHtml(m.label) + '" maxlength="60"></td>' +
+    '<td><select class="m-scale">' + scaleOpts(m.scales[0]) + "</select></td>" +
+    '<td><select class="m-tile">' + tileOpts(m.tile || 0) + "</select></td>" +
+    "<td><small>" + sizeMo(m.param_size + m.bin_size) + "</small></td>" +
+    '<td><div class="row-actions"><button class="text-btn" data-model-save="' + escapeHtml(id) + '">Enregistrer</button>' +
+    '<button class="text-btn danger" data-model-delete="' + escapeHtml(id) + '">Supprimer</button></div></td></tr>').join("") :
+    '<tr><td colspan="5" class="empty">Aucun modèle personnalisé : seuls les modèles de Video2X sont utilisés.</td></tr>';
+}
+async function reloadModels() {
+  const data = await api("/api/models");
+  state.models = data.models; fillModelSelects(); renderModels();
+  $("engineBadge").textContent = data.engine_present ? "MOTEUR NCNN PRÊT" : "MOTEUR NCNN ABSENT";
+  const profiles = readProfiles(); renderProfiles(profiles);
+}
+function importModel() {
+  const param = $("modelParam").files[0], bin = $("modelBin").files[0];
+  if (!param || !bin) { toast("Choisis le fichier .param et le fichier .bin"); return; }
+  const form = new FormData();
+  form.append("label", $("modelLabel").value.trim() || param.name.replace(/\.param$/i, ""));
+  form.append("scale", $("modelScale").value); form.append("tile", $("modelTile").value);
+  form.append("param", param); form.append("bin", bin);
+  const xhr = new XMLHttpRequest();
+  xhr.open("POST", "/api/models"); xhr.setRequestHeader("X-Upscale-Upload", "1");
+  xhr.upload.onprogress = e => { if (e.lengthComputable) $("importModel").textContent = "Envoi… " + Math.round(e.loaded / e.total * 100) + " %"; };
+  xhr.onloadend = async () => {
+    $("importModel").textContent = "Importer le modèle"; $("importModel").disabled = false;
+    let data = {}; try { data = JSON.parse(xhr.responseText); } catch (e) { /* réponse vide */ }
+    if (xhr.status === 201) {
+      toast("Modèle « " + data.model.label + " » importé : teste-le dans l'Aperçu");
+      ["modelLabel", "modelParam", "modelBin"].forEach(id => { $(id).value = ""; });
+      await reloadModels();
+    } else toast(data.error || "Import impossible (HTTP " + xhr.status + ")");
+  };
+  $("importModel").disabled = true; xhr.send(form);
 }
 
 // ------------------------------------------------------------------ profils
@@ -480,6 +530,16 @@ document.addEventListener("click", async event => {
   const id = attr => t.closest("[" + attr + "]")?.getAttribute(attr);
   if (id("data-log")) return loadLogs(id("data-log")).catch(e => toast(e.message));
   if (id("data-cancel")) return jobAction(() => post("/api/jobs/" + id("data-cancel") + "/cancel"), "Annulation demandée");
+  if (id("data-model-save")) {
+    const row = t.closest("tr");
+    try { await post("/api/models/" + id("data-model-save") + "/update", { label: row.querySelector(".m-label").value, scale: Number(row.querySelector(".m-scale").value), tile: Number(row.querySelector(".m-tile").value) }); toast("Modèle mis à jour"); await reloadModels(); } catch (e) { toast(e.message); }
+    return;
+  }
+  if (id("data-model-delete")) {
+    if (!confirm("Supprimer ce modèle personnalisé ?")) return;
+    try { await post("/api/models/" + id("data-model-delete") + "/delete"); toast("Modèle supprimé"); await reloadModels(); } catch (e) { toast(e.message); }
+    return;
+  }
   if (id("data-restore")) { if (!confirm("Supprimer la version Upscale et remettre le fichier d'origine à sa place ?")) return; return jobAction(() => post("/api/jobs/" + id("data-restore") + "/restore"), "Original restauré"); }
   if (id("data-retry")) return jobAction(() => post("/api/jobs/" + id("data-retry") + "/retry"), "Tâche remise en file (reprise au dernier segment)");
   if (id("data-delete")) { if (!confirm("Supprimer cette tâche, son journal et ses fichiers temporaires ?")) return; return jobAction(() => post("/api/jobs/" + id("data-delete") + "/delete"), "Tâche supprimée"); }
@@ -489,6 +549,7 @@ document.addEventListener("click", async event => {
   const filter = t.closest("[data-filter]");
   if (filter) { state.filter = filter.dataset.filter; state.page = 1; document.querySelectorAll("#filters button").forEach(b => b.classList.toggle("active", b === filter)); refreshJobs(); }
 });
+$("importModel").addEventListener("click", importModel);
 $("addSource").addEventListener("click", () => { $("sourcesList").insertAdjacentHTML("beforeend", sourceRow("")); openPicker([...document.querySelectorAll("#sourcesList .s-path")].pop(), "dir"); });
 $("addProfile").addEventListener("click", () => { $("profilesBody").querySelector(".empty-row")?.remove(); $("profilesBody").insertAdjacentHTML("beforeend", profileRow({ path: firstSource() })); });
 $("selectFolder").addEventListener("click", () => { if (picker.input) picker.input.value = picker.path; $("picker").classList.add("hidden"); });
@@ -534,6 +595,7 @@ $("videoLeft").addEventListener("seeked", () => { $("videoRight").currentTime = 
   setupNav();
   try {
     const data = await api("/api/config"); state.models = data.models; fillModelSelects(); applySettings(data.settings); renderDisks(data.disks || []);
+    reloadModels().catch(e => console.warn(e));
   } catch (e) { toast(e.message); }
   try { const s = await api("/api/scan"); if (s.running) { showScanResult(describeScan(s)); pollScan(); } } catch (e) { /* rien */ }
   refreshJobs(); checkHealth(); checkOllama(); refreshPreviews(); refreshGpuStats();

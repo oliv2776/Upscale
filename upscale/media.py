@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from . import config
-from .settings import MODEL_SCALES, render_params
+from .settings import model_scales, render_params
 
 VIDEO_EXTENSIONS = {
     ".mkv", ".mp4", ".m4v", ".avi", ".mov", ".wmv", ".flv",
@@ -104,7 +104,7 @@ def probe_source(path: Path) -> dict[str, Any]:
 
 def choose_scale(model: str, source_height: int, output_height: int) -> int:
     """Plus petit facteur du modèle qui atteint la hauteur demandée."""
-    scales = MODEL_SCALES.get(model, (4,))
+    scales = model_scales(model)
     needed = output_height / max(source_height, 1)
     for scale in scales:
         if scale >= needed:

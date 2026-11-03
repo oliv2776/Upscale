@@ -45,3 +45,7 @@
 .disks-hint{display:flex;flex-wrap:wrap;align-items:center;gap:7px 9px;margin-top:14px;padding:11px 14px;background:#faf5f6;border-radius:10px;font-size:11px;color:#6b7183}.disks-hint b{color:#343a4b}
 .disk-chip{background:#fff;border:1px solid #ece5e7;border-radius:20px;padding:4px 10px;color:#4a5060}.disks-hint small{flex-basis:100%;color:#969baa}.disks-hint code{font:10px monospace;background:#fff;border:1px solid #ece5e7;border-radius:5px;padding:2px 5px;color:var(--accent-ink)}
 #selectFolder:disabled{opacity:.45;cursor:default}
+.import-box{display:grid;grid-template-columns:1.3fr .8fr .9fr 1fr 1fr auto;gap:14px;align-items:end;margin-top:16px;padding:16px;border:1px dashed #ece5e7;border-radius:12px}
+.import-box input[type=file]{font:11px Manrope;color:#6b7183;max-width:100%}.import-action button{height:41px;white-space:nowrap}
+.m-label{width:100%;height:36px;border:1px solid #e6e8ef;border-radius:8px;background:#fbfbfd;padding:0 10px;font:12px Manrope;color:#3f4555}
+@media(max-width:1000px){.import-box{grid-template-columns:1fr 1fr}}@media(max-width:720px){.import-box{grid-template-columns:1fr}}

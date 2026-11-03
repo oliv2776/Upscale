@@ -45,6 +45,10 @@ VIDEO2X_BIN = _env("VIDEO2X_BIN", "video2x")
 # Dossier courant de Video2X en mode local (il y cherche models/...). Vide = inchangé.
 VIDEO2X_WORKDIR = _env("VIDEO2X_WORKDIR")
 VIDEO2X_GPU = _env("VIDEO2X_GPU")
+# Moteur des modèles personnalisés (realesrgan-ncnn-vulkan, installé dans l'image).
+NCNN_BIN = _env("UPSCALE_NCNN_BIN", "/opt/realesrgan/realesrgan-ncnn-vulkan")
+# Segments plus courts avec ce moteur : il travaille sur des images PNG, plus volumineuses.
+CUSTOM_SEGMENT_SECONDS = int(_env("UPSCALE_CUSTOM_SEGMENT_SECONDS", "30"))
 VIDEO_GID = _env("VIDEO_GID", "44")
 RENDER_GID = _env("RENDER_GID", "109")
 VAAPI_DEVICE = _env("VAAPI_DEVICE", "/dev/dri/renderD128")

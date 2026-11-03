@@ -11,6 +11,7 @@
     <nav>
       <a class="active" href="#dashboard">◫ <span>Vue d'ensemble</span></a>
       <a href="#settings">⚙ <span>Configuration</span></a>
+      <a href="#models">◇ <span>Modèles IA</span></a>
       <a href="#preview">◐ <span>Aperçu</span></a>
       <a href="#automation">⏱ <span>Automatisation</span></a>
       <a href="#queue">▤ <span>File de traitement</span></a>
@@ -74,8 +75,22 @@
       <div id="scanResult" class="scan-result hidden"></div>
     </section>
 
+    <section class="panel" id="models">
+      <div class="section-head"><div><div class="eyebrow">05 / MODÈLES IA</div><h3>Modèles personnalisés</h3><p>Ajoute des modèles de la communauté (par ex. sur OpenModelDB : catégories Realistic, Faces, Compression Removal) en plus des trois modèles de Video2X.</p></div><span class="tag" id="engineBadge">MOTEUR NCNN</span></div>
+      <div class="table-wrap"><table class="profiles"><thead><tr><th>NOM</th><th>FACTEUR</th><th>TUILES</th><th>TAILLE</th><th></th></tr></thead><tbody id="modelsBody"></tbody></table></div>
+      <div class="import-box">
+        <div class="field"><label>NOM</label><input class="text-input" id="modelLabel" maxlength="60" placeholder="ex. 4x Peau réaliste"></div>
+        <div class="field"><label>FACTEUR D'ENTRAÎNEMENT</label><select id="modelScale"><option value="2">×2</option><option value="3">×3</option><option value="4" selected>×4</option></select></div>
+        <div class="field"><label>TUILES (VRAM)</label><select id="modelTile"><option value="0">Automatique</option><option value="512">512 px</option><option value="256">256 px</option><option value="128">128 px · peu de VRAM</option><option value="64">64 px · très peu de VRAM</option></select></div>
+        <div class="field"><label>FICHIER .PARAM</label><input type="file" id="modelParam" accept=".param"></div>
+        <div class="field"><label>FICHIER .BIN</label><input type="file" id="modelBin" accept=".bin"></div>
+        <div class="field import-action"><button class="primary small" id="importModel">Importer le modèle</button></div>
+      </div>
+      <p class="ollama-help" id="modelsHelp">Format ncnn (.param + .bin), architectures ESRGAN ou Compact. Un modèle .pth se convertit sur PC avec chaiNNer (« Convert to NCNN »). Le facteur doit être celui du modèle (indiqué dans son nom, ex. « 4x… »). Les modèles très lourds (DAT, HAT, ATD) ne sont pas utilisables. Teste chaque modèle dans l'Aperçu avant de l'utiliser.</p>
+    </section>
+
     <section class="panel" id="preview">
-      <div class="section-head"><div><div class="eyebrow">05 / COMPARAISON</div><h3>Aperçu avant/après</h3><p>Traite un court extrait avec plusieurs modèles, puis comparez-les avec le curseur. Les aperçus passent avant la file.</p></div></div>
+      <div class="section-head"><div><div class="eyebrow">06 / COMPARAISON</div><h3>Aperçu avant/après</h3><p>Traite un court extrait avec votre configuration (exactement comme le fichier final) et les modèles cochés, puis comparez avec le curseur. Les aperçus passent avant la file.</p></div></div>
       <div class="preview-form">
         <div class="field grow"><label>VIDÉO</label><div class="path-control"><input id="previewSource" placeholder="Choisir un fichier…"><button data-picker="previewSource" data-mode="file" class="browse">Parcourir</button></div></div>
         <div class="field"><label>DÉBUT (MM:SS)</label><input class="text-input" id="previewStart" value="01:00"></div>
@@ -101,7 +116,7 @@
     </section>
 
     <section class="panel" id="automation">
-      <div class="section-head"><div><div class="eyebrow">06 / AUTOMATISATION</div><h3>Planification et intégrations</h3><p>Surveillance du dossier source, horaires de traitement, notifications et serveur multimédia.</p></div></div>
+      <div class="section-head"><div><div class="eyebrow">07 / AUTOMATISATION</div><h3>Planification et intégrations</h3><p>Surveillance du dossier source, horaires de traitement, notifications et serveur multimédia.</p></div></div>
       <div class="settings-grid">
         <div class="field"><label>DOSSIER SURVEILLÉ</label><div class="toggle-row"><span>Ajouter les nouvelles vidéos automatiquement</span><label class="switch"><input id="watchEnabled" type="checkbox"><span></span></label></div></div>
         <div class="field"><label>INTERVALLE D'ANALYSE</label><select id="watchInterval"><option value="5">5 min</option><option value="15">15 min</option><option value="30" selected>30 min</option><option value="60">1 h</option><option value="360">6 h</option><option value="1440">24 h</option></select><small>Les fichiers modifiés depuis moins de 2 min sont ignorés (copie en cours).</small></div>
@@ -130,7 +145,7 @@
     </section>
 
     <section class="panel" id="queue">
-      <div class="section-head"><div><div class="eyebrow">07 / MONITORING</div><h3>File de traitement</h3><p id="queueInfo">Suivez les tâches et consultez les journaux en cas de problème.</p></div><div class="queue-actions"><button class="secondary small" id="pauseBtn" title="La vidéo en cours s'arrête à la fin de son segment">Ⅱ Pause</button><button class="secondary small" id="resumeBtn">▶ Reprendre</button><button class="secondary small" id="clearBtn">Vider les terminées</button></div></div>
+      <div class="section-head"><div><div class="eyebrow">08 / MONITORING</div><h3>File de traitement</h3><p id="queueInfo">Suivez les tâches et consultez les journaux en cas de problème.</p></div><div class="queue-actions"><button class="secondary small" id="pauseBtn" title="La vidéo en cours s'arrête à la fin de son segment">Ⅱ Pause</button><button class="secondary small" id="resumeBtn">▶ Reprendre</button><button class="secondary small" id="clearBtn">Vider les terminées</button></div></div>
       <div class="filters" id="filters"><button data-filter="" class="active">Toutes</button><button data-filter="queued">En attente</button><button data-filter="running">En cours</button><button data-filter="completed">Terminées</button><button data-filter="failed">Erreurs</button><button data-filter="cancelled">Annulées</button></div>
       <div class="table-wrap"><table><thead><tr><th>FICHIER</th><th>RÉGLAGES</th><th>ÉTAT</th><th>ÉTAPE / PROGRESSION</th><th></th></tr></thead><tbody id="jobsBody"><tr><td colspan="5" class="empty">Aucun traitement pour le moment.</td></tr></tbody></table></div>
       <div class="pager"><button class="secondary small" id="prevPage">← Précédent</button><span id="pageInfo"></span><button class="secondary small" id="nextPage">Suivant →</button></div>

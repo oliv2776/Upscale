@@ -49,6 +49,7 @@ jobs:
           curl -fsS http://127.0.0.1:27000/api/config | grep -q '"version"'
           docker exec upscale-ci docker --version
           docker exec upscale-ci ffmpeg -hide_banner -encoders | grep -E "libx265|libsvtav1|hevc_vaapi"
+          docker exec upscale-ci sh -c '/opt/realesrgan/realesrgan-ncnn-vulkan -h 2>&1 | head -n 5' | grep -i usage
           docker rm -f upscale-ci
 
   docker-local:
@@ -84,6 +85,14 @@ jobs:
             up=$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of csv=p=0 /tmp/up2.mkv)
             echo "Real-ESRGAN depuis FFV1 : $up images (attendu : 10)"
             test "$up" = 10
+            echo "== realesrgan-ncnn-vulkan (modèles personnalisés)"
+            find /opt/realesrgan -maxdepth 2 | head -n 30
+            models=$(dirname "$(find /opt/realesrgan -name "realesr-animevideov3-x2.param" | head -n 1)")
+            mkdir -p /tmp/perso && cp "$models/realesr-animevideov3-x2.param" /tmp/perso/realesrgan-x4plus-perso.param
+            cp "$models/realesr-animevideov3-x2.bin" /tmp/perso/realesrgan-x4plus-perso.bin
+            mkdir -p /tmp/fin /tmp/fout && ffmpeg -v error -i /tmp/in.mp4 -frames:v 2 -start_number 0 /tmp/fin/%08d.png
+            /opt/realesrgan/realesrgan-ncnn-vulkan -i /tmp/fin -o /tmp/fout -m /tmp/perso -n realesrgan-x4plus-perso -s 2 -f png
+            ls /tmp/fout && ffprobe -v error -show_entries stream=width,height -of csv /tmp/fout/00000000.png
           '
       - name: Full pipeline with real Video2X (local mode)
         run: |
@@ -109,8 +118,15 @@ jobs:
           }
           run_job '{"source":"/data/videos","destination":"/data/out","max_input_height":480,"output_height":240,"model":"realesr-animevideov3","preset":"ultrafast"}'
           run_job '{"source":"/data/videos","destination":"/data/out2","max_input_height":480,"output_height":240,"model":"realesr-animevideov3","preset":"ultrafast","interpolate":2,"denoise":"light","codec":"hevc","output_suffix":" - IA","render":"peau-normale"}'
+          # Modèle personnalisé importé par l'API (comme depuis l'interface) : moteur realesrgan-ncnn-vulkan.
+          models=$(docker exec upscale-e2e sh -c 'dirname "$(find /opt/realesrgan -name realesr-animevideov3-x2.param | head -n 1)"')
+          docker cp "upscale-e2e:$models/realesr-animevideov3-x2.param" perso.param
+          docker cp "upscale-e2e:$models/realesr-animevideov3-x2.bin" perso.bin
+          curl -fsS -X POST -H "X-Upscale-Upload: 1" -F label="Test perso" -F scale=2 -F tile=0 \
+            -F param=@perso.param -F bin=@perso.bin http://127.0.0.1:27002/api/models
+          run_job '{"source":"/data/videos","destination":"/data/out3","max_input_height":480,"output_height":240,"model":"perso-test-perso","preset":"ultrafast","render":"custom","ai_strength":80,"grain":"medium"}'
           docker rm -f upscale-e2e
-          for f in "out/clip.mkv" "out2/clip - IA.mkv"; do
+          for f in "out/clip.mkv" "out2/clip - IA.mkv" "out3/clip.mkv"; do
             docker run --rm -v "$PWD/ci-data:/data" --entrypoint ffprobe upscale-local:ci -v error -count_frames \
               -show_entries stream=codec_type,codec_name,width,height,avg_frame_rate,nb_read_frames:format=duration -of csv "/data/$f"
           done

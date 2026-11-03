@@ -7,7 +7,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ffmpeg ca-certificates curl tini tzdata libvulkan1 mesa-vulkan-drivers mesa-va-drivers libgpg-error0 \
+      libgomp1 unzip \
     && rm -rf /var/lib/apt/lists/*
+# Moteur des modèles personnalisés : realesrgan-ncnn-vulkan (Vulkan, compatible AMD).
+ARG NCNN_URL=https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-ubuntu.zip
+RUN curl -fsSL -o /tmp/ncnn.zip "${NCNN_URL}" \
+    && mkdir -p /opt/realesrgan && unzip -q /tmp/ncnn.zip -d /opt/realesrgan && rm /tmp/ncnn.zip \
+    && bin="$(find /opt/realesrgan -type f -name realesrgan-ncnn-vulkan | head -n 1)" && test -n "${bin}" \
+    && chmod +x "${bin}" \
+    && { [ "${bin}" = /opt/realesrgan/realesrgan-ncnn-vulkan ] || ln -sf "${bin}" /opt/realesrgan/realesrgan-ncnn-vulkan; }
 
 # L'AppImage est extraite à la construction : pas besoin de FUSE à l'exécution.
 RUN curl -fsSL -o /tmp/video2x.AppImage \

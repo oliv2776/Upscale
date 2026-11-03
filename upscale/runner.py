@@ -13,7 +13,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from . import config, db
+from . import config, db, models
 
 
 class JobCancelled(Exception):
@@ -153,7 +153,8 @@ def stop_process(proc: subprocess.Popen, container: str | None) -> None:
 def run_process(job_id: str, command: list[str], *, container: str | None = None,
                 parse_progress: Callable[[str], float | None] | None = None,
                 on_progress: Callable[[float], None] | None = None,
-                disk_dir: Path | None = None, cwd: str | None = None) -> int:
+                disk_dir: Path | None = None, cwd: str | None = None,
+                poll: Callable[[], None] | None = None) -> int:
     """Lance une commande, journalise sa sortie, suit la progression, l'annulation et l'espace disque."""
     db.log_line(job_id, "$ " + " ".join(command))
     last_log = [0.0]
@@ -192,6 +193,8 @@ def run_process(job_id: str, command: list[str], *, container: str | None = None
         while proc.poll() is None:
             if is_cancel_requested(job_id):
                 raise JobCancelled("Traitement annulé")
+            if poll:
+                poll()
             if disk_dir and time.monotonic() - last_disk_check >= 15:
                 last_disk_check = time.monotonic()
                 free = shutil.disk_usage(disk_dir).free
@@ -356,3 +359,56 @@ def chown(path: Path, owner: Owner | None) -> None:
         os.chown(path, owner[0], owner[1])
     except OSError:
         pass
+
+
+# ---------------------------------------------------------------- modèles personnalisés (realesrgan-ncnn-vulkan)
+
+def ncnn_command(frames_in: Path, frames_out: Path, meta: dict[str, Any]) -> list[str]:
+    command = [config.NCNN_BIN, "-i", str(frames_in), "-o", str(frames_out), "-m", meta["folder"],
+               "-n", models.NCNN_NAME, "-s", str(meta["scale"]), "-f", "png"]
+    if int(meta.get("tile") or 0):
+        command += ["-t", str(meta["tile"])]
+    if config.VIDEO2X_GPU:
+        command += ["-g", config.VIDEO2X_GPU]
+    return command
+
+
+def run_custom_upscale(job_id: str, source: Path, output: Path, meta: dict[str, Any], fps: float, *,
+                       on_progress: Callable[[float], None] | None = None, disk_dir: Path | None = None) -> None:
+    """Agrandit une vidéo courte (un segment) avec un modèle personnalisé, image par image.
+
+    Images extraites en PNG -> realesrgan-ncnn-vulkan -> nouveau segment FFV1 intra sans perte.
+    """
+    work = output.with_name(output.stem + ".frames")
+    shutil.rmtree(work, ignore_errors=True)
+    frames_in, frames_out = work / "in", work / "out"
+    frames_in.mkdir(parents=True)
+    frames_out.mkdir()
+    try:
+        check(run_process(job_id, ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-v", "error", "-i", str(source),
+                                   "-map", "0:v:0", "-start_number", "0", "-pix_fmt", "rgb24",
+                                   "-compression_level", "1", str(frames_in / "%08d.png")], disk_dir=disk_dir),
+              "Extraction des images impossible")
+        total = sum(1 for _ in frames_in.iterdir())
+        if not total:
+            raise JobError("Aucune image extraite du segment")
+        last = [0.0]
+
+        def poll() -> None:
+            if on_progress and time.monotonic() - last[0] >= 2:
+                last[0] = time.monotonic()
+                on_progress(min(sum(1 for _ in frames_out.iterdir()) / total, 1.0))
+
+        check(run_process(job_id, ncnn_command(frames_in, frames_out, meta), disk_dir=disk_dir, poll=poll),
+              f"Le modèle personnalisé « {meta['label']} » a échoué")
+        done = sum(1 for _ in frames_out.iterdir())
+        if done != total:
+            raise JobError(f"Le modèle personnalisé n'a produit que {done} image(s) sur {total} "
+                           "(modèle incompatible avec le moteur, ou facteur d'échelle incorrect ?)")
+        shutil.rmtree(frames_in, ignore_errors=True)
+        check(run_process(job_id, ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-v", "error",
+                                   "-framerate", f"{fps:.6f}", "-start_number", "0", "-i", str(frames_out / "%08d.png"),
+                                   "-c:v", "ffv1", "-g", "1", "-pix_fmt", "yuv420p", str(output)], disk_dir=disk_dir),
+              "Reconstitution de la vidéo impossible")
+    finally:
+        shutil.rmtree(work, ignore_errors=True)

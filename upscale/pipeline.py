@@ -19,7 +19,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from . import config, db, media, notify, ollama, runner
+from . import config, db, media, models, notify, ollama, runner
 from . import settings as settings_mod
 from .runner import JobCancelled, JobDeferred, JobError, Progress, check, human_size
 
@@ -166,20 +166,27 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
     scale = media.choose_scale(model, info["height"], output_height)
     multiplier = int(settings.get("interpolate", 1))
     filters = media.prefilters(settings, info)
+    custom = models.is_custom(model)
+    if custom and not models.get(model):
+        raise JobError(f"Le modèle personnalisé {model} a été supprimé : choisis un autre modèle puis « Relancer »")
+    # Le moteur des modèles personnalisés travaille en images PNG : segments plus courts.
+    segment_seconds = min(config.SEGMENT_SECONDS, config.CUSTOM_SEGMENT_SECONDS) if custom else config.SEGMENT_SECONDS
     fingerprint = {
         "source": str(source), "size": job["source_size"], "mtime": job["source_mtime_ns"],
         "model": model, "scale": scale, "filters": filters, "interpolate": multiplier, "output": size,
         "codec": settings.get("codec"), "crf": settings.get("crf"), "preset": settings.get("preset"),
         "render": settings_mod.render_params(settings),
-        "segment_seconds": config.SEGMENT_SECONDS,
+        "segment_seconds": segment_seconds,
     }
     prepare_work_dir(work, fingerprint)
     segmented = (work / "segments.json").exists()
     progress = Progress(job_id, start=float(job["progress"] or 0) if segmented else 0.0)
 
     frames = info["frames"] * multiplier
-    segment_frames = min(frames, int(config.SEGMENT_SECONDS * info["fps"] * multiplier) + 1)
+    segment_frames = min(frames, int(segment_seconds * info["fps"] * multiplier) + 1)
     needed = media.estimate_ffv1_bytes(info["width"] * scale, info["height"] * scale, segment_frames)
+    if custom:  # images PNG du segment (entrée + sortie agrandie), environ 1,5 octet par pixel
+        needed += int(segment_frames * info["width"] * info["height"] * 1.5 * (1 + scale * scale))
     needed += int(info["duration"] * ENCODED_BYTES_PER_SECOND)
     if not segmented:
         needed += media.estimate_ffv1_bytes(info["width"], info["height"], frames)
@@ -194,11 +201,13 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
                         f"filtres [{', '.join(filters) or 'aucun'}], interpolation ×{multiplier}, "
                         f"encodeur {settings.get('codec')}, rendu {render_label(settings)}, "
                         f"espace estimé {human_size(needed)}")
-    runner.ensure_image(job_id)
+    if not custom or multiplier > 1:  # Video2X sert aussi à l'interpolation RIFE
+        runner.ensure_image(job_id)
 
     prep_share = 0.15 if multiplier > 1 else 0.05
     if not segmented:
-        prepare_segments(job_id, source, work, info, filters, multiplier, progress, prep_share, disk_dir)
+        prepare_segments(job_id, source, work, info, filters, multiplier, progress, prep_share, disk_dir,
+                         segment_seconds)
     segments = json.loads((work / "segments.json").read_text(encoding="utf-8"))["segments"]
     total = len(segments)
     db.set_job(job_id, segments_total=total)
@@ -216,12 +225,8 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
         db.set_job(job_id, stage=f"Upscaling IA ×{scale} · segment {index + 1}/{total}", segments_done=index)
         segment = work / "src" / name
         ai = work / f"ai_{name}"
-        ai.unlink(missing_ok=True)
-        check(runner.run_video2x(job_id, runner.upscale_args(segment, ai, model, scale),
-                                 on_progress=progress.span(base, width * 0.85), disk_dir=disk_dir),
-              f"Video2X a échoué sur le segment {index + 1}")
-        if not ai.exists() or ai.stat().st_size == 0:
-            raise JobError(f"Video2X n'a pas produit le segment {index + 1}")
+        upscale_video(job_id, model, segment, ai, scale, info["fps"] * multiplier,
+                      on_progress=progress.span(base, width * 0.85), disk_dir=disk_dir)
         temp = work / "enc" / f"tmp_{name}"
         check(runner.run_process(job_id, media.segment_encode_command(ai, temp, size, settings, original=segment),
                                  disk_dir=disk_dir),
@@ -325,7 +330,8 @@ def media_progress(duration: float) -> Callable[[str], float | None]:
 
 
 def prepare_segments(job_id: str, source: Path, work: Path, info: dict[str, Any], filters: list[str],
-                     multiplier: int, progress: Progress, share: float, disk_dir: Path) -> None:
+                     multiplier: int, progress: Progress, share: float, disk_dir: Path,
+                     segment_seconds: int) -> None:
     for old in (work / "src").glob("*"):
         old.unlink(missing_ok=True)
     segment_input = source
@@ -352,7 +358,7 @@ def prepare_segments(job_id: str, source: Path, work: Path, info: dict[str, Any]
     # Après interpolation, l'entrée ne contient plus qu'un flux vidéo.
     stream = media.video_stream(info) if segment_input == source else "0:v:0"
     check(runner.run_process(job_id, media.segment_command(segment_input, work / "src" / "seg_%05d.mkv",
-                                                           segment_filters, config.SEGMENT_SECONDS, stream),
+                                                           segment_filters, segment_seconds, stream),
                              parse_progress=media_progress(info["duration"]),
                              on_progress=progress.span(cut_start, cut_width), disk_dir=disk_dir),
           "La découpe en segments a échoué")
@@ -366,7 +372,35 @@ def prepare_segments(job_id: str, source: Path, work: Path, info: dict[str, Any]
 
 # ---------------------------------------------------------------- aperçus
 
+def upscale_video(job_id: str, model: str, source: Path, output: Path, scale: int, fps: float, *,
+                  on_progress: Callable[[float], None] | None = None, disk_dir: Path | None = None) -> None:
+    """Agrandit une vidéo sans perte avec le bon moteur : Video2X (modèles intégrés) ou ncnn (personnalisés)."""
+    output.unlink(missing_ok=True)
+    if models.is_custom(model):
+        meta = models.get(model)
+        if not meta:
+            raise JobError(f"Le modèle personnalisé {model} a été supprimé")
+        runner.run_custom_upscale(job_id, source, output, meta, fps, on_progress=on_progress, disk_dir=disk_dir)
+    else:
+        check(runner.run_video2x(job_id, runner.upscale_args(source, output, model, scale),
+                                 on_progress=on_progress, disk_dir=disk_dir),
+              f"Video2X a échoué ({model})")
+    if not output.exists() or output.stat().st_size == 0:
+        raise JobError(f"Aucune image agrandie produite ({model})")
+
+
+def preview_model(settings: dict[str, Any], source: Path, info: dict[str, Any]) -> str:
+    model = settings.get("model", settings_mod.LIVE_ACTION_MODEL)
+    if model == settings_mod.AUTO_MODEL:
+        model, _ = ollama.classify({**settings_mod.get_settings(), **{k: v for k, v in settings.items()
+                                                                     if k.startswith("ollama_")}},
+                                   source, info["duration"])
+    return model
+
+
 def run_preview(job: sqlite3.Row, settings: dict[str, Any]) -> None:
+    """Aperçu d'un extrait : original agrandi, « Votre configuration » (exactement comme le fichier final),
+    puis chaque modèle coché, en IA pure et en « Peau normale »."""
     job_id = job["id"]
     params = settings.get("preview", {})
     source = Path(job["source"])
@@ -382,46 +416,62 @@ def run_preview(job: sqlite3.Row, settings: dict[str, Any]) -> None:
         start = max(0.0, min(float(params.get("start", 0)), max(0.0, info["duration"] - duration)))
         size = media.output_size(info, int(settings["output_height"]))
         filters = media.prefilters(settings, info)
-        models = [m for m in params.get("models", []) if m in settings_mod.MODEL_SCALES] or [settings_mod.LIVE_ACTION_MODEL]
+        available = settings_mod.available_models()
+        checked = [m for m in params.get("models", []) if m in available]
+        own_model = preview_model(settings, source, info)
+        to_run = list(dict.fromkeys([own_model, *checked]))
         manifest: dict[str, Any] = {
             "id": job_id, "source": str(source), "name": source.name, "start": start, "duration": duration,
             "width": size[0], "height": size[1], "filters": filters, "variants": [], "complete": False,
             "created_at": db.now(),
         }
-        runner.ensure_image(job_id)
+        if any(not models.is_custom(m) for m in to_run):
+            runner.ensure_image(job_id)
         db.set_job(job_id, stage="Extraction de l'extrait")
         clip = work / "clip.mkv"
         check(runner.run_process(job_id, media.clip_command(source, clip, start, duration, filters,
                                                             media.video_stream(info))),
               "Extraction de l'extrait impossible")
-        steps = len(models) + 1
+        steps = len(to_run) + 1
         check(runner.run_process(job_id, media.preview_encode_command(clip, out_dir / "original.mp4", size)),
               "Encodage de la référence impossible")
         manifest["variants"].append({"id": "original", "label": "Original agrandi (Lanczos, sans IA)",
                                      "file": "original.mp4"})
         write_manifest(out_dir, manifest)
         progress.update(1 / steps, force=True)
-        for index, model in enumerate(models, start=1):
-            scale = media.choose_scale(model, info["height"], size[1])
-            db.set_job(job_id, stage=f"Aperçu {settings_mod.MODEL_LABELS.get(model, model)} ×{scale} ({index}/{len(models)})")
-            ai = work / f"{model}.mkv"
-            check(runner.run_video2x(job_id, runner.upscale_args(clip, ai, model, scale),
-                                     on_progress=progress.span(index / steps, 0.9 / steps)),
-                  f"Video2X a échoué pour {model}")
-            check(runner.run_process(job_id, media.preview_encode_command(ai, out_dir / f"{model}.mp4", size)),
-                  f"Encodage de l'aperçu {model} impossible")
-            label = f"{settings_mod.MODEL_LABELS.get(model, model)} (×{scale})"
-            manifest["variants"].append({"id": model, "label": label, "file": f"{model}.mp4"})
-            if params.get("peau_normale", True):
-                # Même sortie IA, mélangée à l'original : coûte un simple encodage de plus.
-                strength, grain = settings_mod.RENDER_PRESETS["peau-normale"]
-                check(runner.run_process(job_id, media.preview_encode_command(
-                    ai, out_dir / f"{model}-peau-normale.mp4", size, original=clip, strength=strength, grain=grain)),
-                    f"Encodage de l'aperçu Peau normale ({model}) impossible")
-                manifest["variants"].append({"id": f"{model}-peau-normale", "label": f"{label} · Peau normale",
-                                             "file": f"{model}-peau-normale.mp4"})
-            ai.unlink(missing_ok=True)
+
+        def add(variant_id: str, label: str) -> None:
+            manifest["variants"].append({"id": variant_id, "label": label, "file": f"{variant_id}.mp4"})
             write_manifest(out_dir, manifest)
+
+        for index, model in enumerate(to_run, start=1):
+            scale = media.choose_scale(model, info["height"], size[1])
+            name = settings_mod.model_label(model)
+            db.set_job(job_id, stage=f"Aperçu {name} ×{scale} ({index}/{len(to_run)})")
+            ai = work / f"{model}.mkv"
+            upscale_video(job_id, model, clip, ai, scale, info["fps"],
+                          on_progress=progress.span(index / steps, 0.9 / steps))
+            if model == own_model:
+                # Exactement la chaîne du fichier final : modèle, rendu, encodeur et qualité (CRF).
+                final = work / "config.mkv"
+                check(runner.run_process(job_id, media.segment_encode_command(ai, final, size, settings, original=clip)),
+                      "Encodage « Votre configuration » impossible")
+                check(runner.run_process(job_id, media.preview_encode_command(final, out_dir / "config.mp4", size)),
+                      "Encodage « Votre configuration » impossible")
+                add("config", f"Votre configuration · {name} · {render_label(settings)} · "
+                              f"{settings.get('codec', 'hevc').upper()} CRF {settings.get('crf')}")
+            if model in checked:
+                check(runner.run_process(job_id, media.preview_encode_command(ai, out_dir / f"{model}.mp4", size)),
+                      f"Encodage de l'aperçu {model} impossible")
+                add(model, f"{name} (×{scale})")
+                if params.get("peau_normale", True):
+                    # Même sortie IA, mélangée à l'original : coûte un simple encodage de plus.
+                    strength, grain = settings_mod.RENDER_PRESETS["peau-normale"]
+                    check(runner.run_process(job_id, media.preview_encode_command(
+                        ai, out_dir / f"{model}-peau-normale.mp4", size, original=clip, strength=strength, grain=grain)),
+                        f"Encodage de l'aperçu Peau normale ({model}) impossible")
+                    add(f"{model}-peau-normale", f"{name} (×{scale}) · Peau normale")
+            ai.unlink(missing_ok=True)
             progress.update((index + 1) / steps, force=True)
         manifest["complete"] = True
         write_manifest(out_dir, manifest)
