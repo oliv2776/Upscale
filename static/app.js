@@ -18,7 +18,10 @@ function settingsPayload() {
     source: $("source").value.trim(), destination: $("destination").value.trim(),
     max_input_height: Number($("maxInput").value), output_height: Number($("outputHeight").value),
     model: $("model").value, crf: Number($("crf").value), preset: $("preset").value,
-    include_subfolders: $("recursive").checked
+    include_subfolders: $("recursive").checked,
+    ollama_enabled: $("ollamaEnabled").checked,
+    ollama_url: $("ollamaUrl").value.trim(),
+    ollama_model: $("ollamaModel").value
   };
 }
 function applySettings(s) {
@@ -26,6 +29,9 @@ function applySettings(s) {
   $("maxInput").value=String(s.max_input_height); $("outputHeight").value=String(s.output_height);
   $("model").value=s.model; $("crf").value=s.crf; $("crfValue").textContent=s.crf;
   $("preset").value=s.preset; $("recursive").checked=s.include_subfolders;
+  $("ollamaEnabled").checked=!!s.ollama_enabled;
+  $("ollamaUrl").value=s.ollama_url||"http://host.docker.internal:11434";
+  $("ollamaModel").value=s.ollama_model||"";
 }
 async function saveSettings() {
   const result=await api("/api/config",{method:"POST",body:JSON.stringify(settingsPayload())});
@@ -71,6 +77,51 @@ async function refreshJobs() {
         '<td><div class="row-actions">'+actions+'</div></td></tr>';
     }).join("");
   } catch(error) { console.warn(error); }
+}
+
+async function renderOllamaResult(data) {
+  const status=$("ollamaStatus"), badge=$("ollamaBadge"), select=$("ollamaModel");
+  if(data.connected){
+    status.textContent="Connecté · Ollama "+(data.version||"");
+    status.className="ollama-status ok"; badge.textContent="CONNECTÉ";
+    const previous=select.value||data.selected_model||"";
+    select.innerHTML='<option value="">Sélectionner un modèle…</option>'+
+      (data.models||[]).map(name=>'<option value="'+escapeHtml(name)+'">'+escapeHtml(name)+'</option>').join("");
+    if(previous && (data.models||[]).includes(previous)) select.value=previous;
+    else if(data.models&&data.models.length) select.value=data.models[0];
+  } else {
+    status.textContent=data.message||data.error||"Ollama non joignable";
+    status.className="ollama-status error"; badge.textContent="NON CONNECTÉ";
+  }
+}
+async function checkOllama() {
+  try {
+    const data=await api("/api/ollama/status");
+    if(!data.enabled){$("ollamaStatus").textContent="Intégration facultative, désactivée."; $("ollamaStatus").className="ollama-status"; $("ollamaBadge").textContent="DÉSACTIVÉ"; return;}
+    await renderOllamaResult(data);
+  } catch(error) {
+    $("ollamaStatus").textContent=error.message; $("ollamaStatus").className="ollama-status error";
+  }
+}
+async function testOllama() {
+  const url=$("ollamaUrl").value.trim();
+  $("ollamaStatus").textContent="Test de connexion…"; $("ollamaStatus").className="ollama-status";
+  try {
+    const data=await api("/api/ollama/test",{method:"POST",body:JSON.stringify({url})});
+    await renderOllamaResult({connected:true,...data});
+    toast("Connexion Ollama réussie");
+  } catch(error) {
+    $("ollamaStatus").textContent=error.message; $("ollamaStatus").className="ollama-status error";
+    $("ollamaBadge").textContent="NON CONNECTÉ";
+    toast("Ollama inaccessible");
+  }
+}
+async function saveOllama() {
+  try {
+    await saveSettings();
+    toast("Configuration Ollama enregistrée");
+    await checkOllama();
+  } catch(error) { toast(error.message); }
 }
 async function checkHealth() {
   $("dockerState").textContent="Vérification…"; $("gpuState").textContent="Vérification…";
@@ -123,11 +174,11 @@ $("logModal").addEventListener("click",e=>{if(e.target.id==="logModal")$("logMod
 $("scanBtn").addEventListener("click",scan); $("scanHero").addEventListener("click",scan);
 $("queueBtn").addEventListener("click",queue);
 $("refreshBtn").addEventListener("click",()=>{refreshJobs();checkHealth();});
-$("healthBtn").addEventListener("click",checkHealth);
+$("healthBtn").addEventListener("click",checkHealth);\n$("testOllama").addEventListener("click",testOllama); $("saveOllama").addEventListener("click",saveOllama);
 $("pauseBtn").addEventListener("click",async()=>{await api("/api/pause",{method:"POST",body:"{}"});toast("File mise en pause");refreshJobs();});
 $("resumeBtn").addEventListener("click",async()=>{await api("/api/resume",{method:"POST",body:"{}"});toast("Traitement repris");refreshJobs();});
 $("crf").addEventListener("input",()=>$("crfValue").textContent=$("crf").value);
 (async function init(){
   try{const data=await api("/api/config");applySettings(data.settings);}catch(e){toast(e.message);}
-  refreshJobs();checkHealth();setInterval(refreshJobs,3000);setInterval(checkHealth,60000);
+  refreshJobs();checkHealth();checkOllama();setInterval(refreshJobs,3000);setInterval(checkHealth,60000);setInterval(checkOllama,60000);
 })();
