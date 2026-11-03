@@ -77,7 +77,8 @@ def api_ping():
 def api_config():
     return jsonify({
         "settings": settings_mod.public_settings(settings_mod.get_settings()),
-        "data_root": str(config.DATA_ROOT), "image": config.VIDEO2X_IMAGE, "runner": config.RUNNER,
+        "data_root": str(config.DATA_ROOT), "disks": disk_list(), "image": config.VIDEO2X_IMAGE,
+        "runner": config.RUNNER,
         "version": config.VERSION, "segment_seconds": config.SEGMENT_SECONDS,
         "models": {k: {"label": settings_mod.MODEL_LABELS[k], "scales": list(v)} for k, v in settings_mod.MODEL_SCALES.items()},
     })
@@ -92,11 +93,28 @@ def api_save_config():
         return error(str(exc))
 
 
+def disk_list() -> list[dict[str, Any]]:
+    result = []
+    for root in config.roots():
+        try:
+            usage = shutil.disk_usage(root)
+            free, total = usage.free, usage.total
+        except OSError:
+            free = total = None
+        label = "Disque principal (/data)" if root == config.DATA_ROOT else root.name
+        result.append({"name": label, "path": str(root), "free": free, "total": total})
+    return result
+
+
 @app.get("/api/browse")
 def api_browse():
     try:
-        path = settings_mod.safe_path(request.args.get("path", str(config.DATA_ROOT)), must_exist=True)
+        raw = request.args.get("path", "")
         with_files = request.args.get("files") == "1"
+        if not raw.strip():
+            # Vue d'accueil : la liste des disques accessibles.
+            return jsonify({"path": "", "parent": None, "disks": disk_list(), "directories": [], "files": []})
+        path = settings_mod.safe_path(raw, must_exist=True)
         if path.is_file():
             path = path.parent
         if not path.is_dir():
@@ -113,8 +131,8 @@ def api_browse():
                     files.append({"name": child.name, "path": str(child), "size": child.stat().st_size})
             except (OSError, ValueError):
                 continue
-        return jsonify({"path": str(path), "parent": str(path.parent) if path != config.DATA_ROOT else None,
-                        "directories": dirs, "files": files})
+        parent = "" if path == config.root_of(path) else str(path.parent)
+        return jsonify({"path": str(path), "parent": parent, "directories": dirs, "files": files})
     except Exception as exc:  # noqa: BLE001
         return jsonify({"error": str(exc)}), 400
 

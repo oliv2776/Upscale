@@ -58,24 +58,43 @@ def cached_dimensions(conn: sqlite3.Connection, path: Path, stat: os.stat_result
     return dims
 
 
+def source_labels(sources: list[Path]) -> dict[Path, str]:
+    """Nom du sous-dossier de destination de chaque source (seulement s'il y a plusieurs sources)."""
+    labels: dict[Path, str] = {}
+    used: set[str] = set()
+    for source in sources:
+        base = source.name or "data"
+        label, index = base, 2
+        while label.lower() in used:
+            label, index = f"{base}-{index}", index + 1
+        used.add(label.lower())
+        labels[source] = label
+    return labels
+
+
 def scan_files(settings: dict[str, Any], progress: Callable[[int, int], None] | None = None,
                min_age_seconds: float = 0) -> dict[str, Any]:
-    source_root, destination_root = settings_mod.validate_folders(settings)
-    candidates = list_candidates(source_root, settings.get("include_subfolders", True))
-    stems = Counter((p.parent, p.stem.lower()) for p in candidates)
+    sources, destination_root = settings_mod.validate_folders(settings)
+    labels = source_labels(sources)
+    candidates = [(source, path) for source in sources
+                  for path in list_candidates(source, settings.get("include_subfolders", True))]
+    stems = Counter((p.parent, p.stem.lower()) for _, p in candidates)
     suffix = settings.get("output_suffix", "")
     replace = bool(settings.get("replace_original"))
     files: list[dict[str, Any]] = []
     already_known = too_recent = 0
     with db.connect() as conn:
-        known = {
-            (row["source"], row["source_size"], row["source_mtime_ns"]): (row["status"], row["destination"])
-            for row in conn.execute("SELECT source,source_size,source_mtime_ns,status,destination FROM jobs "
-                                    "WHERE kind='upscale'")
-        }
+        known = {}
+        for row in conn.execute("SELECT source,source_size,source_mtime_ns,status,destination,settings_json "
+                                "FROM jobs WHERE kind='upscale'"):
+            snapshot = json.loads(row["settings_json"] or "{}")
+            known[(row["source"], row["source_size"], row["source_mtime_ns"])] = (
+                row["status"], row["destination"],
+                (snapshot.get("destination"), snapshot.get("output_suffix", ""), bool(snapshot.get("replace_original"))))
         # Fichiers produits par Upscale : à ne jamais retraiter (indispensable en mode remplacement).
-        produced = {destination for status, destination in known.values() if status == "completed"}
-        for index, path in enumerate(candidates, 1):
+        produced = {destination for status, destination, _ in known.values() if status == "completed"}
+        intent = (settings.get("destination"), suffix, replace)
+        for index, (source_root, path) in enumerate(candidates, 1):
             if progress and (index % 10 == 0 or index == len(candidates)):
                 progress(index, len(candidates))
             try:
@@ -99,13 +118,19 @@ def scan_files(settings: dict[str, Any], progress: Callable[[int, int], None] | 
                     if output != path and output.exists():
                         continue  # un autre fichier occupe déjà ce nom
                 else:
-                    output = destination_root / media.output_relative(rel, ambiguous, suffix)
+                    # Plusieurs sources : un sous-dossier par source dans la destination.
+                    base = destination_root / labels[source_root] if len(sources) > 1 else destination_root
+                    output = base / media.output_relative(rel, ambiguous, suffix)
                     if output.exists():
                         continue
-                status, previous = known.get((str(path), stat.st_size, stat.st_mtime_ns), (None, None))
-                # Déjà traité vers cette même sortie (ou en cours) : ignoré. Une autre destination ou un autre
-                # suffixe donne une nouvelle sortie, le fichier est alors retraité.
-                if status in {"queued", "running"} or (status == "completed" and previous == str(output)):
+                status, previous, previous_intent = known.get((str(path), stat.st_size, stat.st_mtime_ns),
+                                                              (None, None, None))
+                # Déjà traité (ou en cours) : ignoré. Une autre destination, un autre suffixe ou le mode
+                # remplacement donnent une nouvelle sortie : le fichier est alors retraité. Un simple changement
+                # d'organisation (ajout d'une 2e source) ne refait pas une vidéo dont la sortie existe toujours.
+                if status in {"queued", "running"} or (status == "completed" and (
+                        previous == str(output)
+                        or (previous_intent == intent and previous and Path(previous).exists()))):
                     already_known += 1
                     continue
                 files.append({

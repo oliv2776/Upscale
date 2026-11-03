@@ -138,25 +138,32 @@ jobs:
           sudo mkdir -p /dev/dri
           docker pull ghcr.io/k4yt3x/video2x:6.4.0
           docker run --rm --entrypoint sh ghcr.io/k4yt3x/video2x:6.4.0 -c 'cat /etc/os-release | head -n 2; ls /usr/share/vulkan/icd.d/ 2>/dev/null' || true
-          mkdir -p ci-data/videos
-          docker run --rm -v "$PWD/ci-data:/data" --entrypoint ffmpeg upscale:ci -v error \
-            -f lavfi -i testsrc=size=160x120:rate=10:duration=2 -f lavfi -i sine=duration=2 \
-            -c:v libx264 -pix_fmt yuv420p -c:a aac /data/videos/clip.mp4
+          # Deux disques : /data et un disque supplémentaire monté dans /disques/Disque2 (comme bibliotheques.sh).
+          mkdir -p ci-data/videos ci-disk2/Series
+          for target in "ci-data:/data/videos/clip.mp4" "ci-disk2:/data/Series/episode.mp4"; do
+            docker run --rm -v "$PWD/${target%%:*}:/data" --entrypoint ffmpeg upscale:ci -v error \
+              -f lavfi -i testsrc=size=160x120:rate=10:duration=2 -f lavfi -i sine=duration=2 \
+              -c:v libx264 -pix_fmt yuv420p -c:a aac "${target#*:}"
+          done
           docker run -d --name upscale-socket -p 27003:27000 \
-            -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD/ci-data:/data" \
-            -e UPSCALE_HOST_DATA="$PWD/ci-data" -e UPSCALE_SEGMENT_SECONDS=1 -e UPSCALE_MIN_FREE_GB=0 upscale:ci
+            -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD/ci-data:/data" -v "$PWD/ci-disk2:/disques/Disque2" \
+            -e UPSCALE_SEGMENT_SECONDS=1 -e UPSCALE_MIN_FREE_GB=0 upscale:ci
           for i in $(seq 1 30); do curl -fsS http://127.0.0.1:27003/api/ping && break; sleep 1; done
+          curl -fsS http://127.0.0.1:27003/api/browse | python3 -m json.tool
           curl -fsS -X POST -H "Content-Type: application/json" http://127.0.0.1:27003/api/health/gpu -d '{}'
           curl -fsS -X POST -H "Content-Type: application/json" http://127.0.0.1:27003/api/queue \
-            -d '{"source":"/data/videos","destination":"/data/out","max_input_height":480,"output_height":240,"model":"realesr-animevideov3","preset":"ultrafast"}'
+            -d '{"sources":["/data/videos","/disques/Disque2/Series"],"destination":"/data/out","max_input_height":480,"output_height":240,"model":"realesr-animevideov3","preset":"ultrafast"}'
           for i in $(seq 1 120); do
             sleep 5
             curl -fsS http://127.0.0.1:27003/api/jobs > all.json
-            python3 -c "import json; j=json.load(open('all.json'))['jobs']; print(j and (j[0]['status'], j[0]['stage'], j[0]['progress']))"
-            python3 -c "import json,sys; j=json.load(open('all.json'))['jobs']; sys.exit(0 if j and j[0]['status'] in ('completed','failed') else 1)" && break
+            python3 -c "import json; print([(j['status'], j['stage'], j['progress']) for j in json.load(open('all.json'))['jobs']])"
+            python3 -c "import json,sys; j=json.load(open('all.json'))['jobs']; sys.exit(0 if len(j) == 2 and all(x['status'] in ('completed','failed') for x in j) else 1)" && break
           done
           curl -fsS http://127.0.0.1:27003/api/health | python3 -m json.tool
-          id=$(python3 -c "import json; print(json.load(open('all.json'))['jobs'][0]['id'])")
-          curl -fsS "http://127.0.0.1:27003/api/logs/$id" | python3 -c "import json,sys; print(json.load(sys.stdin)['log'][-5000:])"
+          for id in $(python3 -c "import json; print(' '.join(j['id'] for j in json.load(open('all.json'))['jobs']))"); do
+            curl -fsS "http://127.0.0.1:27003/api/logs/$id" | python3 -c "import json,sys; print(json.load(sys.stdin)['log'][-3000:])"
+          done
           docker rm -f upscale-socket
-          python3 -c "import json,sys; j=json.load(open('all.json'))['jobs'][0]; sys.exit(0 if j['status']=='completed' else 1)"
+          python3 -c "import json,sys; j=json.load(open('all.json'))['jobs']; sys.exit(0 if len(j) == 2 and all(x['status']=='completed' for x in j) else 1)"
+          ls -la ci-data/out ci-data/out/*
+          test -f ci-data/out/videos/clip.mkv && test -f ci-data/out/Series/episode.mkv

@@ -1,9 +1,11 @@
 """Exécution des processus (FFmpeg, Video2X) avec journal, progression, annulation et garde disque."""
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import threading
 import time
@@ -227,10 +229,50 @@ def video2x_command(job_id: str, args: list[str]) -> tuple[list[str], str | None
         "--label", config.CONTAINER_LABEL, "--label", f"upscale.job={job_id}",
         "--device", "/dev/dri:/dev/dri",
         "--group-add", config.VIDEO_GID, "--group-add", config.RENDER_GID,
-        # Le daemon Docker interprète la source du montage comme un chemin de l'hôte.
-        "-v", f"{config.HOST_DATA}:{config.DATA_ROOT}",
+        # Le daemon Docker interprète la source du montage comme un chemin de l'hôte :
+        # on redonne à Video2X exactement les mêmes disques que ceux d'Upscale.
+        *[arg for host, inside in library_mounts() for arg in ("-v", f"{host}:{inside}")],
         config.VIDEO2X_IMAGE, *args,
     ], name
+
+
+_mounts_cache: list[tuple[str, str]] | None = None
+
+
+def library_mounts() -> list[tuple[str, str]]:
+    """Couples (chemin hôte, chemin dans le conteneur) des disques visibles par Upscale.
+
+    Lus dans la configuration du conteneur Upscale lui-même (docker inspect), ce qui suit automatiquement
+    les disques ajoutés avec bibliotheques.sh. Repli : UPSCALE_HOST_DATA monté sur /data.
+    """
+    global _mounts_cache
+    if _mounts_cache is not None:
+        return _mounts_cache
+    found: list[tuple[str, str]] = []
+    for name in dict.fromkeys([socket.gethostname(), "upscale"]):
+        try:
+            result = subprocess.run(["docker", "inspect", "--format", "{{json .Mounts}}", name],
+                                    capture_output=True, text=True, timeout=15)
+        except (OSError, subprocess.TimeoutExpired):
+            break
+        if result.returncode != 0:
+            continue
+        try:
+            mounts = json.loads(result.stdout or "[]") or []
+        except ValueError:
+            continue
+        for mount in mounts:
+            inside = Path(str(mount.get("Destination", "")))
+            if mount.get("Type") != "bind":
+                continue
+            if inside == config.DATA_ROOT or config.DISKS_ROOT in inside.parents:
+                found.append((str(mount["Source"]), str(inside)))
+        if found:
+            break
+    if not any(Path(inside) == config.DATA_ROOT for _, inside in found):
+        found.insert(0, (config.HOST_DATA, str(config.DATA_ROOT)))
+    _mounts_cache = sorted(found, key=lambda pair: pair[1])
+    return _mounts_cache
 
 
 def upscale_args(source: Path, output: Path, model: str, scale: int) -> list[str]:
@@ -296,7 +338,7 @@ def default_owner(source: Path, *folders: Path) -> Owner | None:
         return (config.PUID if config.PUID is not None else -1, config.PGID if config.PGID is not None else -1)
     candidates = [source]
     for folder in folders:
-        candidates += [folder, *[p for p in folder.parents if config.DATA_ROOT in p.parents or p == config.DATA_ROOT]]
+        candidates += [folder, *[p for p in folder.parents if config.root_of(p) is not None]]
     for candidate in candidates:
         try:
             info = candidate.stat()

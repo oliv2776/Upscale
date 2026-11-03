@@ -33,6 +33,8 @@ STATE_DIR = Path(_env("UPSCALE_STATE_DIR", "/app/state"))
 DATA_ROOT = Path(_env("UPSCALE_DATA_ROOT", "/data")).resolve()
 # Même dossier vu depuis l'hôte (mode docker : le daemon ne voit que les chemins de l'hôte).
 HOST_DATA = _env("UPSCALE_HOST_DATA") or str(DATA_ROOT)
+# Disques supplémentaires : chacun est monté dans /disques/<nom> (voir bibliotheques.sh).
+DISKS_ROOT = Path(_env("UPSCALE_DISKS_ROOT", "/disques"))
 PORT = int(_env("UPSCALE_PORT", "27000"))
 
 # "docker" : Video2X tourne dans un conteneur frère via le socket Docker.
@@ -83,3 +85,21 @@ def log_dir() -> Path:
 
 def preview_dir() -> Path:
     return STATE_DIR / "previews"
+
+
+def roots() -> list[Path]:
+    """Racines visibles dans Upscale : /data puis chaque disque monté dans /disques/<nom>."""
+    result = [DATA_ROOT]
+    try:
+        result += sorted(p.resolve() for p in DISKS_ROOT.iterdir() if p.is_dir() and not p.is_symlink())
+    except OSError:
+        pass
+    return result
+
+
+def root_of(path: Path) -> Path | None:
+    """Racine (disque) qui contient ce chemin, ou None."""
+    for root in roots():
+        if path == root or root in path.parents:
+            return root
+    return None

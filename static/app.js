@@ -1,6 +1,6 @@
 const $ = (id) => document.getElementById(id);
 const state = { models: {}, filter: "", page: 1, limit: 25, total: 0, previews: [], currentPreview: null };
-let picker = { input: null, mode: "dir", path: "/data" };
+let picker = { input: null, mode: "dir", path: "" };
 let toastTimer, scanPolling = null, gpuPolling = null;
 
 function toast(message) {
@@ -42,7 +42,7 @@ function fillModelSelects() {
 }
 function settingsPayload() {
   return {
-    source: $("source").value.trim(), destination: $("destination").value.trim(),
+    sources: readSources(), destination: $("destination").value.trim(),
     output_suffix: $("outputSuffix").value, include_subfolders: $("recursive").checked,
     replace_original: $("replaceOriginal").checked, trash_days: Number($("trashDays").value),
     max_input_height: Number($("maxInput").value), output_height: Number($("outputHeight").value),
@@ -69,7 +69,7 @@ function ollamaPayload() {
 }
 function setSelect(id, value) { if (value != null) $(id).value = String(value); }
 function applySettings(s) {
-  $("source").value = s.source; $("destination").value = s.destination;
+  renderSources(s.sources && s.sources.length ? s.sources : [s.source || ""]); $("destination").value = s.destination;
   $("outputSuffix").value = s.output_suffix || ""; $("recursive").checked = s.include_subfolders;
   $("replaceOriginal").checked = !!s.replace_original; setSelect("trashDays", s.trash_days ?? 30); updateReplaceUi();
   setSelect("maxInput", s.max_input_height); setSelect("outputHeight", s.output_height);
@@ -404,24 +404,42 @@ async function testGpu() {
   } catch (error) { toast(error.message); }
 }
 
+// ------------------------------------------------------------------ dossiers source et disques
+function sourceRow(path = "") {
+  return '<div class="path-control source-row"><input class="s-path" value="' + escapeHtml(path) + '" placeholder="/data/videos ou /disques/…"><button class="browse" data-picker="sourceRow">Parcourir</button><button class="icon-btn remove-source" data-remove-source title="Retirer ce dossier">×</button></div>';
+}
+function renderSources(paths) { $("sourcesList").innerHTML = (paths.length ? paths : [""]).map(sourceRow).join(""); }
+function readSources() { return [...document.querySelectorAll("#sourcesList .s-path")].map(i => i.value.trim()).filter(Boolean); }
+function firstSource() { return readSources()[0] || ""; }
+function diskSpace(disk) {
+  if (!disk.total) return "";
+  return (disk.free / 1073741824).toFixed(0) + " Go libres sur " + (disk.total / 1073741824).toFixed(0) + " Go";
+}
+function renderDisks(disks) {
+  $("disksHint").innerHTML = "<b>Disques accessibles :</b> " + disks.map(d => '<span class="disk-chip" title="' + escapeHtml(d.path) + '">🖴 ' + escapeHtml(d.name) + (d.total ? " · " + escapeHtml(diskSpace(d)) : "") + "</span>").join("") +
+    '<small>Un disque manque ? Sur le NAS : <code>sudo bash bibliotheques.sh ajouter /chemin/du/disque</code></small>';
+}
+
 // ------------------------------------------------------------------ explorateur
 async function browse(path) {
   try {
     const data = await api("/api/browse?path=" + encodeURIComponent(path) + (picker.mode === "file" ? "&files=1" : ""));
-    picker.path = data.path; $("currentPath").textContent = data.path;
     const rows = [];
-    if (data.parent) rows.push('<div class="dir-item" data-path="' + escapeHtml(data.parent) + '">↰ <b>..</b><span>Remonter</span></div>');
+    picker.path = data.path; $("currentPath").textContent = data.path || "Disques accessibles";
+    $("selectFolder").disabled = !data.path;
+    if (data.parent != null) rows.push('<div class="dir-item" data-path="' + escapeHtml(data.parent) + '">↰ <b>..</b><span>' + (data.parent ? "Remonter" : "Tous les disques") + "</span></div>");
+    for (const disk of data.disks || []) rows.push('<div class="dir-item" data-path="' + escapeHtml(disk.path) + '">🖴 <b>' + escapeHtml(disk.name) + "</b><span>" + escapeHtml(diskSpace(disk)) + " · Ouvrir →</span></div>");
     for (const dir of data.directories) rows.push('<div class="dir-item" data-path="' + escapeHtml(dir.path) + '">📁 <b>' + escapeHtml(dir.name) + "</b><span>Ouvrir →</span></div>");
     for (const file of data.files || []) rows.push('<div class="dir-item" data-file="' + escapeHtml(file.path) + '">🎞 <b>' + escapeHtml(file.name) + "</b><span>" + (file.size / 1048576).toFixed(0) + " Mo · Choisir</span></div>");
     $("directoryList").innerHTML = rows.join("") || '<div class="empty">Aucun élément.</div>';
   } catch (error) { toast(error.message); }
 }
 function openPicker(input, mode) {
-  picker = { input, mode, path: "/data" };
+  picker = { input, mode, path: "" };
   $("pickerTitle").textContent = mode === "file" ? "Choisir une vidéo" : "Choisir un dossier";
   $("selectFolder").classList.toggle("hidden", mode === "file");
   $("picker").classList.remove("hidden");
-  browse(input.value || (mode === "file" ? $("source").value : "/data"));
+  browse(input.value || (mode === "file" ? firstSource() : ""));
 }
 function setupNav() {
   const links = [...document.querySelectorAll(".sidebar nav a")];
@@ -444,7 +462,8 @@ document.addEventListener("click", async event => {
   const file = t.closest("[data-file]"); if (file) { picker.input.value = file.dataset.file; $("picker").classList.add("hidden"); return; }
   const pick = t.closest("[data-picker]");
   if (pick) {
-    const input = pick.dataset.picker === "profile" ? pick.closest("td").querySelector("input") : $(pick.dataset.picker);
+    const kind = pick.dataset.picker;
+    const input = kind === "profile" ? pick.closest("td").querySelector("input") : kind === "sourceRow" ? pick.closest(".source-row").querySelector("input") : $(kind);
     return openPicker(input, pick.dataset.mode || "dir");
   }
   const id = attr => t.closest("[" + attr + "]")?.getAttribute(attr);
@@ -454,11 +473,13 @@ document.addEventListener("click", async event => {
   if (id("data-retry")) return jobAction(() => post("/api/jobs/" + id("data-retry") + "/retry"), "Tâche remise en file (reprise au dernier segment)");
   if (id("data-delete")) { if (!confirm("Supprimer cette tâche, son journal et ses fichiers temporaires ?")) return; return jobAction(() => post("/api/jobs/" + id("data-delete") + "/delete"), "Tâche supprimée"); }
   for (const where of ["top", "up", "down"]) if (id("data-move-" + where)) return jobAction(() => post("/api/jobs/" + id("data-move-" + where) + "/move", { to: where }));
+  if (t.closest("[data-remove-source]")) { t.closest(".source-row").remove(); if (!document.querySelector("#sourcesList .source-row")) renderSources([]); return; }
   if (t.closest("[data-remove-profile]")) { t.closest("tr").remove(); if (!readProfiles().length && !$("profilesBody").querySelector(".p-path")) renderProfiles([]); }
   const filter = t.closest("[data-filter]");
   if (filter) { state.filter = filter.dataset.filter; state.page = 1; document.querySelectorAll("#filters button").forEach(b => b.classList.toggle("active", b === filter)); refreshJobs(); }
 });
-$("addProfile").addEventListener("click", () => { $("profilesBody").querySelector(".empty-row")?.remove(); $("profilesBody").insertAdjacentHTML("beforeend", profileRow({ path: $("source").value })); });
+$("addSource").addEventListener("click", () => { $("sourcesList").insertAdjacentHTML("beforeend", sourceRow("")); openPicker([...document.querySelectorAll("#sourcesList .s-path")].pop(), "dir"); });
+$("addProfile").addEventListener("click", () => { $("profilesBody").querySelector(".empty-row")?.remove(); $("profilesBody").insertAdjacentHTML("beforeend", profileRow({ path: firstSource() })); });
 $("selectFolder").addEventListener("click", () => { if (picker.input) picker.input.value = picker.path; $("picker").classList.add("hidden"); });
 $("closePicker").addEventListener("click", () => $("picker").classList.add("hidden"));
 $("closeLogs").addEventListener("click", () => $("logModal").classList.add("hidden"));
@@ -499,7 +520,7 @@ $("videoLeft").addEventListener("seeked", () => { $("videoRight").currentTime = 
 (async function init() {
   setupNav();
   try {
-    const data = await api("/api/config"); state.models = data.models; fillModelSelects(); applySettings(data.settings);
+    const data = await api("/api/config"); state.models = data.models; fillModelSelects(); applySettings(data.settings); renderDisks(data.disks || []);
   } catch (e) { toast(e.message); }
   try { const s = await api("/api/scan"); if (s.running) { showScanResult(describeScan(s)); pollScan(); } } catch (e) { /* rien */ }
   refreshJobs(); checkHealth(); checkOllama(); refreshPreviews(); refreshGpuStats();

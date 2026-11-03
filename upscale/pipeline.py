@@ -130,7 +130,8 @@ def chown_tree(path: Path, stop: Path, owner: runner.Owner | None) -> None:
     """Rend à l'utilisateur le fichier produit et les dossiers créés par Upscale (jusqu'à la destination)."""
     runner.chown(path, owner)
     for parent in path.parents:
-        if parent == stop.parent or parent == config.DATA_ROOT or config.DATA_ROOT not in parent.parents:
+        root = config.root_of(parent)
+        if parent == stop.parent or root is None or parent == root:
             break
         try:
             if parent.stat().st_uid == 0:
@@ -141,7 +142,7 @@ def chown_tree(path: Path, stop: Path, owner: runner.Owner | None) -> None:
 
 def output_owner(source: Path, settings: dict[str, Any], destination: Path) -> runner.Owner | None:
     root = Path(settings.get("destination", destination.parent))
-    return runner.default_owner(source, root, Path(settings.get("source", source.parent)))
+    return runner.default_owner(source, root, settings_mod.source_root_for(source, settings))
 
 
 def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
@@ -246,7 +247,7 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
     warning = ("Vérification : " + "; ".join(problems)) if problems else None
     if replace:
         destination, warning = place_replacing_original(job_id, source, destination, temp_final, settings, warning)
-        stop = Path(settings.get("source", source.parent))
+        stop = settings_mod.source_root_for(source, settings)
     else:
         temp_final.replace(destination)
         stop = Path(settings.get("destination", destination.parent))
@@ -272,7 +273,7 @@ def unique_path(path: Path) -> Path:
 
 def trash_location(source: Path, settings: dict[str, Any]) -> Path:
     """Emplacement de l'original dans la corbeille : <dossier source>/.upscale-corbeille/<chemin relatif>."""
-    root = Path(settings.get("source", source.parent))
+    root = settings_mod.source_root_for(source, settings)
     try:
         relative = source.relative_to(root)
     except ValueError:

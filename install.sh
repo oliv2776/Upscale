@@ -153,6 +153,14 @@ if ! docker pull "${IMAGE}"; then
   echo "Téléchargement impossible pour l'instant : il sera relancé au premier traitement."
 fi
 
+# Disques supplémentaires : sudo UPSCALE_DISQUES="/mnt/disque2 /mnt/disque3" bash install.sh
+if [[ -n "${UPSCALE_DISQUES:-}" ]]; then
+  echo "==> Disques supplémentaires"
+  for disk in ${UPSCALE_DISQUES}; do
+    bash "${PROJECT_DIR}/bibliotheques.sh" ajouter "${disk}" --sans-redemarrage || true
+  done
+fi
+
 echo "==> Construction et démarrage d'Upscale"
 cd "${PROJECT_DIR}"
 docker compose up -d --build
@@ -163,6 +171,10 @@ echo "Upscale est démarré."
 echo "Interface : http://${IP_ADDR:-IP_DU_NAS}:${PORT}"
 echo "Sources   : ${DATA_DIR}/videos"
 echo "Sorties   : ${DATA_DIR}/videos_upscaled"
+echo
+echo
+bash "${PROJECT_DIR}/bibliotheques.sh" liste
+echo "Autre disque : sudo bash ${PROJECT_DIR}/bibliotheques.sh ajouter /chemin/du/disque"
 echo
 echo "Logs : cd ${PROJECT_DIR} && docker compose logs -f upscale"
 echo "IMPORTANT : le port ${PORT} doit rester sur le LAN/VPN. Ne l'expose pas sur Internet."

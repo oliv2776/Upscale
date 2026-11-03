@@ -34,6 +34,7 @@ PROFILE_KEYS = ("model", "output_height", "crf", "denoise", "codec", "interpolat
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     "source": config.DEFAULT_SOURCE,
+    "sources": [config.DEFAULT_SOURCE],
     "destination": config.DEFAULT_DESTINATION,
     "max_input_height": 480,
     "output_height": 720,
@@ -79,6 +80,9 @@ def normalize_model(model: Any) -> Any:
 
 def normalize(settings: dict[str, Any]) -> dict[str, Any]:
     settings["model"] = normalize_model(settings.get("model"))
+    settings["sources"] = source_list(settings)
+    if settings["sources"]:
+        settings["source"] = settings["sources"][0]
     for profile in settings.get("profiles") or []:
         if "model" in profile:
             profile["model"] = normalize_model(profile["model"])
@@ -86,8 +90,11 @@ def normalize(settings: dict[str, Any]) -> dict[str, Any]:
 
 
 def get_settings() -> dict[str, Any]:
+    payload = db.load_settings_payload()
     result = dict(DEFAULT_SETTINGS)
-    result.update(db.load_settings_payload())
+    result.update(payload)
+    if "sources" not in payload and payload.get("source"):
+        result["sources"] = [payload["source"]]  # réglages d'avant 2.3 : un seul dossier source
     return normalize(result)
 
 
@@ -120,23 +127,49 @@ def safe_path(raw: str, must_exist: bool = False) -> Path:
         resolved = candidate.resolve(strict=must_exist)
     except FileNotFoundError:
         raise ValueError(f"Chemin introuvable : {raw}") from None
-    if resolved != config.DATA_ROOT and config.DATA_ROOT not in resolved.parents:
-        raise ValueError(f"Chemin hors de la racine autorisée : {config.DATA_ROOT}")
+    if config.root_of(resolved) is None:
+        allowed = ", ".join(str(r) for r in config.roots())
+        raise ValueError(f"Chemin hors des dossiers accessibles ({allowed})")
     return resolved
 
 
-def validate_folders(settings: dict[str, Any]) -> tuple[Path, Path]:
-    source = safe_path(settings["source"], must_exist=True)
+def source_list(settings: dict[str, Any]) -> list[str]:
+    """Dossiers source (liste) ; les réglages d'avant 2.3 n'ont qu'un champ « source »."""
+    sources = [str(s) for s in settings.get("sources") or [] if str(s).strip()]
+    return sources or ([str(settings["source"])] if settings.get("source") else [])
+
+
+def validate_folders(settings: dict[str, Any]) -> tuple[list[Path], Path]:
+    sources = [safe_path(raw, must_exist=True) for raw in source_list(settings)]
+    if not sources:
+        raise ValueError("Ajoute au moins un dossier source")
     dest = safe_path(settings["destination"], must_exist=False)
-    if not source.is_dir():
-        raise ValueError("Le dossier source doit exister et être un dossier")
-    if dest == source or source in dest.parents:
-        raise ValueError("La destination ne peut pas être dans le dossier source")
-    if dest in source.parents:
-        raise ValueError("Le dossier source ne peut pas être dans la destination")
-    if dest == config.DATA_ROOT or config.DATA_ROOT not in dest.parents:
-        raise ValueError(f"La destination doit rester sous {config.DATA_ROOT}")
-    return source, dest
+    for source in sources:
+        if not source.is_dir():
+            raise ValueError(f"Le dossier source doit exister et être un dossier : {source}")
+        if dest == source or source in dest.parents:
+            raise ValueError(f"La destination ne peut pas être dans un dossier source : {source}")
+        if dest in source.parents:
+            raise ValueError(f"Le dossier source ne peut pas être dans la destination : {source}")
+        for other in sources:
+            if other != source and other in source.parents:
+                raise ValueError(f"{source} est déjà inclus dans {other}")
+    if len(set(sources)) != len(sources):
+        raise ValueError("Un dossier source est indiqué deux fois")
+    if config.root_of(dest) in (None, dest):
+        raise ValueError("La destination doit être un sous-dossier d'un disque (ex. /data/videos_upscaled)")
+    return sources, dest
+
+
+def source_root_for(path: Path, settings: dict[str, Any]) -> Path:
+    """Dossier source qui contient ce fichier (le plus précis), ou son dossier parent."""
+    best = None
+    for raw in source_list(settings):
+        root = Path(raw)
+        if root == path or root in path.parents:
+            if best is None or len(root.parts) > len(best.parts):
+                best = root
+    return best or path.parent
 
 
 def _int_in(value: Any, key: str, low: int, high: int) -> int:
@@ -239,6 +272,14 @@ def save_settings(payload: dict[str, Any]) -> dict[str, Any]:
             settings[key] = _validate_time(payload[key])
     if "output_suffix" in payload:
         settings["output_suffix"] = _validate_suffix(payload["output_suffix"])
+    if "sources" in payload:
+        sources = payload["sources"] or []
+        if not isinstance(sources, list) or len(sources) > 30:
+            raise ValueError("Liste de dossiers source invalide")
+        settings["sources"] = [str(s).strip() for s in sources if str(s).strip()]
+        settings["source"] = settings["sources"][0] if settings["sources"] else ""
+    elif "source" in payload:
+        settings["sources"] = [str(payload["source"])]
     if "profiles" in payload:
         profiles = payload["profiles"] or []
         if not isinstance(profiles, list) or len(profiles) > 50:
@@ -250,7 +291,7 @@ def save_settings(payload: dict[str, Any]) -> dict[str, Any]:
             settings[key] = ""
         elif payload.get(key):
             settings[key] = str(payload[key]).strip()[:500]
-    if "source" in payload or "destination" in payload:
+    if "source" in payload or "sources" in payload or "destination" in payload:
         validate_folders(settings)
     db.store_settings_payload(settings)
     return settings

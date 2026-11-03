@@ -34,9 +34,10 @@
     <section class="panel" id="settings">
       <div class="section-head"><div><div class="eyebrow">01 / SOURCE & DESTINATION</div><h3>Bibliothèque vidéo</h3><p>Choisissez les dossiers à analyser. Les originaux restent intacts, sauf si vous activez leur remplacement.</p></div><span class="tag">SCAN RÉCURSIF</span></div>
       <div class="path-grid">
-        <div class="field"><label>DOSSIER SOURCE</label><div class="path-control"><input id="source" value="/data/videos"><button data-picker="source" class="browse">Parcourir</button></div><small>Vidéos à analyser, sous-dossiers inclus.</small></div>
+        <div class="field"><label>DOSSIERS SOURCE</label><div id="sourcesList" class="sources-list"></div><button class="secondary small" id="addSource">+ Ajouter un dossier source</button><small>Un ou plusieurs dossiers, sur un ou plusieurs disques. Avec plusieurs dossiers, chacun a son sous-dossier dans la destination.</small></div>
         <div class="field"><label>DOSSIER DE DESTINATION</label><div class="path-control"><input id="destination" value="/data/videos_upscaled"><button data-picker="destination" class="browse">Parcourir</button></div><small>Arborescence conservée, sortie MKV.</small></div>
       </div>
+      <div class="disks-hint" id="disksHint"></div>
       <div class="settings-grid top-gap">
         <div class="field"><label>SUFFIXE DES FICHIERS PRODUITS</label><input class="text-input" id="outputSuffix" placeholder="ex. « - 720p IA »" maxlength="60"><small>Film (2001).avi → Film (2001) - 720p IA.mkv (pratique pour Jellyfin/Plex).</small></div>
         <div class="field"><label>SOUS-DOSSIERS</label><div class="toggle-row"><span>Inclure tous les sous-dossiers</span><label class="switch"><input id="recursive" type="checkbox" checked><span></span></label></div></div>

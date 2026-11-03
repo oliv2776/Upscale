@@ -29,13 +29,19 @@ def test_safe_path_rejects_outside_and_relative(env):
 
 def test_validate_folders_rejects_nesting(env):
     base = st.get_settings()
-    with pytest.raises(ValueError, match="dans le dossier source"):
+    videos = str(env / "videos")
+    with pytest.raises(ValueError, match="dans un dossier source"):
         st.validate_folders({**base, "destination": str(env / "videos" / "out")})
     (env / "out" / "videos").mkdir(parents=True)
     with pytest.raises(ValueError, match="source ne peut pas"):
-        st.validate_folders({**base, "source": str(env / "out" / "videos"), "destination": str(env / "out")})
+        st.validate_folders({**base, "sources": [str(env / "out" / "videos")], "destination": str(env / "out")})
     with pytest.raises(ValueError):
         st.validate_folders({**base, "destination": str(env)})
+    (env / "videos" / "Films").mkdir()
+    with pytest.raises(ValueError, match="déjà inclus"):
+        st.validate_folders({**base, "sources": [videos, str(env / "videos" / "Films")]})
+    with pytest.raises(ValueError, match="au moins un"):
+        st.validate_folders({**base, "sources": [], "source": ""})
 
 
 def test_partial_save_does_not_need_valid_folders(env):
@@ -515,6 +521,69 @@ def test_legacy_names_still_work(env, monkeypatch):
     (out / ".uscale-dddddddddddd" / "enc").mkdir(parents=True)
     work = pipeline.upscale_work_dir(db.get_job("dddddddddddd"))
     assert work.name == ".upscale-dddddddddddd" and (work / "enc").is_dir()
+
+
+def add_disk(name: str) -> Path:
+    disk = config.DISKS_ROOT / name
+    disk.mkdir(parents=True)
+    return disk.resolve()
+
+
+def test_disks_are_browsable_roots(env):
+    disk = add_disk("Disque2")
+    (disk / "Series").mkdir()
+    assert config.roots() == [config.DATA_ROOT, disk]
+    assert st.safe_path(str(disk / "Series"), must_exist=True) == disk / "Series"
+    with pytest.raises(ValueError, match="hors des dossiers accessibles"):
+        st.safe_path(str(config.DISKS_ROOT.parent))
+    client = app.test_client()
+    home = client.get("/api/browse").get_json()
+    assert [d["path"] for d in home["disks"]] == [str(config.DATA_ROOT), str(disk)]
+    inside = client.get("/api/browse", query_string={"path": str(disk)}).get_json()
+    assert inside["parent"] == "" and [d["name"] for d in inside["directories"]] == ["Series"]
+    with pytest.raises(ValueError, match="sous-dossier d'un disque"):
+        st.validate_folders({**st.get_settings(), "destination": str(disk)})
+
+
+def test_legacy_single_source_settings(env):
+    payload = {k: v for k, v in st.get_settings().items() if k != "sources"}
+    payload["source"] = str(env / "videos")
+    db.store_settings_payload(payload)
+    assert st.get_settings()["sources"] == [str(env / "videos")]
+
+
+def test_source_labels_are_unique():
+    labels = scanner.source_labels([Path("/data/Films"), Path("/disques/B/Films"), Path("/disques/C/Series")])
+    assert list(labels.values()) == ["Films", "Films-2", "Series"]
+
+
+@needs_ffmpeg
+def test_multiple_disks_end_to_end(env, fake_docker, monkeypatch):
+    make_video(env / "videos" / "film.mp4")
+    [first] = process_all(env)
+    assert (env / "out" / "film.mkv").exists()  # une seule source : comme avant
+
+    disk = add_disk("Disque2")
+    make_video(disk / "Series" / "S01" / "ep1.mp4")
+    st.save_settings({"sources": [str(env / "videos"), str(disk / "Series")]})
+    # Le film déjà traité n'est pas refait parce que l'organisation de la destination change.
+    files = scanner.scan_files(st.get_settings())["files"]
+    assert [Path(f["destination"]) for f in files] == [env / "out" / "Series" / "S01" / "ep1.mkv"]
+
+    host = str(config.DISKS_ROOT.parent / "hote-disque2")
+    monkeypatch.setenv("FAKE_DOCKER_MOUNTS", json.dumps([
+        {"Type": "bind", "Source": "/srv/nas/media", "Destination": str(config.DATA_ROOT)},
+        {"Type": "bind", "Source": host, "Destination": str(disk)},
+        {"Type": "volume", "Source": "x", "Destination": "/app/state"},
+        {"Type": "bind", "Source": "/var/run/docker.sock", "Destination": "/var/run/docker.sock"},
+    ]))
+    monkeypatch.setattr(runner, "_mounts_cache", None)  # les montages ne changent qu'au redémarrage
+    [row] = process_all(env)
+    assert row["status"] == "completed", job_log(row)
+    assert (env / "out" / "Series" / "S01" / "ep1.mkv").exists()
+    run = [c for c in calls(fake_docker) if c[:2] == ["docker", "run"]][-1]
+    mounts = [run[i + 1] for i, arg in enumerate(run) if arg == "-v"]
+    assert mounts == [f"/srv/nas/media:{config.DATA_ROOT}", f"{host}:{disk}"]
 
 
 def test_hevc_default_and_migration(env):

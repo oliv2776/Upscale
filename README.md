@@ -57,7 +57,7 @@ Le script install.sh :
 - télécharge l'image Video2X à l'avance (plusieurs Go) ;
 - construit et démarre Upscale sur le port **27000** (ou celui défini dans .env).
 
-Ouvre ensuite http://IP_DU_NAS:27000 (hostname -I donne l'adresse). Pour un autre point de montage : sudo UPSCALE_HOST_DATA=/chemin/du/stockage bash install.sh — l'interface affiche toujours ce stockage sous /data.
+Ouvre ensuite http://IP_DU_NAS:27000 (hostname -I donne l'adresse). Pour un autre point de montage : sudo UPSCALE_HOST_DATA=/chemin/du/stockage bash install.sh — l'interface affiche toujours ce stockage sous /data. Vidéos sur plusieurs disques : voir **Plusieurs disques** ci-dessous (ou directement sudo UPSCALE_DISQUES="/mnt/disque2 /mnt/disque3" bash install.sh).
 
 **Mise à jour :**
 
@@ -121,13 +121,35 @@ Au premier traitement, Docker peut télécharger l'image Video2X (plusieurs Go).
 
 ## Utilisation
 
-1. **Configuration** : choisis les dossiers source et destination, la hauteur maximale des sources à traiter (480p pour traiter 240p, 360p et 480p), la résolution de sortie, le modèle, les filtres et l'encodeur. Clique sur **Enregistrer**.
+1. **Configuration** : choisis un ou plusieurs dossiers source (**+ Ajouter un dossier source**, sur n'importe quel disque) et la destination, la hauteur maximale des sources à traiter (480p pour traiter 240p, 360p et 480p), la résolution de sortie, le modèle, les filtres et l'encodeur. Clique sur **Enregistrer**.
 2. **Aperçu** : choisis une vidéo, un instant de départ et quelques modèles, puis **Générer l'aperçu**. Les aperçus passent devant la file (même en pause). Compare ensuite deux variantes avec le curseur ; l'original agrandi sans IA sert de référence.
 3. **Profils par dossier** (facultatif) : par exemple /data/videos/Animation → AnimeVideo v3. Un fichier utilise le profil du dossier le plus précis qui le contient ; les champs « Global » reprennent les réglages généraux.
 4. **Analyser les vidéos** compte les fichiers éligibles ; **Lancer le traitement** les met en file.
 5. **File de traitement** : suis la progression par segment, réordonne (⤒ ↑ ↓), relance, supprime ou consulte les journaux.
 
 Les sorties reprennent l'arborescence du dossier source en .mkv, avec le suffixe éventuel (Film (2001).avi → Film (2001) - 720p IA.mkv). Si deux sources du même dossier ne diffèrent que par l'extension (film.avi et film.mp4), les sorties deviennent film.avi.mkv et film.mp4.mkv. Les vidéos déjà présentes à destination ou déjà traitées (même chemin, taille et date) sont ignorées.
+
+## Plusieurs disques
+
+Docker isole le conteneur : Upscale ne voit que les dossiers du NAS qu'on lui confie. Le disque principal (UPSCALE_HOST_DATA dans .env) apparaît sous **/data** ; chaque disque supplémentaire apparaît sous **/disques/&lt;Nom&gt;**. Pour en ajouter un, sur le NAS :
+
+~~~bash
+cd Upscale
+sudo bash bibliotheques.sh ajouter /mnt/disque2/films            # visible sous /disques/films
+sudo bash bibliotheques.sh ajouter /srv/series "Séries"         # nom choisi : /disques/Séries
+sudo bash bibliotheques.sh liste
+sudo bash bibliotheques.sh retirer films                        # ne touche pas aux fichiers
+~~~
+
+Le script écrit docker-compose.override.yml (chargé automatiquement par Docker Compose, ignoré par git, donc conservé lors des git pull) puis redémarre Upscale. Ensuite, dans l'interface :
+
+- l'explorateur (**Parcourir**) s'ouvre sur la liste des disques, avec l'espace libre de chacun ;
+- **+ Ajouter un dossier source** permet d'analyser plusieurs dossiers à la fois, sur des disques différents ;
+- la destination peut être sur n'importe quel disque (un sous-dossier, pas la racine du disque).
+
+Avec un seul dossier source, les sorties vont directement dans la destination. Avec plusieurs, chacune a son sous-dossier au nom du dossier source (/data/out/Films/…, /data/out/Séries/…) ; les vidéos déjà traitées avant l'ajout d'une source ne sont pas refaites. En mode remplacement, chaque vidéo est remplacée dans son propre dossier et la corbeille se trouve dans le dossier source concerné.
+
+En mode standard, Upscale lit ses propres montages et donne exactement les mêmes disques au conteneur Video2X : rien d'autre à configurer. Le mode sans socket (docker-compose.local.yml) prend aussi en compte docker-compose.override.yml quand il est relancé par bibliotheques.sh.
 
 ## Paramètres de traitement
 
@@ -232,6 +254,8 @@ Par défaut, Upscale lance Video2X dans un conteneur frère via /var/run/docker.
 ~~~bash
 docker compose down
 docker compose -f docker-compose.local.yml up -d --build
+# avec des disques supplémentaires (bibliotheques.sh) :
+docker compose -f docker-compose.local.yml -f docker-compose.override.yml up -d --build
 ~~~
 
 Mêmes .env, données, réglages et file d'attente. Pour revenir : docker compose -f docker-compose.local.yml down && docker compose up -d. La CI construit cette image et y exécute un vrai traitement Video2X (sur Vulkan logiciel), mais elle n'a pas encore été validée sur une Radeon : teste-la sur une courte vidéo.

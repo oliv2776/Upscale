@@ -29,6 +29,8 @@ def env(tmp_path, monkeypatch):
     (data / "videos").mkdir(parents=True)
     monkeypatch.setattr(config, "DATA_ROOT", data.resolve())
     monkeypatch.setattr(config, "HOST_DATA", "/srv/nas/media")
+    monkeypatch.setattr(config, "DISKS_ROOT", tmp_path / "disques")
+    monkeypatch.setattr(runner, "_mounts_cache", None)
     monkeypatch.setattr(config, "STATE_DIR", tmp_path / "state")
     monkeypatch.setattr(config, "MIN_FREE_BYTES", 0)
     monkeypatch.setattr(config, "AUTH_PASSWORD", "")
@@ -50,6 +52,7 @@ def env(tmp_path, monkeypatch):
     db.store_settings_payload({
         **settings.DEFAULT_SETTINGS,
         "source": str(data / "videos"),
+        "sources": [str(data / "videos")],
         "destination": str(data / "out"),
         "preset": "ultrafast",
     })
@@ -83,6 +86,12 @@ FAKE_VIDEO2X = textwrap.dedent("""\
     if os.path.basename(sys.argv[0]) == "docker":
         if args[:2] == ["image", "inspect"] or args[:1] in (["rm"], ["stop"], ["ps"], ["pull"], ["info"]):
             sys.exit(0)
+        if args[:1] == ["inspect"]:
+            mounts = os.environ.get("FAKE_DOCKER_MOUNTS")
+            if mounts and args[-1] == "upscale":
+                print(mounts)
+                sys.exit(0)
+            sys.exit(1)
         if args[:1] != ["run"]:
             sys.exit(1)
         tool = args[args.index(os.environ["FAKE_DOCKER_IMAGE"]) + 1:]

@@ -182,7 +182,7 @@ def purge_trash(moment: float | None = None) -> int:
     settings = settings_mod.get_settings()
     days = int(settings.get("trash_days", 30))
     moment = moment or time.time()
-    roots = {Path(settings["source"]) / settings_mod.TRASH_DIR}
+    roots = {Path(source) / settings_mod.TRASH_DIR for source in settings_mod.source_list(settings)}
     with db.connect() as conn:
         tracked = conn.execute("SELECT id,trash_path FROM jobs WHERE trash_path IS NOT NULL").fetchall()
     for row in tracked:
