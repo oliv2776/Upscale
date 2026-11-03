@@ -58,6 +58,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build image
         run: docker build -f Dockerfile.local -t uscale-local:ci .
+      - name: Missing libraries (diagnostic)
+        if: always()
+        run: |
+          docker run --rm --entrypoint sh uscale-local:ci -c 'cd /opt/video2x && ls && head -n 40 AppRun; for b in usr/bin/*; do echo "== $b"; LD_LIBRARY_PATH=/opt/video2x/usr/lib:/opt/video2x/usr/lib/x86_64-linux-gnu ldd "$b" | grep "not found" || true; done'
       - name: Video2X runs
         run: |
           docker run --rm --entrypoint /opt/video2x/AppRun uscale-local:ci --help | tee help.txt | head -n 60

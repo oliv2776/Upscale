@@ -8,63 +8,136 @@
 <div class="shell">
   <aside class="sidebar">
     <div class="brand"><span class="brand-mark">U</span><span>Uscale</span><small>LOCAL VIDEO LAB</small></div>
-    <nav><a class="active" href="#dashboard">◫ <span>Vue d'ensemble</span></a><a href="#settings">⚙ <span>Configuration</span></a><a href="#queue">▤ <span>File de traitement</span></a></nav>
-    <div class="side-bottom"><span class="pulse"></span><span>Traitement local</span><small>Vulkan · Video2X</small></div>
+    <nav>
+      <a class="active" href="#dashboard">◫ <span>Vue d'ensemble</span></a>
+      <a href="#settings">⚙ <span>Configuration</span></a>
+      <a href="#preview">◐ <span>Aperçu</span></a>
+      <a href="#automation">⏱ <span>Automatisation</span></a>
+      <a href="#queue">▤ <span>File de traitement</span></a>
+      <a href="#system">⌁ <span>Système</span></a>
+    </nav>
+    <div class="side-bottom"><span class="pulse"></span><span>Traitement local</span><small id="sideVersion">Vulkan · Video2X</small></div>
   </aside>
   <main>
     <header class="topbar"><div><div class="eyebrow">ESPACE PERSONNEL / NAS</div><h1>Video upscaling</h1></div><div class="top-actions"><span id="connection" class="connection"><i></i> Connexion…</span><button class="icon-btn" id="refreshBtn" title="Actualiser">↻</button></div></header>
     <section class="hero" id="dashboard">
-      <div><div class="eyebrow light">AI-POWERED RESTORATION</div><h2>Donnez une nouvelle<br>dimension à vos vidéos.</h2><p>Parcourez votre bibliothèque, sélectionnez vos paramètres et laissez votre GPU faire le travail.</p><button class="primary" id="scanHero">Analyser ma bibliothèque <span>→</span></button></div>
+      <div><div class="eyebrow light">AI-POWERED RESTORATION</div><h2>Donnez une nouvelle<br>dimension à vos vidéos.</h2><p>Parcourez votre bibliothèque, comparez les modèles sur un extrait, puis laissez votre GPU faire le travail.</p><button class="primary" id="scanHero">Analyser ma bibliothèque <span>→</span></button></div>
       <div class="hero-art"><div class="orb orb-one"></div><div class="orb orb-two"></div><div class="frame frame-back"></div><div class="frame frame-front"><div class="frame-grid"></div><b>4×</b><small>AI UPSCALE</small></div><div class="hero-caption">240p <span>→</span> 720p</div></div>
     </section>
     <section class="stats">
-      <article class="stat"><span class="stat-label">En attente</span><strong id="queuedCount">0</strong><small>Vidéos dans la file</small></article>
+      <article class="stat"><span class="stat-label">En attente</span><strong id="queuedCount">0</strong><small id="queuedHint">Vidéos dans la file</small></article>
       <article class="stat"><span class="stat-label">En cours</span><strong id="runningCount">0</strong><small>Traitement actif</small></article>
       <article class="stat"><span class="stat-label">Terminées</span><strong id="completedCount">0</strong><small>Vidéos converties</small></article>
       <article class="stat"><span class="stat-label">En erreur</span><strong id="failedCount">0</strong><small>À vérifier</small></article>
     </section>
+
     <section class="panel" id="settings">
       <div class="section-head"><div><div class="eyebrow">01 / SOURCE & DESTINATION</div><h3>Bibliothèque vidéo</h3><p>Choisissez les dossiers à analyser. Les originaux restent intacts.</p></div><span class="tag">SCAN RÉCURSIF</span></div>
       <div class="path-grid">
         <div class="field"><label>DOSSIER SOURCE</label><div class="path-control"><input id="source" value="/data/videos"><button data-picker="source" class="browse">Parcourir</button></div><small>Vidéos à analyser, sous-dossiers inclus.</small></div>
         <div class="field"><label>DOSSIER DE DESTINATION</label><div class="path-control"><input id="destination" value="/data/videos_upscaled"><button data-picker="destination" class="browse">Parcourir</button></div><small>Arborescence conservée, sortie MKV.</small></div>
       </div>
+      <div class="settings-grid top-gap">
+        <div class="field"><label>SUFFIXE DES FICHIERS PRODUITS</label><input class="text-input" id="outputSuffix" placeholder="ex. « - 720p IA »" maxlength="60"><small>Film (2001).avi → Film (2001) - 720p IA.mkv (pratique pour Jellyfin/Plex).</small></div>
+        <div class="field"><label>SOUS-DOSSIERS</label><div class="toggle-row"><span>Inclure tous les sous-dossiers</span><label class="switch"><input id="recursive" type="checkbox" checked><span></span></label></div></div>
+      </div>
+
       <div class="section-head compact"><div><div class="eyebrow">02 / PARAMÈTRES IA</div><h3>Qualité de traitement</h3></div></div>
       <div class="settings-grid">
         <div class="field"><label>RÉSOLUTION SOURCE MAX.</label><select id="maxInput"><option value="240">Jusqu'à 240p</option><option value="360">Jusqu'à 360p</option><option value="480" selected>Jusqu'à 480p</option><option value="720">Jusqu'à 720p</option></select></div>
-        <div class="field"><label>RÉSOLUTION DE SORTIE</label><select id="outputHeight"><option value="480">480p</option><option value="720" selected>720p</option><option value="1080">1080p</option></select></div>
-        <div class="field"><label>MODÈLE IA</label><select id="model"><option value="realesrgan-plus">Real-ESRGAN Plus · Meilleur choix général</option><option value="realesr-generalv3">Real-ESRGAN General v3 · Plus léger</option><option value="realesr-animevideov3">Real-ESRGAN AnimeVideo v3 · Animation vidéo</option><option value="realesrgan-plus-anime">Real-ESRGAN Plus Anime · Animation détaillée</option></select><small>Plus = qualité générale ; General v3 = plus léger ; AnimeVideo v3 = conçu pour les vidéos animées.</small></div>
-        <div class="field"><label>QUALITÉ VIDÉO (CRF)</label><div class="range-line"><input id="crf" type="range" min="12" max="30" value="16"><b id="crfValue">16</b></div><small>Plus bas = meilleure qualité, fichier plus lourd.</small></div>
-        <div class="field"><label>VITESSE D'ENCODAGE</label><select id="preset"><option value="fast">Rapide</option><option value="medium">Équilibré</option><option value="slow" selected>Lent · compression plus efficace</option></select></div>
-        <div class="field"><label>DÉSENTRELACEMENT</label><select id="deinterlace"><option value="auto" selected>Automatique · sources entrelacées détectées</option><option value="on">Toujours</option><option value="off">Jamais</option></select><small>DVD/VOB souvent entrelacés : évite d'agrandir les effets de peigne.</small></div>
-        <div class="field"><label>SOUS-DOSSIERS</label><div class="toggle-row"><span>Inclure tous les sous-dossiers</span><label class="switch"><input id="recursive" type="checkbox" checked><span></span></label></div></div>
+        <div class="field"><label>RÉSOLUTION DE SORTIE</label><select id="outputHeight"><option value="480">480p</option><option value="720" selected>720p</option><option value="1080">1080p</option><option value="1440">1440p</option><option value="2160">2160p</option></select></div>
+        <div class="field"><label>MODÈLE IA</label><select id="model" class="model-select"></select><small>Comparez-les dans « Aperçu ». Automatique = Ollama choisit selon des images de la vidéo.</small></div>
+        <div class="field"><label>DÉSENTRELACEMENT</label><select id="deinterlace"><option value="auto" selected>Automatique · sources entrelacées détectées</option><option value="on">Toujours</option><option value="off">Jamais</option></select><small>DVD/VOB souvent entrelacés.</small></div>
+        <div class="field"><label>DÉBRUITAGE AVANT L'IA</label><select id="denoise" class="denoise-select"><option value="off">Aucun</option><option value="light">Léger · hqdn3d</option><option value="medium">Moyen · hqdn3d</option><option value="strong">Fort · nlmeans (VHS, plus lent)</option></select><small>L'IA amplifie le bruit et les blocs de compression.</small></div>
+        <div class="field"><label>IMAGES PAR SECONDE</label><select id="interpolate"><option value="1">Inchangées</option><option value="2">Doubler (RIFE · expérimental)</option></select><small>25 → 50 i/s pour les contenus anciens.</small></div>
       </div>
-      <div class="actions"><button class="secondary" id="scanBtn">⌕ Analyser les vidéos</button><button class="primary" id="queueBtn">Lancer le traitement <span>→</span></button></div>
+
+      <div class="section-head compact"><div><div class="eyebrow">03 / ENCODAGE</div><h3>Fichier final</h3></div></div>
+      <div class="settings-grid">
+        <div class="field"><label>ENCODEUR</label><select id="codec" class="codec-select"><option value="h264">H.264 · compatibilité maximale</option><option value="hevc">HEVC 10 bits · ~40 % plus léger</option><option value="av1">AV1 10 bits · le plus léger, plus lent</option><option value="h264_vaapi">H.264 matériel (VAAPI, GPU AMD)</option><option value="hevc_vaapi">HEVC matériel (VAAPI, GPU AMD)</option></select><small>Le matériel est bien plus rapide mais moins efficace à qualité égale.</small></div>
+        <div class="field"><label>QUALITÉ VIDÉO (CRF)</label><div class="range-line"><input id="crf" type="range" min="12" max="30" value="16"><b id="crfValue">16</b></div><small>Plus bas = meilleure qualité. Converti automatiquement pour HEVC, AV1 et VAAPI.</small></div>
+        <div class="field"><label>VITESSE D'ENCODAGE</label><select id="preset"><option value="fast">Rapide</option><option value="medium">Équilibré</option><option value="slow" selected>Lent · compression plus efficace</option></select></div>
+      </div>
+
+      <div class="section-head compact"><div><div class="eyebrow">04 / PROFILS PAR DOSSIER</div><h3>Réglages spécifiques</h3><p>Un fichier utilise le profil du dossier le plus précis qui le contient. Les réglages sont figés au moment de la mise en file.</p></div><button class="secondary small" id="addProfile">+ Ajouter un profil</button></div>
+      <div class="table-wrap"><table class="profiles"><thead><tr><th>DOSSIER</th><th>MODÈLE</th><th>SORTIE</th><th>DÉBRUITAGE</th><th>ENCODEUR</th><th></th></tr></thead><tbody id="profilesBody"></tbody></table></div>
+
+      <div class="actions"><button class="secondary" id="saveSettings">Enregistrer</button><button class="secondary" id="scanBtn">⌕ Analyser les vidéos</button><button class="primary" id="queueBtn">Lancer le traitement <span>→</span></button></div>
       <div id="scanResult" class="scan-result hidden"></div>
     </section>
+
+    <section class="panel" id="preview">
+      <div class="section-head"><div><div class="eyebrow">05 / COMPARAISON</div><h3>Aperçu avant/après</h3><p>Traite un court extrait avec plusieurs modèles, puis comparez-les avec le curseur. Les aperçus passent avant la file.</p></div></div>
+      <div class="preview-form">
+        <div class="field grow"><label>VIDÉO</label><div class="path-control"><input id="previewSource" placeholder="Choisir un fichier…"><button data-picker="previewSource" data-mode="file" class="browse">Parcourir</button></div></div>
+        <div class="field"><label>DÉBUT (MM:SS)</label><input class="text-input" id="previewStart" value="01:00"></div>
+        <div class="field"><label>DURÉE</label><select id="previewDuration"><option value="5">5 s</option><option value="10" selected>10 s</option><option value="20">20 s</option></select></div>
+      </div>
+      <div class="field top-gap"><label>MODÈLES À COMPARER</label><div class="checks" id="previewModels"></div></div>
+      <div class="ollama-actions"><span id="previewStatus" class="ollama-status">L'original agrandi sans IA sert de référence.</span><button class="primary small" id="previewBtn">Générer l'aperçu</button></div>
+      <div id="compareBox" class="compare-wrap hidden">
+        <div class="compare-bar">
+          <select id="previewPick" title="Aperçu"></select>
+          <label>Gauche <select id="leftVariant"></select></label>
+          <label>Droite <select id="rightVariant"></select></label>
+          <button class="secondary small" id="playPause">▶ Lecture</button>
+        </div>
+        <div class="compare" id="compare">
+          <video id="videoRight" muted playsinline loop preload="auto"></video>
+          <video id="videoLeft" muted playsinline loop preload="auto"></video>
+          <div class="compare-handle" id="compareHandle"><span>⇆</span></div>
+          <b class="compare-label left" id="leftLabel"></b><b class="compare-label right" id="rightLabel"></b>
+        </div>
+        <small class="muted">Glissez sur l'image pour déplacer la séparation. Astuce : mettez la lecture en pause pour comparer image par image.</small>
+      </div>
+    </section>
+
+    <section class="panel" id="automation">
+      <div class="section-head"><div><div class="eyebrow">06 / AUTOMATISATION</div><h3>Planification et intégrations</h3><p>Surveillance du dossier source, horaires de traitement, notifications et serveur multimédia.</p></div></div>
+      <div class="settings-grid">
+        <div class="field"><label>DOSSIER SURVEILLÉ</label><div class="toggle-row"><span>Ajouter les nouvelles vidéos automatiquement</span><label class="switch"><input id="watchEnabled" type="checkbox"><span></span></label></div></div>
+        <div class="field"><label>INTERVALLE D'ANALYSE</label><select id="watchInterval"><option value="5">5 min</option><option value="15">15 min</option><option value="30" selected>30 min</option><option value="60">1 h</option><option value="360">6 h</option><option value="1440">24 h</option></select><small>Les fichiers modifiés depuis moins de 2 min sont ignorés (copie en cours).</small></div>
+        <div class="field"><label>PLAGE HORAIRE</label><div class="toggle-row"><span>Traiter seulement entre</span><label class="switch"><input id="scheduleEnabled" type="checkbox"><span></span></label></div><div class="time-row"><input type="time" id="scheduleStart" value="22:00"><span>et</span><input type="time" id="scheduleEnd" value="07:00"></div><small>Hors plage, la vidéo en cours s'arrête à la fin de son segment et reprend ensuite.</small></div>
+      </div>
+      <div class="settings-grid top-gap">
+        <div class="field"><label>NOTIFICATIONS</label><select id="notifyType"><option value="">Désactivées</option><option value="ntfy">ntfy</option><option value="gotify">Gotify</option><option value="webhook">Webhook JSON</option></select></div>
+        <div class="field"><label>ADRESSE</label><input class="text-input" id="notifyUrl" placeholder="https://ntfy.sh/mon-sujet"><small>ntfy : URL du sujet · Gotify : URL du serveur · Webhook : URL appelée en POST.</small></div>
+        <div class="field"><label>JETON</label><input class="text-input" id="notifyToken" type="password" autocomplete="off" placeholder="Optionnel"><small id="notifyTokenHint"></small></div>
+        <div class="field"><label>ENVOYER QUAND</label><div class="toggle-row"><span>Une vidéo est terminée</span><label class="switch"><input id="notifyComplete" type="checkbox" checked><span></span></label></div><div class="toggle-row"><span>Une vidéo échoue</span><label class="switch"><input id="notifyFailure" type="checkbox" checked><span></span></label></div></div>
+        <div class="field"><label>SERVEUR MULTIMÉDIA</label><select id="mediaType"><option value="">Aucun</option><option value="jellyfin">Jellyfin</option><option value="plex">Plex</option></select><small>Bibliothèques réanalysées après chaque vidéo terminée.</small></div>
+        <div class="field"><label>ADRESSE ET JETON</label><input class="text-input" id="mediaUrl" placeholder="http://192.168.1.20:8096"><input class="text-input top-gap-s" id="mediaToken" type="password" autocomplete="off" placeholder="Clé API Jellyfin / X-Plex-Token"><small id="mediaTokenHint"></small></div>
+      </div>
+      <div class="ollama-actions"><span id="automationStatus" class="ollama-status"></span><button class="secondary small" id="testNotify">Tester la notification</button><button class="secondary small" id="testMedia">Tester le serveur</button><button class="primary small" id="saveAutomation">Enregistrer</button></div>
+    </section>
+
     <section class="panel" id="ollama">
-      <div class="section-head"><div><div class="eyebrow">OPTIONNEL / ASSISTANT IA</div><h3>Connexion Ollama</h3><p>Connectez votre instance Ollama existante pour les fonctions d'analyse et d'assistance IA.</p></div><span class="tag" id="ollamaBadge">DÉSACTIVÉ</span></div>
+      <div class="section-head"><div><div class="eyebrow">OPTIONNEL / ASSISTANT IA</div><h3>Connexion Ollama</h3><p>Avec un modèle de vision (llava, qwen2.5vl, gemma3…), le modèle IA « Automatique » choisit entre animation et prise de vue réelle.</p></div><span class="tag" id="ollamaBadge">DÉSACTIVÉ</span></div>
       <div class="ollama-grid">
         <div class="field"><label>ACTIVER L'INTÉGRATION</label><div class="toggle-row"><span>Utiliser Ollama (facultatif)</span><label class="switch"><input id="ollamaEnabled" type="checkbox"><span></span></label></div></div>
         <div class="field"><label>ADRESSE DE L'API OLLAMA</label><input class="ollama-input" id="ollamaUrl" value="http://host.docker.internal:11434" placeholder="http://192.168.1.10:11434"><small>Adresse joignable depuis le conteneur Uscale.</small></div>
-        <div class="field"><label>MODÈLE PAR DÉFAUT</label><select id="ollamaModel"><option value="">Détecter les modèles disponibles…</option></select><small>Les modèles sont chargés depuis /api/tags.</small></div>
+        <div class="field"><label>MODÈLE DE VISION</label><select id="ollamaModel"><option value="">Détecter les modèles disponibles…</option></select><small>Les modèles sont chargés depuis /api/tags.</small></div>
       </div>
       <div class="ollama-actions"><span id="ollamaStatus" class="ollama-status">Intégration facultative, désactivée par défaut.</span><button class="secondary small" id="testOllama">Tester la connexion</button><button class="secondary small" id="saveOllama">Enregistrer</button></div>
       <p class="ollama-help">Si Ollama tourne directement sur le NAS, son API doit être accessible depuis Docker. Sur une installation Linux native, Ollama écoute souvent uniquement sur localhost : configure OLLAMA_HOST=0.0.0.0 puis redémarre Ollama, ou indique une adresse IP/port déjà accessible. Ne publie pas cette API sur Internet.</p>
     </section>
+
     <section class="panel" id="queue">
-      <div class="section-head"><div><div class="eyebrow">03 / MONITORING</div><h3>File de traitement</h3><p>Suivez les tâches et consultez les journaux en cas de problème.</p></div><div class="queue-actions"><button class="secondary small" id="pauseBtn" title="La vidéo en cours se termine, les suivantes attendent">Ⅱ Pause après la vidéo en cours</button><button class="secondary small" id="resumeBtn">▶ Reprendre</button></div></div>
-      <div class="table-wrap"><table><thead><tr><th>FICHIER</th><th>RÉSOLUTION</th><th>ÉTAT</th><th>ÉTAPE / PROGRESSION</th><th></th></tr></thead><tbody id="jobsBody"><tr><td colspan="5" class="empty">Aucun traitement pour le moment.</td></tr></tbody></table></div>
+      <div class="section-head"><div><div class="eyebrow">07 / MONITORING</div><h3>File de traitement</h3><p id="queueInfo">Suivez les tâches et consultez les journaux en cas de problème.</p></div><div class="queue-actions"><button class="secondary small" id="pauseBtn" title="La vidéo en cours s'arrête à la fin de son segment">Ⅱ Pause</button><button class="secondary small" id="resumeBtn">▶ Reprendre</button><button class="secondary small" id="clearBtn">Vider les terminées</button></div></div>
+      <div class="filters" id="filters"><button data-filter="" class="active">Toutes</button><button data-filter="queued">En attente</button><button data-filter="running">En cours</button><button data-filter="completed">Terminées</button><button data-filter="failed">Erreurs</button><button data-filter="cancelled">Annulées</button></div>
+      <div class="table-wrap"><table><thead><tr><th>FICHIER</th><th>RÉGLAGES</th><th>ÉTAT</th><th>ÉTAPE / PROGRESSION</th><th></th></tr></thead><tbody id="jobsBody"><tr><td colspan="5" class="empty">Aucun traitement pour le moment.</td></tr></tbody></table></div>
+      <div class="pager"><button class="secondary small" id="prevPage">← Précédent</button><span id="pageInfo"></span><button class="secondary small" id="nextPage">Suivant →</button></div>
     </section>
-    <section class="panel health-panel">
+
+    <section class="panel health-panel" id="system">
       <div class="section-head"><div><div class="eyebrow">SYSTÈME</div><h3>État du serveur</h3></div><button class="secondary small" id="healthBtn">Tester le GPU</button></div>
-      <div class="health-grid"><div><span class="health-label">Docker</span><strong id="dockerState">Vérification…</strong></div><div><span class="health-label">GPU Vulkan</span><strong id="gpuState">Non vérifié</strong></div><div><span class="health-label">Image Video2X</span><strong id="imageState">—</strong></div><div><span class="health-label">Moteur</span><strong id="engineName">Video2X</strong></div></div>
+      <div class="health-grid"><div><span class="health-label">Docker / mode</span><strong id="dockerState">Vérification…</strong></div><div><span class="health-label">GPU Vulkan</span><strong id="gpuState">Non vérifié</strong></div><div><span class="health-label">Video2X</span><strong id="imageState">—</strong></div><div><span class="health-label">Moteur</span><strong id="engineName">Video2X</strong></div></div>
+      <div class="gpu-live" id="gpuLive"></div>
       <pre id="healthDetails" class="health-details hidden"></pre>
     </section>
-    <footer>USCALE <span>•</span> Traitement local, vos fichiers restent chez vous.</footer>
+    <footer>USCALE <span id="footerVersion"></span> <span>•</span> Traitement local, vos fichiers restent chez vous.</footer>
   </main>
 </div>
-<div id="picker" class="modal hidden"><div class="modal-card"><div class="modal-head"><div><div class="eyebrow">EXPLORATEUR DE FICHIERS</div><h3>Choisir un dossier</h3></div><button id="closePicker" class="icon-btn">×</button></div><div id="currentPath" class="current-path">/data</div><div id="directoryList" class="directory-list"></div><div class="modal-actions"><button id="selectFolder" class="primary">Utiliser ce dossier</button></div></div></div>
+<div id="picker" class="modal hidden"><div class="modal-card"><div class="modal-head"><div><div class="eyebrow">EXPLORATEUR DE FICHIERS</div><h3 id="pickerTitle">Choisir un dossier</h3></div><button id="closePicker" class="icon-btn">×</button></div><div id="currentPath" class="current-path">/data</div><div id="directoryList" class="directory-list"></div><div class="modal-actions"><button id="selectFolder" class="primary">Utiliser ce dossier</button></div></div></div>
 <div id="logModal" class="modal hidden"><div class="modal-card log-card"><div class="modal-head"><div><div class="eyebrow">JOURNAL DU TRAITEMENT</div><h3 id="logTitle">Logs</h3></div><button id="closeLogs" class="icon-btn">×</button></div><pre id="logContent" class="log-content"></pre></div></div>
 <div id="toast" class="toast"></div>
 <script src="/static/app.js"></script>

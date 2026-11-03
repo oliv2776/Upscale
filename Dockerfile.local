@@ -6,7 +6,7 @@ ARG VIDEO2X_VERSION=6.4.0
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ffmpeg ca-certificates curl tini tzdata libvulkan1 mesa-vulkan-drivers mesa-va-drivers \
+      ffmpeg ca-certificates curl tini tzdata libvulkan1 mesa-vulkan-drivers mesa-va-drivers libgpg-error0 \
     && rm -rf /var/lib/apt/lists/*
 
 # L'AppImage est extraite à la construction : pas besoin de FUSE à l'exécution.
