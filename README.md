@@ -1,133 +1,341 @@
 # Uscale
 
-Uscale est une interface web locale pour organiser l'upscaling IA d'une bibliothèque vidéo avec Video2X et un GPU Vulkan (notamment AMD sous Ubuntu).
+Uscale est une application auto-hébergée pour analyser une bibliothèque vidéo et lancer des traitements d'upscaling IA avec Video2X / Real-ESRGAN. Elle fournit une interface web en français sur le port **27000**, une file de tâches persistante et un explorateur de dossiers.
 
-Fonctionnalités :
-- Interface web sur le port **27000**
-- Explorateur de dossiers limité à /data
-- Scan récursif des vidéos et filtre par hauteur source
-- File d'attente persistante SQLite, pause/reprise/annulation
-- Real-ESRGAN Plus ou Real-ESRGAN Anime
-- Sortie MKV, hauteur configurable, audio et sous-titres repris depuis l'original
-- Journaux par tâche
-- Aucun fichier source n'est modifié
+Le projet cible notamment les NAS sous Ubuntu équipés d'un GPU AMD compatible Vulkan, comme la Radeon RX 5500 XT.
 
-## Installation sur Ubuntu / NAS
+> La qualité et la vitesse dépendent du pilote Mesa/Vulkan, du conteneur Video2X, du modèle et du fichier source. Fais un essai sur une courte vidéo avant d'ajouter toute ta bibliothèque.
 
-### 1. Préparer les dossiers
+## Fonctionnalités
 
-Sur l'hôte Ubuntu :
+- Interface web responsive, accessible depuis un navigateur du réseau local.
+- Analyse des dossiers et sous-dossiers à la recherche de vidéos.
+- Filtre selon la hauteur source (jusqu'à 240p, 360p, 480p ou 720p).
+- Upscaling IA avec Real-ESRGAN via Video2X.
+- Résolution de sortie configurable : 480p, 720p ou 1080p.
+- Sortie MKV H.264, conservation des pistes audio et sous-titres lorsque leurs codecs le permettent.
+- File persistante SQLite : pause, reprise, annulation et journaux par tâche.
+- Un seul traitement à la fois pour limiter la charge GPU.
+- Les originaux ne sont jamais écrasés et l'arborescence relative est conservée.
+
+## Prérequis
+
+- NAS ou serveur Ubuntu 22.04/24.04 (ou Linux compatible Docker).
+- Docker Engine et Docker Compose v2 fonctionnels.
+- GPU AMD exposé à Linux via /dev/dri et pilote Mesa Vulkan opérationnel.
+- Paquets hôte mesa-vulkan-drivers et vulkan-tools.
+- Accès au dépôt GitHub. S'il est privé, configure une clé SSH autorisée sur GitHub avant le clonage.
+- Espace disque disponible pour les vidéos temporaires et les fichiers de sortie.
+
+### À propos de la RX 5500 XT
+
+La RX 5500 XT peut exécuter le traitement Vulkan si le pilote Mesa de l'hôte expose correctement le périphérique. La présence de la carte dans lspci ne suffit pas : vulkaninfo --summary doit afficher le GPU AMD, et non uniquement llvmpipe (rendu logiciel CPU).
+
+## Installation sur un NAS Ubuntu
+
+Toutes les commandes ci-dessous sont à exécuter dans un terminal SSH du NAS. Les commandes avec sudo nécessitent les droits administrateur.
+
+### 1. Vérifier Docker et installer les outils système
 
 ~~~bash
-sudo mkdir -p /data/videos /data/videos_upscaled
+docker --version
+docker compose version
+sudo systemctl enable --now docker
+docker info
 ~~~
 
-Le conteneur monte le dossier hôte /data dans /data. L'explorateur web ne peut naviguer que sous cette racine. Si tes médias sont ailleurs, adapte USCALE_HOST_DATA et USCALE_DATA_ROOT dans le fichier .env et le montage correspondant dans docker-compose.yml. Le chemin visible dans l'interface doit être identique au chemin monté dans le conteneur.
+Si Docker n'est pas installé, installe Docker Engine et le plugin Compose v2 en suivant la documentation officielle adaptée à ta version d'Ubuntu :
+https://docs.docker.com/engine/install/ubuntu/
 
-### 2. Vérifier le pilote AMD/Vulkan
+Installe les outils Vulkan et Git :
 
 ~~~bash
 sudo apt update
-sudo apt install -y mesa-vulkan-drivers vulkan-tools ffmpeg
-vulkaninfo --summary
-ls -l /dev/dri
-getent group video
-getent group render
+sudo apt install -y git mesa-vulkan-drivers vulkan-tools
 ~~~
 
-La RX 5500 XT doit apparaître dans les périphériques Vulkan. Ne poursuis pas si seul llvmpipe (rendu logiciel CPU) est listé.
+FFmpeg est installé dans le conteneur Uscale ; il n'est pas nécessaire de l'installer séparément sur l'hôte.
 
-### 3. Configurer les GID
+### 2. Vérifier le GPU AMD
+
+~~~bash
+ls -l /dev/dri
+vulkaninfo --summary
+~~~
+
+Tu dois normalement retrouver un périphérique de rendu comme /dev/dri/renderD128 et une carte AMD dans le résumé Vulkan.
+
+Si vulkaninfo n'affiche que llvmpipe, arrête-toi ici : le traitement utiliserait le CPU au lieu du GPU. Vérifie les pilotes Mesa, redémarre le NAS après une mise à jour du pilote si nécessaire, puis relance vulkaninfo --summary.
+
+Affiche les GID associés aux périphériques DRM :
+
+~~~bash
+stat -c '%n : GID=%g' /dev/dri/card* /dev/dri/renderD*
+~~~
+
+Conserve les GID affichés pour la configuration Docker à l'étape 5.
+
+### 3. Préparer les dossiers vidéo
+
+La configuration par défaut monte le dossier hôte /data dans le conteneur au même chemin :
+
+~~~bash
+sudo mkdir -p /data/videos
+sudo mkdir -p /data/videos_upscaled
+~~~
+
+Place quelques vidéos de test dans /data/videos. Vérifie que Docker peut lire les sources et écrire dans le dossier de destination.
+
+**Important :** le dossier de destination doit être distinct du dossier source. Ne place pas videos_upscaled à l'intérieur de videos.
+
+Si tes médias sont ailleurs (par exemple /mnt/media), consulte la section **Utiliser un autre emplacement de stockage** avant de démarrer.
+
+### 4. Récupérer le projet
+
+Avec une clé SSH GitHub autorisée :
+
+~~~bash
+git clone git@github.com:oliv2776/Uscale.git
+cd Uscale
+~~~
+
+Si le dépôt est privé, le clonage HTTPS demandera une authentification GitHub. N'inscris jamais un token personnel directement dans une commande ou dans le fichier .env.
+
+### 5. Configurer les variables d'environnement
+
+Crée le fichier local de configuration :
 
 ~~~bash
 cp .env.example .env
-VIDEO_GID=$(getent group video | cut -d: -f3)
-RENDER_GID=$(getent group render | cut -d: -f3)
-sed -i "s/^VIDEO_GID=.*/VIDEO_GID=$VIDEO_GID/" .env
-sed -i "s/^RENDER_GID=.*/RENDER_GID=$RENDER_GID/" .env
+nano .env
 ~~~
 
-Si le groupe render n'existe pas, vérifie les groupes disponibles avec ls -ln /dev/dri et utilise le GID propriétaire de renderD*. Même vérification pour video.
+Exemple pour un NAS dont les médias sont stockés dans /data :
 
-### 4. Démarrer Uscale
+~~~dotenv
+USCALE_HOST_DATA=/data
+USCALE_DATA_ROOT=/data
+USCALE_PORT=27000
 
-Depuis le dossier du projet :
+# Remplacer par les GID réellement trouvés à l'étape 2.
+VIDEO_GID=44
+RENDER_GID=109
+
+VIDEO2X_IMAGE=ghcr.io/k4yt3x/video2x:6.4.0
+DEFAULT_SOURCE=/data/videos
+DEFAULT_DESTINATION=/data/videos_upscaled
+~~~
+
+Les valeurs 44 et 109 sont des valeurs d'exemple, pas des valeurs garanties pour ton NAS. Remplace-les par les GID réels des périphériques /dev/dri/card* et /dev/dri/renderD*. En pratique, le GID de card* va dans VIDEO_GID et celui de renderD* dans RENDER_GID.
+
+Pour récupérer les GID du premier périphérique de chaque type :
+
+~~~bash
+stat -c '%g' /dev/dri/card0
+stat -c '%g' /dev/dri/renderD128
+~~~
+
+Adapte les noms si tes périphériques ont d'autres numéros. Ne copie pas aveuglément les valeurs d'exemple.
+
+### 6. Construire et démarrer Uscale
+
+Depuis le dossier du dépôt :
 
 ~~~bash
 docker compose up -d --build
-docker compose logs -f uscale
 ~~~
 
-Ouvre ensuite http://ADRESSE_IP_DU_NAS:27000.
-
-Le premier contrôle GPU peut télécharger l'image Video2X (plusieurs Go selon les couches déjà présentes).
-
-## Utilisation
-
-1. Choisis le dossier source et le dossier de destination dans l'explorateur.
-2. Choisis la hauteur source maximale (240, 360, 480 ou 720).
-3. Choisis la hauteur de sortie (480, 720 ou 1080).
-4. Sélectionne Real-ESRGAN Plus pour les vidéos générales ou le modèle Anime pour l'animation.
-5. Clique sur **Analyser les vidéos** pour compter les fichiers éligibles.
-6. Clique sur **Lancer le traitement** pour les placer dans la file.
-7. Suis les tâches dans la file et ouvre les logs en cas de problème.
-
-Les sorties conservent l'arborescence relative du dossier source. Une vidéo déjà présente à la destination est ignorée. La base SQLite évite de remettre dans la file un fichier inchangé déjà traité.
-
-## Paramètres et fonctionnement
-
-- Video2X effectue la reconstruction IA avec Real-ESRGAN en facteur ×4.
-- FFmpeg ajuste ensuite la hauteur à la cible demandée (720p par défaut), conserve le ratio d'image et encode en H.264 dans un conteneur MKV.
-- L'audio et les sous-titres sont copiés depuis le fichier original lorsque les codecs le permettent.
-- Le CRF règle la qualité H.264 (valeur basse = meilleure qualité et fichier plus gros).
-- Un seul job est traité à la fois pour limiter la pression sur la RX 5500 XT.
-- Le worker reprend les tâches en attente après un redémarrage du conteneur.
-- Les fichiers temporaires sont supprimés après réussite ou échec.
-
-## Sécurité
-
-**Important :** le conteneur Uscale utilise le socket Docker de l'hôte pour lancer les conteneurs Video2X. L'accès au socket Docker équivaut pratiquement à un accès administrateur sur l'hôte. L'interface n'intègre pas d'authentification : ne l'expose pas directement sur Internet. Utilise-la uniquement sur un réseau local de confiance ou place-la derrière un reverse proxy avec authentification. Ne publie pas le port 27000 sur Internet.
-
-L'explorateur est limité à la racine configurée (/data) et refuse les liens symboliques pour empêcher de sortir de cette racine.
-
-## Dépannage
-
-### Docker indisponible dans l'interface
+Vérifie que le conteneur fonctionne :
 
 ~~~bash
-docker compose logs --tail=200 uscale
-ls -l /var/run/docker.sock
+docker compose ps
+docker compose logs -f --tail=200 uscale
 ~~~
 
-### GPU non détecté
+Au premier traitement, Docker peut télécharger l'image Video2X, qui peut représenter plusieurs gigaoctets. Prévois du temps et de l'espace disque.
+
+### 7. Ouvrir l'interface web
+
+Depuis un ordinateur ou un téléphone connecté au même réseau local, ouvre :
+
+~~~text
+http://ADRESSE_IP_DU_NAS:27000
+~~~
+
+Pour trouver l'adresse IP du NAS :
 
 ~~~bash
-vulkaninfo --summary
-ls -l /dev/dri
-docker run --rm --device /dev/dri ghcr.io/k4yt3x/video2x:6.4.0 --list-gpus
+hostname -I
 ~~~
 
-Vérifie les pilotes Mesa/Vulkan sur l'hôte et les GID configurés dans .env.
+L'interface affiche l'état de connexion au serveur et les dossiers configurés. Le port publié est modifiable avec USCALE_PORT dans .env ; le port interne du conteneur reste 27000.
 
-### Une tâche échoue
+## Première utilisation
 
-Ouvre **Logs** sur la ligne concernée, ou consulte :
+1. Dans **Dossier source**, sélectionne /data/videos ou le répertoire contenant tes vidéos.
+2. Dans **Dossier de destination**, sélectionne /data/videos_upscaled.
+3. Choisis la hauteur maximale des vidéos sources. Pour traiter les vidéos 240p, 360p et 480p, sélectionne **480p**.
+4. Choisis la résolution de sortie, par exemple **720p**.
+5. Choisis Real-ESRGAN Plus pour les vidéos générales ou le modèle Anime pour les contenus animés.
+6. Clique sur **Analyser les vidéos** pour compter les fichiers éligibles.
+7. Clique sur **Lancer le traitement** pour ajouter les fichiers à la file.
+8. Consulte la file et ouvre **Logs** sur une tâche pour voir son journal.
+
+Les sorties reprennent l'arborescence relative du dossier source et utilisent l'extension .mkv. Les vidéos déjà présentes à destination sont ignorées. La base SQLite conserve l'historique des tâches et la signature des fichiers (chemin, taille et date de modification) pour éviter de remettre en file un fichier inchangé déjà traité.
+
+## Utiliser un autre emplacement de stockage
+
+Si les médias sont stockés dans /mnt/media, édite .env ainsi :
+
+~~~dotenv
+USCALE_HOST_DATA=/mnt/media
+USCALE_DATA_ROOT=/data
+DEFAULT_SOURCE=/data/videos
+DEFAULT_DESTINATION=/data/videos_upscaled
+~~~
+
+Crée les répertoires sur l'hôte :
 
 ~~~bash
-docker compose logs -f uscale
+sudo mkdir -p /mnt/media/videos
+sudo mkdir -p /mnt/media/videos_upscaled
 ~~~
 
-### Réinitialiser l'historique
+Dans l'interface, les chemins sont ceux vus **depuis le conteneur**, donc /data/videos et /data/videos_upscaled, et non /mnt/media/.... Redémarre après modification :
 
-Arrête Uscale puis supprime le volume Docker uscale_uscale-state (cela supprime la file et les journaux, pas les médias) :
+~~~bash
+docker compose up -d
+~~~
+
+Le montage /data est la racine autorisée par l'explorateur web. Les chemins extérieurs à cette racine sont refusés.
+
+## Paramètres de traitement
+
+| Paramètre | Rôle |
+|---|---|
+| Hauteur source maximale | Exclut les vidéos plus grandes que la valeur choisie |
+| Hauteur de sortie | Hauteur finale demandée : 480, 720 ou 1080 pixels |
+| Modèle IA | Real-ESRGAN Plus ou Real-ESRGAN Anime |
+| CRF | Qualité H.264 : une valeur basse augmente la qualité et la taille du fichier |
+| Preset | Compromis entre vitesse d'encodage et compression |
+| Sous-dossiers | Active ou désactive le parcours récursif |
+
+Real-ESRGAN effectue la reconstruction IA en facteur ×4 ; FFmpeg ajuste ensuite la hauteur à la résolution finale demandée en conservant le ratio d'image. L'encodage final utilise H.264 et un conteneur MKV. Les pistes audio et sous-titres sont copiées depuis l'original lorsque leurs codecs sont compatibles avec le conteneur de sortie.
+
+Le traitement est séquentiel : une seule vidéo est envoyée à Video2X à la fois. Cela limite la consommation de VRAM et évite de saturer la RX 5500 XT. L'upscaling IA peut être lent, surtout sur les vidéos longues.
+
+## Gestion du service
+
+Voir l'état des conteneurs :
+
+~~~bash
+docker compose ps
+~~~
+
+Suivre les journaux :
+
+~~~bash
+docker compose logs -f --tail=200 uscale
+~~~
+
+Redémarrer Uscale :
+
+~~~bash
+docker compose restart uscale
+~~~
+
+Mettre à jour le projet :
+
+~~~bash
+git pull
+docker compose up -d --build
+~~~
+
+Arrêter Uscale :
+
+~~~bash
+docker compose down
+~~~
+
+Cette commande arrête et supprime le conteneur, mais conserve le volume applicatif et les vidéos.
+
+### Persistance et sauvegarde
+
+La file d'attente, les paramètres et les journaux sont stockés dans le volume Docker uscale-state, monté dans /app/state. Ce volume survit à docker compose down. Sauvegarde ce volume si tu souhaites conserver l'historique des traitements et les paramètres.
+
+Pour supprimer définitivement cet historique sans supprimer les vidéos :
 
 ~~~bash
 docker compose down
 docker volume rm uscale_uscale-state
 ~~~
 
-## Références
+## Dépannage
 
-- [Video2X — documentation CLI](https://docs.video2x.org/running/command-line.html)
-- [Video2X — conteneur Docker](https://docs.video2x.org/running/container.html)
-- [Video2X — GitHub](https://github.com/k4yt3x/video2x)
+### L'interface ne répond pas sur le port 27000
+
+~~~bash
+docker compose ps
+docker compose logs --tail=200 uscale
+sudo ss -ltnp | grep 27000
+~~~
+
+Vérifie que le port n'est pas déjà utilisé et que le pare-feu du NAS autorise les connexions depuis le réseau local.
+
+### Docker n'est pas accessible depuis Uscale
+
+Le conteneur Uscale utilise /var/run/docker.sock pour lancer les traitements Video2X. Vérifie :
+
+~~~bash
+ls -l /var/run/docker.sock
+docker info
+docker compose logs --tail=200 uscale
+~~~
+
+### Le GPU n'est pas détecté
+
+Sur l'hôte :
+
+~~~bash
+ls -l /dev/dri
+vulkaninfo --summary
+~~~
+
+Vérifie ensuite VIDEO_GID et RENDER_GID dans .env, puis reconstruis et redémarre :
+
+~~~bash
+docker compose up -d --build
+~~~
+
+Si Vulkan n'est pas disponible dans le conteneur de traitement, le problème se situe généralement au niveau du pilote hôte, du périphérique /dev/dri ou des permissions de groupe.
+
+### Une tâche échoue
+
+Dans la file de traitement, clique sur **Logs** pour la tâche concernée. Tu peux aussi consulter :
+
+~~~bash
+docker compose logs -f uscale
+~~~
+
+Teste d'abord un fichier court de quelques secondes avant de soumettre une grande collection.
+
+## Sécurité — à lire avant toute exposition réseau
+
+**Le socket Docker est extrêmement privilégié.** Un processus qui peut contrôler le socket Docker de l'hôte peut généralement obtenir des privilèges équivalents à ceux de l'administrateur du NAS.
+
+L'interface Uscale ne possède pas encore de système d'authentification intégré. Par conséquent :
+
+- Ne publie pas le port 27000 sur Internet.
+- N'ouvre pas ce port sur ta box ou ton routeur.
+- Réserve l'accès au réseau local de confiance.
+- Pour un accès distant, passe par un VPN (par exemple WireGuard ou Tailscale) ou un reverse proxy avec authentification robuste.
+- Ne donne pas accès à l'interface à des utilisateurs non fiables.
+
+L'explorateur limite les chemins à la racine configurée (/data) et refuse les liens symboliques qui permettraient de sortir de cette racine. Cette restriction ne remplace pas les précautions réseau ci-dessus.
+
+## Documentation et projets utilisés
+
+- [Video2X — documentation](https://docs.video2x.org/)
+- [Video2X — exécution en conteneur](https://docs.video2x.org/running/container.html)
+- [Video2X — ligne de commande](https://docs.video2x.org/running/command-line.html)
+- [Video2X — dépôt GitHub](https://github.com/k4yt3x/video2x)
