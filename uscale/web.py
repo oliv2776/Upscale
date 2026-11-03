@@ -16,6 +16,7 @@ from . import config, db, gpu, media, notify, ollama, runner, scanner, worker
 from . import settings as settings_mod
 
 app = Flask(__name__, static_folder=str(config.STATIC_DIR), static_url_path="/static")
+app.json.sort_keys = False  # garder l'ordre des modèles
 PREVIEW_FILE_RE = re.compile(r"[a-z0-9-]+\.(mp4|json)")
 
 

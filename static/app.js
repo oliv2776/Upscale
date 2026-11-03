@@ -37,8 +37,8 @@ function fillModelSelects() {
   const options = Object.entries(state.models).map(([id, m]) =>
     '<option value="' + id + '">' + escapeHtml(m.label) + " · ×" + m.scales.join("/×") + "</option>").join("");
   $("model").innerHTML = options + '<option value="auto">Automatique · Ollama (vision) choisit</option>';
-  $("previewModels").innerHTML = Object.entries(state.models).map(([id, m], i) =>
-    '<label class="check"><input type="checkbox" value="' + id + '"' + (i < 2 ? " checked" : "") + "> " + escapeHtml(m.label) + "</label>").join("");
+  $("previewModels").innerHTML = Object.entries(state.models).map(([id, m]) =>
+    '<label class="check"><input type="checkbox" value="' + id + '"' + (["realesrgan-plus", "realesr-animevideov3"].includes(id) ? " checked" : "") + "> " + escapeHtml(m.label) + "</label>").join("");
 }
 function settingsPayload() {
   return {

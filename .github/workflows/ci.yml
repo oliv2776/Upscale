@@ -58,15 +58,51 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build image
         run: docker build -f Dockerfile.local -t uscale-local:ci .
-      - name: Missing libraries (diagnostic)
-        if: always()
-        run: |
-          docker run --rm --entrypoint sh uscale-local:ci -c 'cd /opt/video2x && ls && head -n 40 AppRun; for b in usr/bin/*; do echo "== $b"; LD_LIBRARY_PATH=/opt/video2x/usr/lib:/opt/video2x/usr/lib/x86_64-linux-gnu ldd "$b" | grep "not found" || true; done'
       - name: Video2X runs
         run: |
-          docker run --rm --entrypoint /opt/video2x/AppRun uscale-local:ci --help | tee help.txt | head -n 60
-          grep -qi "realesrgan" help.txt
-          grep -qi "frame-rate-mul" help.txt
+          docker run --rm --entrypoint /opt/video2x/AppRun uscale-local:ci --help > help.txt
+          cat help.txt
+          grep -q -- "--list-devices" help.txt
+          grep -q -- "--frame-rate-mul" help.txt
+          for model in realesrgan-plus realesrgan-plus-anime realesr-animevideov3 realesr-generalv3; do
+            grep -q "$model" help.txt || { echo "Modèle absent : $model"; exit 1; }
+          done
+      - name: Real Video2X on CPU Vulkan (lavapipe)
+        run: |
+          docker run --rm --entrypoint sh uscale-local:ci -c '
+            set -e
+            ffmpeg -v error -f lavfi -i testsrc=size=96x64:rate=10:duration=1 -c:v libx264 -pix_fmt yuv420p /tmp/in.mp4
+            /opt/video2x/AppRun --list-devices
+            /opt/video2x/AppRun -i /tmp/in.mp4 -o /tmp/up.mkv -p realesrgan -s 2 --realesrgan-model realesr-animevideov3 -c ffv1 2>&1 | tr "\r" "\n" | tail -n 25
+            ffprobe -v error -show_entries stream=codec_name,width,height -of csv /tmp/up.mkv
+            /opt/video2x/AppRun -i /tmp/in.mp4 -o /tmp/rife.mkv -p rife --frame-rate-mul 2 -c ffv1 2>&1 | tr "\r" "\n" | tail -n 10
+            ffprobe -v error -show_entries stream=codec_name,avg_frame_rate,nb_frames -count_frames -of csv /tmp/rife.mkv
+          '
+      - name: Full pipeline with real Video2X (local mode)
+        run: |
+          mkdir -p ci-data/videos
+          docker run --rm -v "$PWD/ci-data:/data" --entrypoint ffmpeg uscale-local:ci -v error \
+            -f lavfi -i testsrc=size=160x120:rate=10:duration=3 -f lavfi -i sine=duration=3 \
+            -c:v libx264 -pix_fmt yuv420p -c:a aac /data/videos/clip.mp4
+          docker run -d --name uscale-e2e -p 27002:27000 -v "$PWD/ci-data:/data" \
+            -e USCALE_SEGMENT_SECONDS=1 -e USCALE_MIN_FREE_GB=0 uscale-local:ci
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:27002/api/ping && break; sleep 1; done
+          curl -fsS -X POST -H "Content-Type: application/json" http://127.0.0.1:27002/api/queue \
+            -d '{"source":"/data/videos","destination":"/data/out","max_input_height":480,"output_height":240,"model":"realesr-animevideov3","preset":"ultrafast"}'
+          status=""
+          for i in $(seq 1 120); do
+            sleep 5
+            curl -fsS "http://127.0.0.1:27002/api/jobs" > jobs.json
+            status=$(python3 -c "import json; j=json.load(open('jobs.json'))['jobs']; print(j[0]['status'] if j else '')")
+            python3 -c "import json; j=json.load(open('jobs.json'))['jobs']; print(j and (j[0]['stage'], j[0]['progress']))"
+            [ "$status" = completed ] || [ "$status" = failed ] && break
+          done
+          id=$(python3 -c "import json; print(json.load(open('jobs.json'))['jobs'][0]['id'])")
+          curl -fsS "http://127.0.0.1:27002/api/logs/$id" | python3 -c "import json,sys; print(json.load(sys.stdin)['log'])"
+          docker rm -f uscale-e2e
+          test "$status" = completed
+          docker run --rm -v "$PWD/ci-data:/data" --entrypoint ffprobe uscale-local:ci -v error \
+            -show_entries stream=codec_type,codec_name,width,height:format=duration -of csv /data/out/clip.mkv
       - name: Smoke test
         run: |
           docker run -d --name uscale-local -p 27001:27000 uscale-local:ci

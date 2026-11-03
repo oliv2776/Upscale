@@ -217,7 +217,7 @@ def container_name(job_id: str) -> str:
 def video2x_command(job_id: str, args: list[str]) -> tuple[list[str], str | None]:
     """Commande Video2X selon le mode d'exécution, et nom du conteneur éventuel."""
     if config.VIDEO2X_GPU:
-        args = [*args, "-g", config.VIDEO2X_GPU]
+        args = [*args, "-d", config.VIDEO2X_GPU]  # index du périphérique Vulkan
     if config.RUNNER == "local":
         return [config.VIDEO2X_BIN, *args], None
     name = container_name(job_id)

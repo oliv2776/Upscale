@@ -1,4 +1,4 @@
-"""Détection du GPU Vulkan (Video2X --list-gpus) et statistiques en direct (sysfs amdgpu)."""
+"""Détection du GPU Vulkan (Video2X --list-devices) et statistiques en direct (sysfs amdgpu)."""
 from __future__ import annotations
 
 import subprocess
@@ -13,7 +13,7 @@ _lock = threading.Lock()
 
 
 def check_command() -> list[str]:
-    command, _ = runner.video2x_command("gpucheck", ["--list-gpus"])
+    command, _ = runner.video2x_command("gpucheck", ["--list-devices"])
     if config.RUNNER != "local":
         # Pas de nom fixe : plusieurs tests peuvent se suivre, et --rm nettoie.
         name_index = command.index("--name")

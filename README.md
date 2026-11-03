@@ -343,7 +343,7 @@ ls -l /dev/dri
 vulkaninfo --summary
 ~~~
 
-Dans l'interface, **Tester le GPU** lance Video2X --list-gpus avec les mêmes permissions que les traitements et affiche les GPU Vulkan vus. Si plusieurs GPU apparaissent (iGPU + Radeon), indique l'index de la Radeon dans VIDEO2X_GPU.
+Dans l'interface, **Tester le GPU** lance Video2X --list-devices avec les mêmes permissions que les traitements et affiche les GPU Vulkan vus. Si plusieurs GPU apparaissent (iGPU + Radeon), indique l'index de la Radeon dans VIDEO2X_GPU.
 
 Vérifie ensuite VIDEO_GID et RENDER_GID dans .env, puis reconstruis et redémarre :
 

@@ -88,7 +88,7 @@ FAKE_VIDEO2X = textwrap.dedent("""\
         tool = args[args.index(os.environ["FAKE_DOCKER_IMAGE"]) + 1:]
     else:
         tool = args
-    if "--list-gpus" in tool:
+    if "--list-devices" in tool:
         print("0. AMD Radeon RX 5500 XT (RADV NAVI14)")
         sys.exit(0)
     src = tool[tool.index("-i") + 1]

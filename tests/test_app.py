@@ -132,10 +132,10 @@ def test_video2x_command_modes(env, monkeypatch):
     command, container = runner.video2x_command("abc123def456", ["-i", "x"])
     assert command[command.index("-v") + 1] == f"/srv/nas/media:{env.resolve()}"
     assert container == "uscale-abc123def456" and config.CONTAINER_LABEL in command
-    assert command[-2:] == ["-g", "1"]
+    assert command[-2:] == ["-d", "1"]
     monkeypatch.setattr(config, "RUNNER", "local")
     command, container = runner.video2x_command("abc123def456", ["-i", "x"])
-    assert command == [config.VIDEO2X_BIN, "-i", "x", "-g", "1"] and container is None
+    assert command == [config.VIDEO2X_BIN, "-i", "x", "-d", "1"] and container is None
 
 
 def test_progress_parsers():
