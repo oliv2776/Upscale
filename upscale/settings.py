@@ -26,11 +26,16 @@ ANIMATION_MODEL = "realesr-animevideov3"
 PRESETS = ("ultrafast", "fast", "medium", "slow", "slower")
 DEINTERLACE_MODES = ("auto", "on", "off")
 DENOISE_LEVELS = ("off", "light", "medium", "strong")
+# Rendu : part de l'IA dans l'image finale et grain ajouté (contre l'effet « peau cireuse »).
+RENDERS = ("ai", "peau-normale", "custom")
+RENDER_PRESETS = {"ai": (100, "off"), "peau-normale": (70, "light")}
+RENDER_LABELS = {"ai": "IA pure", "peau-normale": "Peau normale", "custom": "Personnalisé"}
+GRAIN_LEVELS = ("off", "light", "medium")
 CODECS = ("h264", "hevc", "av1", "h264_vaapi", "hevc_vaapi")
 NOTIFY_TYPES = ("", "ntfy", "gotify", "webhook")
 MEDIA_TYPES = ("", "jellyfin", "plex")
 SECRET_KEYS = ("notify_token", "media_token")
-PROFILE_KEYS = ("model", "output_height", "crf", "denoise", "codec", "interpolate")
+PROFILE_KEYS = ("model", "output_height", "crf", "denoise", "codec", "interpolate", "render")
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     "source": config.DEFAULT_SOURCE,
@@ -46,6 +51,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "deinterlace": "auto",
     "denoise": "off",
     "interpolate": 1,
+    "render": "ai",
+    "ai_strength": 70,
+    "grain": "light",
     "output_suffix": "",
     "replace_original": False,
     "trash_days": 30,
@@ -228,6 +236,9 @@ VALIDATORS: dict[str, Any] = {
     "deinterlace": lambda v: _choice(v, "deinterlace", DEINTERLACE_MODES),
     "denoise": lambda v: _choice(v, "denoise", DENOISE_LEVELS),
     "interpolate": lambda v: _int_in(v, "interpolate", 1, 2),
+    "render": lambda v: _choice(v, "render", RENDERS),
+    "ai_strength": lambda v: _int_in(v, "ai_strength", 30, 100),
+    "grain": lambda v: _choice(v, "grain", GRAIN_LEVELS),
     "watch_enabled": bool,
     "watch_interval": lambda v: _int_in(v, "watch_interval", 5, 1440),
     "schedule_enabled": bool,
@@ -319,3 +330,11 @@ def effective_settings(settings: dict[str, Any], source: Path) -> dict[str, Any]
         result.update({key: value for key, value in profile.items() if key != "path"})
         result["profile"] = profile["path"]
     return result
+
+
+def render_params(settings: dict[str, Any]) -> tuple[int, str]:
+    """(part de l'IA en %, grain) pour le rendu choisi."""
+    render = settings.get("render", "ai")
+    if render in RENDER_PRESETS:
+        return RENDER_PRESETS[render]
+    return int(settings.get("ai_strength", 70)), str(settings.get("grain", "off"))

@@ -201,6 +201,7 @@ def api_jobs():
         item["output_height"] = snapshot.get("output_height")
         item["codec"] = snapshot.get("codec")
         item["profile"] = snapshot.get("profile")
+        item["render"] = snapshot.get("render", "ai")
         jobs.append(item)
     return jsonify({"jobs": jobs, "counts": counts, "total": total, "page": page, "limit": limit,
                     "paused": db.is_paused(), "deferred": worker.defer_reason(), "active_job_id": runner.get_active()})
@@ -313,7 +314,7 @@ def api_preview():
         models = [m for m in payload.get("models", []) if m in settings_mod.MODEL_SCALES]
         if not models:
             return error("Choisis au moins un modèle")
-        job_id = worker.create_preview(source, start, duration, models)
+        job_id = worker.create_preview(source, start, duration, models, bool(payload.get("peau_normale", True)))
         return jsonify({"ok": True, "id": job_id}), 202
     except (ValueError, OSError) as exc:
         return error(str(exc))

@@ -362,11 +362,11 @@ def move(job_id: str, where: str) -> None:
         conn.execute("UPDATE jobs SET position=?,updated_at=? WHERE id=?", (new, db.now(), job_id))
 
 
-def create_preview(source: Path, start: float, duration: float, models: list[str]) -> str:
+def create_preview(source: Path, start: float, duration: float, models: list[str], peau_normale: bool = True) -> str:
     settings = settings_mod.get_settings()
     settings_mod.validate_folders(settings)
     snapshot = settings_mod.effective_settings(settings, source)
-    snapshot["preview"] = {"start": start, "duration": duration, "models": models}
+    snapshot["preview"] = {"start": start, "duration": duration, "models": models, "peau_normale": peau_normale}
     job_id = uuid.uuid4().hex[:12]
     with db.connect() as conn:
         # source_mtime_ns négatif et unique : un aperçu ne doit pas entrer en conflit avec la tâche du même fichier.

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from . import config
-from .settings import MODEL_SCALES
+from .settings import MODEL_SCALES, render_params
 
 VIDEO_EXTENSIONS = {
     ".mkv", ".mp4", ".m4v", ".avi", ".mov", ".wmv", ".flv",
@@ -190,11 +190,41 @@ def prefilter_command(source: Path, output: Path, filters: list[str], stream: st
     return command + ["-c:v", "ffv1", "-g", "1", str(output)]
 
 
+GRAIN_FILTERS = {"light": "noise=c0s=4:c0f=t+u", "medium": "noise=c0s=7:c0f=t+u"}
+
+
+def render_filter(size: tuple[int, int], strength: int, grain: str, vf_suffix: str = "") -> tuple[list[str], str]:
+    """Graphe de filtres : sortie IA (entrée 0) éventuellement mélangée à l'original agrandi (entrée 1).
+
+    strength = part de l'IA (100 = IA pure). Le mélange garde la texture naturelle (peau, grain) que
+    Real-ESRGAN a tendance à lisser ; un grain léger peut ensuite être réinjecté.
+    Renvoie (options -filter_complex, étiquette de sortie).
+    """
+    steps = [f"[0:v]{scale_filter(*size)},format=yuv420p[ai]"]
+    current = "ai"
+    if strength < 100:
+        weight = strength / 100
+        steps.append(f"[1:v]{scale_filter(*size)},format=yuv420p[ref]")
+        steps.append(f"[ai][ref]blend=all_expr='A*{weight:.2f}+B*{1 - weight:.2f}'[mix]")
+        current = "mix"
+    grain_filter = GRAIN_FILTERS.get(grain)
+    chain = ",".join(f for f in (grain_filter, vf_suffix.lstrip(",")) if f)
+    if chain:
+        steps.append(f"[{current}]{chain}[out]")
+        current = "out"
+    return ["-filter_complex", ";".join(steps)], f"[{current}]"
+
+
 def segment_encode_command(ai_segment: Path, output: Path, size: tuple[int, int],
-                           settings: dict[str, Any]) -> list[str]:
+                           settings: dict[str, Any], original: Path | None = None) -> list[str]:
+    """Encode un segment agrandi ; avec un rendu « mélangé », l'original du segment est la 2e entrée."""
     pre, vf_suffix, codec = encoder_args(settings)
-    return [*FFMPEG_BASE, *pre, "-i", str(ai_segment), "-map", "0:v:0",
-            "-vf", scale_filter(*size) + vf_suffix, *codec, str(output)]
+    strength, grain = render_params(settings)
+    if strength < 100 and original is None:
+        strength = 100
+    inputs = ["-i", str(ai_segment)] + (["-i", str(original)] if strength < 100 else [])
+    graph, label = render_filter(size, strength, grain, vf_suffix)
+    return [*FFMPEG_BASE, *pre, *inputs, *graph, "-map", label, *codec, str(output)]
 
 
 def subtitle_args(codecs: list[str], input_index: int = 1) -> tuple[list[str], list[str]]:
@@ -260,9 +290,12 @@ def clip_command(source: Path, output: Path, start: float, duration: float, filt
     return command + ["-c:v", "ffv1", "-g", "1", str(output)]
 
 
-def preview_encode_command(source: Path, output: Path, size: tuple[int, int]) -> list[str]:
-    """MP4 H.264 lisible par tous les navigateurs."""
-    return [*FFMPEG_BASE, "-i", str(source), "-map", "0:v:0", "-vf", scale_filter(*size),
+def preview_encode_command(source: Path, output: Path, size: tuple[int, int], original: Path | None = None,
+                           strength: int = 100, grain: str = "off") -> list[str]:
+    """MP4 H.264 lisible par tous les navigateurs (avec le rendu demandé)."""
+    inputs = ["-i", str(source)] + (["-i", str(original)] if original is not None and strength < 100 else [])
+    graph, label = render_filter(size, strength if original is not None else 100, grain)
+    return [*FFMPEG_BASE, *inputs, *graph, "-map", label,
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "16", "-pix_fmt", "yuv420p",
             "-movflags", "+faststart", str(output)]
 

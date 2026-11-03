@@ -586,6 +586,43 @@ def test_multiple_disks_end_to_end(env, fake_docker, monkeypatch):
     assert mounts == [f"/srv/nas/media:{config.DATA_ROOT}", f"{host}:{disk}"]
 
 
+def test_render_presets_and_filter_graph(env):
+    assert st.render_params({"render": "ai"}) == (100, "off")
+    assert st.render_params({"render": "peau-normale"}) == (70, "light")
+    assert st.render_params({"render": "custom", "ai_strength": 55, "grain": "medium"}) == (55, "medium")
+    graph, label = media.render_filter((1280, 720), 70, "light")
+    assert label == "[out]"
+    assert "blend=all_expr='A*0.70+B*0.30'" in graph[1] and "noise=c0s=4" in graph[1]
+    pure, label = media.render_filter((1280, 720), 100, "off", ",format=nv12,hwupload")
+    assert "blend" not in pure[1] and pure[1].endswith("format=nv12,hwupload[out]")
+    command = media.segment_encode_command(Path("ai.mkv"), Path("o.mkv"), (1280, 720),
+                                           {"render": "peau-normale", "codec": "hevc"}, original=Path("src.mkv"))
+    assert command.count("-i") == 2 and "src.mkv" in command
+    for bad in ({"render": "fort"}, {"ai_strength": 10}, {"grain": "lourd"}):
+        with pytest.raises(ValueError):
+            st.save_settings(bad)
+    st.save_settings({"profiles": [{"path": str(env / "videos"), "render": "peau-normale"}]})
+    assert st.effective_settings(st.get_settings(), env / "videos" / "x.mp4")["render"] == "peau-normale"
+
+
+@needs_ffmpeg
+def test_peau_normale_end_to_end(env, fake_docker, monkeypatch):
+    monkeypatch.setattr(config, "SEGMENT_SECONDS", 1)
+    st.save_settings({"render": "peau-normale"})
+    make_video(env / "videos" / "scene.mp4", seconds=2)
+    [row] = process_all(env)
+    assert row["status"] == "completed" and row["warning"] is None, job_log(row)
+    log = job_log(row)
+    assert "Peau normale (70 % IA, grain light)" in log and "blend=all_expr" in log and "noise=c0s=4" in log
+    out = env / "out" / "scene.mkv"
+    frames = subprocess.run(["ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries",
+                             "stream=nb_read_frames", "-of", "csv=p=0", str(out)],
+                            capture_output=True, text=True, check=True).stdout.strip()
+    assert frames == "20" and video_stream(out)["height"] == 720
+    jobs = app.test_client().get("/api/jobs").get_json()["jobs"]
+    assert jobs[0]["render"] == "peau-normale"
+
+
 def test_hevc_default_and_migration(env):
     assert st.DEFAULT_SETTINGS["codec"] == "hevc"
     payload = {k: v for k, v in st.get_settings().items() if k != "settings_version"}
@@ -683,7 +720,9 @@ def test_preview_generates_variants(env, fake_docker):
     previews = client.get("/api/previews").get_json()["previews"]
     manifest = previews[0]["manifest"]
     assert manifest["complete"] and [v["id"] for v in manifest["variants"]] == [
-        "original", "realesrgan-plus", "realesr-animevideov3"]
+        "original", "realesrgan-plus", "realesrgan-plus-peau-normale",
+        "realesr-animevideov3", "realesr-animevideov3-peau-normale"]
+    assert video_stream(config.preview_dir() / job["id"] / "realesrgan-plus-peau-normale.mp4")["height"] == 720
     assert video_stream(config.preview_dir() / job["id"] / "realesrgan-plus.mp4")["height"] == 720
     ranged = client.get(f"/api/previews/{job['id']}/original.mp4", headers={"Range": "bytes=0-99"})
     assert ranged.status_code == 206 and len(ranged.data) == 100

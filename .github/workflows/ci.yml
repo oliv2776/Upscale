@@ -108,7 +108,7 @@ jobs:
             python3 -c "import json,sys; j=json.load(open('all.json'))['jobs'][0]; print('ATTENTION', j['warning']) if j['warning'] else None; sys.exit(0 if j['status']=='completed' and not j['warning'] else 1)"
           }
           run_job '{"source":"/data/videos","destination":"/data/out","max_input_height":480,"output_height":240,"model":"realesr-animevideov3","preset":"ultrafast"}'
-          run_job '{"source":"/data/videos","destination":"/data/out2","max_input_height":480,"output_height":240,"model":"realesr-animevideov3","preset":"ultrafast","interpolate":2,"denoise":"light","codec":"hevc","output_suffix":" - IA"}'
+          run_job '{"source":"/data/videos","destination":"/data/out2","max_input_height":480,"output_height":240,"model":"realesr-animevideov3","preset":"ultrafast","interpolate":2,"denoise":"light","codec":"hevc","output_suffix":" - IA","render":"peau-normale"}'
           docker rm -f upscale-e2e
           for f in "out/clip.mkv" "out2/clip - IA.mkv"; do
             docker run --rm -v "$PWD/ci-data:/data" --entrypoint ffprobe upscale-local:ci -v error -count_frames \

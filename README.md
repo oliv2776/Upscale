@@ -12,6 +12,7 @@ Le projet cible notamment les NAS sous Ubuntu équipés d'un GPU AMD compatible 
 - Real-ESRGAN via Video2X (Plus, Plus Anime, AnimeVideo v3), avec le plus petit facteur suffisant (×2, ×3 ou ×4 selon le modèle).
 - Modèle **Automatique** : un modèle de vision Ollama regarde trois images de la vidéo et choisit entre animation et prise de vue réelle.
 - Désentrelacement automatique (bwdif), débruitage optionnel avant l'IA (hqdn3d ou nlmeans), doublement des images par seconde (RIFE, expérimental).
+- Rendu **Peau normale** : mélange IA / original et grain léger contre l'effet « peau cireuse ».
 - Format d'affichage respecté (DVD anamorphiques), sortie en pixels carrés.
 - Encodage final HEVC 10 bits par défaut, ou H.264, AV1 10 bits, matériel VAAPI (H.264/HEVC) sur GPU AMD.
 - Audio, sous-titres (mov_text converti en SRT), chapitres et polices jointes conservés ; vérification automatique de la durée et des pistes du fichier produit.
@@ -177,6 +178,18 @@ Les fichiers de travail sont dans un dossier caché .upscale-ID à côté de la 
 **Pause** : la vidéo en cours s'arrête à la fin de son segment et reprendra à partir du suivant. **Arrêter** interrompt immédiatement et supprime les fichiers de travail.
 
 **Espace disque** : Upscale estime l'espace nécessaire (segments à la résolution source, un segment agrandi, la sortie) et refuse de démarrer s'il manque de la place ; pendant le traitement, la tâche s'arrête si l'espace libre descend sous UPSCALE_MIN_FREE_GB.
+
+### Rendu « Peau normale »
+
+Real-ESRGAN Plus reconstruit bien les détails des vidéos filmées, mais il a tendance à lisser la peau : pores, grain et texture disparaissent, ce qui donne un aspect « cireux » ou « plastique ». Le réglage **Rendu** corrige cela :
+
+| Rendu | Effet |
+|---|---|
+| IA pure | 100 % Real-ESRGAN (comportement d'origine) |
+| Peau normale | 70 % IA + 30 % original agrandi classiquement (Lanczos), puis grain léger : netteté de l'IA, texture naturelle de la peau |
+| Personnalisé | Part de l'IA de 30 à 100 % et grain (aucun, léger, moyen) au choix |
+
+Le mélange se fait image par image pendant l'encodage, sans calcul IA supplémentaire. Le rendu se choisit globalement ou par dossier (colonne **Rendu** des profils) ; l'**Aperçu** ajoute pour chaque modèle une variante « · Peau normale » à comparer avec le curseur. Le grain augmente un peu la taille des fichiers.
 
 ### HEVC par défaut
 

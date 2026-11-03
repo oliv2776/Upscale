@@ -55,6 +55,9 @@
         <div class="field"><label>DÉSENTRELACEMENT</label><select id="deinterlace"><option value="auto" selected>Automatique · sources entrelacées détectées</option><option value="on">Toujours</option><option value="off">Jamais</option></select><small>DVD/VOB souvent entrelacés.</small></div>
         <div class="field"><label>DÉBRUITAGE AVANT L'IA</label><select id="denoise" class="denoise-select"><option value="off">Aucun</option><option value="light">Léger · hqdn3d</option><option value="medium">Moyen · hqdn3d</option><option value="strong">Fort · nlmeans (VHS, plus lent)</option></select><small>L'IA amplifie le bruit et les blocs de compression.</small></div>
         <div class="field"><label>IMAGES PAR SECONDE</label><select id="interpolate"><option value="1">Inchangées</option><option value="2">Doubler (RIFE · expérimental)</option></select><small>25 → 50 i/s pour les contenus anciens.</small></div>
+        <div class="field"><label>RENDU</label><select id="render"><option value="ai">IA pure · 100 % Real-ESRGAN</option><option value="peau-normale">Peau normale · 70 % IA + texture d'origine + grain léger</option><option value="custom">Personnalisé…</option></select><small>« Peau normale » évite l'effet peau lisse / cireuse des vidéos filmées.</small></div>
+        <div class="field render-custom hidden"><label>PART DE L'IA</label><div class="range-line"><input id="aiStrength" type="range" min="30" max="100" step="5" value="70"><b id="aiStrengthValue">70 %</b></div><small>Le reste vient de l'original agrandi classiquement (texture naturelle).</small></div>
+        <div class="field render-custom hidden"><label>GRAIN AJOUTÉ</label><select id="grain"><option value="off">Aucun</option><option value="light">Léger</option><option value="medium">Moyen</option></select><small>Masque le lissage ; augmente un peu la taille du fichier.</small></div>
       </div>
 
       <div class="section-head compact"><div><div class="eyebrow">03 / ENCODAGE</div><h3>Fichier final</h3></div></div>
@@ -65,7 +68,7 @@
       </div>
 
       <div class="section-head compact"><div><div class="eyebrow">04 / PROFILS PAR DOSSIER</div><h3>Réglages spécifiques</h3><p>Un fichier utilise le profil du dossier le plus précis qui le contient. Les réglages sont figés au moment de la mise en file.</p></div><button class="secondary small" id="addProfile">+ Ajouter un profil</button></div>
-      <div class="table-wrap"><table class="profiles"><thead><tr><th>DOSSIER</th><th>MODÈLE</th><th>SORTIE</th><th>DÉBRUITAGE</th><th>ENCODEUR</th><th></th></tr></thead><tbody id="profilesBody"></tbody></table></div>
+      <div class="table-wrap"><table class="profiles"><thead><tr><th>DOSSIER</th><th>MODÈLE</th><th>SORTIE</th><th>DÉBRUITAGE</th><th>RENDU</th><th>ENCODEUR</th><th></th></tr></thead><tbody id="profilesBody"></tbody></table></div>
 
       <div class="actions"><button class="secondary" id="saveSettings">Enregistrer</button><button class="secondary" id="scanBtn">⌕ Analyser les vidéos</button><button class="primary" id="queueBtn">Lancer le traitement <span>→</span></button></div>
       <div id="scanResult" class="scan-result hidden"></div>
@@ -78,7 +81,7 @@
         <div class="field"><label>DÉBUT (MM:SS)</label><input class="text-input" id="previewStart" value="01:00"></div>
         <div class="field"><label>DURÉE</label><select id="previewDuration"><option value="5">5 s</option><option value="10" selected>10 s</option><option value="20">20 s</option></select></div>
       </div>
-      <div class="field top-gap"><label>MODÈLES À COMPARER</label><div class="checks" id="previewModels"></div></div>
+      <div class="field top-gap"><label>MODÈLES À COMPARER</label><div class="checks" id="previewModels"></div><label class="check top-gap-s"><input type="checkbox" id="previewPeau" checked> Ajouter pour chaque modèle la variante « Peau normale »</label></div>
       <div class="ollama-actions"><span id="previewStatus" class="ollama-status">L'original agrandi sans IA sert de référence.</span><button class="primary small" id="previewBtn">Générer l'aperçu</button></div>
       <div id="compareBox" class="compare-wrap hidden">
         <div class="compare-bar">

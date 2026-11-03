@@ -30,6 +30,7 @@ function parseTime(text) {
   return parts.reduce((total, part) => total * 60 + part, 0);
 }
 const modelLabel = id => id === "auto" ? "Automatique (Ollama)" : (state.models[id]?.label || id);
+const renderLabels = { "peau-normale": "Peau normale", custom: "Rendu personnalisé" };
 const codecLabels = { h264: "H.264", hevc: "HEVC 10 bits", av1: "AV1 10 bits", h264_vaapi: "H.264 VAAPI", hevc_vaapi: "HEVC VAAPI" };
 
 // ------------------------------------------------------------------ réglages
@@ -48,6 +49,7 @@ function settingsPayload() {
     max_input_height: Number($("maxInput").value), output_height: Number($("outputHeight").value),
     model: $("model").value, deinterlace: $("deinterlace").value, denoise: $("denoise").value,
     interpolate: Number($("interpolate").value), codec: $("codec").value,
+    render: $("render").value, ai_strength: Number($("aiStrength").value), grain: $("grain").value,
     crf: Number($("crf").value), preset: $("preset").value, profiles: readProfiles()
   };
 }
@@ -75,6 +77,7 @@ function applySettings(s) {
   setSelect("maxInput", s.max_input_height); setSelect("outputHeight", s.output_height);
   setSelect("model", s.model); setSelect("deinterlace", s.deinterlace || "auto"); setSelect("denoise", s.denoise || "off");
   setSelect("interpolate", s.interpolate || 1); setSelect("codec", s.codec || "hevc");
+  setSelect("render", s.render || "ai"); $("aiStrength").value = s.ai_strength ?? 70; setSelect("grain", s.grain || "light"); updateRenderUi();
   $("crf").value = s.crf; $("crfValue").textContent = s.crf; setSelect("preset", s.preset);
   renderProfiles(s.profiles || []);
   $("watchEnabled").checked = !!s.watch_enabled; setSelect("watchInterval", s.watch_interval || 30);
@@ -98,6 +101,10 @@ async function saveSettings(quiet = false) {
   return result.settings;
 }
 
+function updateRenderUi() {
+  document.querySelectorAll(".render-custom").forEach(el => el.classList.toggle("hidden", $("render").value !== "custom"));
+  $("aiStrengthValue").textContent = $("aiStrength").value + " %";
+}
 function updateReplaceUi() {
   const on = $("replaceOriginal").checked;
   $("replaceBox").classList.toggle("active", on);
@@ -113,17 +120,19 @@ function profileRow(p = {}) {
   const models = [...Object.entries(state.models).map(([id, m]) => [id, m.label]), ["auto", "Automatique (Ollama)"]];
   const heights = [[480, "480p"], [720, "720p"], [1080, "1080p"], [1440, "1440p"], [2160, "2160p"]];
   const denoise = [["off", "Aucun"], ["light", "Léger"], ["medium", "Moyen"], ["strong", "Fort"]];
+  const renders = [["ai", "IA pure"], ["peau-normale", "Peau normale"]];
   const codecs = Object.entries(codecLabels);
   return '<tr><td><div class="path-control"><input class="p-path" value="' + escapeHtml(p.path || "") + '" placeholder="/data/videos/Animation"><button class="browse" data-picker="profile">…</button></div></td>' +
     '<td><select class="p-model">' + opt(models, p.model, "Global") + "</select></td>" +
     '<td><select class="p-height">' + opt(heights, p.output_height, "Global") + "</select></td>" +
     '<td><select class="p-denoise">' + opt(denoise, p.denoise, "Global") + "</select></td>" +
+    '<td><select class="p-render">' + opt(renders, p.render, "Global") + "</select></td>" +
     '<td><select class="p-codec">' + opt(codecs, p.codec, "Global") + "</select></td>" +
     '<td><button class="text-btn danger" data-remove-profile>Retirer</button></td></tr>';
 }
 function renderProfiles(profiles) {
   $("profilesBody").innerHTML = profiles.length ? profiles.map(profileRow).join("") :
-    '<tr class="empty-row"><td colspan="6" class="empty">Aucun profil : les réglages ci-dessus s\'appliquent à tous les fichiers.</td></tr>';
+    '<tr class="empty-row"><td colspan="7" class="empty">Aucun profil : les réglages ci-dessus s\'appliquent à tous les fichiers.</td></tr>';
 }
 function readProfiles() {
   return [...$("profilesBody").querySelectorAll("tr")].filter(r => r.querySelector(".p-path")).map(row => {
@@ -132,6 +141,7 @@ function readProfiles() {
     const denoise = row.querySelector(".p-denoise").value, codec = row.querySelector(".p-codec").value;
     if (model) profile.model = model; if (height) profile.output_height = Number(height);
     if (denoise) profile.denoise = denoise; if (codec) profile.codec = codec;
+    const render = row.querySelector(".p-render").value; if (render) profile.render = render;
     return profile;
   }).filter(p => p.path);
 }
@@ -215,7 +225,8 @@ async function refreshJobs() {
     const labels = { queued: "En attente", running: "En cours", completed: "Terminée", failed: "Erreur", cancelled: "Annulée" };
     body.innerHTML = data.jobs.map(job => {
       const name = job.source.split("/").pop();
-      const conf = [modelLabel(job.model), job.output_height ? job.output_height + "p" : "", codecLabels[job.codec] || ""].filter(Boolean).join(" · ");
+      const conf = [modelLabel(job.model), job.output_height ? job.output_height + "p" : "", codecLabels[job.codec] || "",
+        renderLabels[job.render] || ""].filter(Boolean).join(" · ");
       const profile = job.profile ? '<br><small class="muted" title="' + escapeHtml(job.profile) + '">profil ' + escapeHtml(job.profile.split("/").pop()) + "</small>" : "";
       const trash = job.trash_path ? '<br><small class="muted" title="' + escapeHtml(job.trash_path) + '">original dans la corbeille</small>' : "";
       const warning = job.warning ? '<br><small class="warn" title="' + escapeHtml(job.warning) + '">⚠ ' + escapeHtml(job.warning.slice(0, 120)) + "</small>" : "";
@@ -240,7 +251,7 @@ async function startPreview() {
   try {
     await saveSettings(true);
     const result = await post("/api/preview", { source: $("previewSource").value.trim(), start: parseTime($("previewStart").value),
-      duration: Number($("previewDuration").value), models });
+      duration: Number($("previewDuration").value), models, peau_normale: $("previewPeau").checked });
     state.currentPreview = result.id; $("previewStatus").textContent = "Aperçu en file : il passe avant les autres tâches.";
     $("previewStatus").className = "ollama-status";
     toast("Aperçu lancé"); refreshPreviews();
@@ -500,6 +511,8 @@ $("clearBtn").addEventListener("click", () => { if (confirm("Supprimer l'histori
 $("prevPage").addEventListener("click", () => { state.page = Math.max(1, state.page - 1); refreshJobs(); });
 $("nextPage").addEventListener("click", () => { state.page += 1; refreshJobs(); });
 $("crf").addEventListener("input", () => $("crfValue").textContent = $("crf").value);
+$("render").addEventListener("change", updateRenderUi);
+$("aiStrength").addEventListener("input", () => $("aiStrengthValue").textContent = $("aiStrength").value + " %");
 $("replaceOriginal").addEventListener("change", () => {
   if ($("replaceOriginal").checked && !confirm("Les fichiers d'origine seront remplacés par la version Upscale (l'original part dans la corbeille selon le réglage choisi). Activer ?")) $("replaceOriginal").checked = false;
   updateReplaceUi();

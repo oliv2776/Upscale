@@ -170,6 +170,7 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
         "source": str(source), "size": job["source_size"], "mtime": job["source_mtime_ns"],
         "model": model, "scale": scale, "filters": filters, "interpolate": multiplier, "output": size,
         "codec": settings.get("codec"), "crf": settings.get("crf"), "preset": settings.get("preset"),
+        "render": settings_mod.render_params(settings),
         "segment_seconds": config.SEGMENT_SECONDS,
     }
     prepare_work_dir(work, fingerprint)
@@ -191,7 +192,8 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
     db.log_line(job_id, f"[{db.now()}] Source {info['width']}×{info['height']} (SAR {info['sar']:.3f}, "
                         f"{info['field_order']}, {info['fps']:.3f} i/s) -> {size[0]}×{size[1]}, {model} ×{scale}, "
                         f"filtres [{', '.join(filters) or 'aucun'}], interpolation ×{multiplier}, "
-                        f"encodeur {settings.get('codec')}, espace estimé {human_size(needed)}")
+                        f"encodeur {settings.get('codec')}, rendu {render_label(settings)}, "
+                        f"espace estimé {human_size(needed)}")
     runner.ensure_image(job_id)
 
     prep_share = 0.15 if multiplier > 1 else 0.05
@@ -221,7 +223,8 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
         if not ai.exists() or ai.stat().st_size == 0:
             raise JobError(f"Video2X n'a pas produit le segment {index + 1}")
         temp = work / "enc" / f"tmp_{name}"
-        check(runner.run_process(job_id, media.segment_encode_command(ai, temp, size, settings), disk_dir=disk_dir),
+        check(runner.run_process(job_id, media.segment_encode_command(ai, temp, size, settings, original=segment),
+                                 disk_dir=disk_dir),
               f"L'encodage du segment {index + 1} a échoué")
         temp.replace(encoded)
         ai.unlink(missing_ok=True)
@@ -309,6 +312,12 @@ def place_replacing_original(job_id: str, source: Path, destination: Path, temp_
         db.log_line(job_id, f"[{db.now()}] Original remplacé, conservé {days} jours dans la corbeille : {trash}")
         db.set_job(job_id, trash_path=str(trash), trashed_at=db.now())
     return destination, None
+
+
+def render_label(settings: dict[str, Any]) -> str:
+    strength, grain = settings_mod.render_params(settings)
+    name = settings_mod.RENDER_LABELS.get(settings.get("render", "ai"), "IA pure")
+    return f"{name} ({strength} % IA, grain {grain})"
 
 
 def media_progress(duration: float) -> Callable[[str], float | None]:
@@ -401,9 +410,17 @@ def run_preview(job: sqlite3.Row, settings: dict[str, Any]) -> None:
                   f"Video2X a échoué pour {model}")
             check(runner.run_process(job_id, media.preview_encode_command(ai, out_dir / f"{model}.mp4", size)),
                   f"Encodage de l'aperçu {model} impossible")
+            label = f"{settings_mod.MODEL_LABELS.get(model, model)} (×{scale})"
+            manifest["variants"].append({"id": model, "label": label, "file": f"{model}.mp4"})
+            if params.get("peau_normale", True):
+                # Même sortie IA, mélangée à l'original : coûte un simple encodage de plus.
+                strength, grain = settings_mod.RENDER_PRESETS["peau-normale"]
+                check(runner.run_process(job_id, media.preview_encode_command(
+                    ai, out_dir / f"{model}-peau-normale.mp4", size, original=clip, strength=strength, grain=grain)),
+                    f"Encodage de l'aperçu Peau normale ({model}) impossible")
+                manifest["variants"].append({"id": f"{model}-peau-normale", "label": f"{label} · Peau normale",
+                                             "file": f"{model}-peau-normale.mp4"})
             ai.unlink(missing_ok=True)
-            manifest["variants"].append({"id": model, "label": f"{settings_mod.MODEL_LABELS.get(model, model)} (×{scale})",
-                                         "file": f"{model}.mp4"})
             write_manifest(out_dir, manifest)
             progress.update((index + 1) / steps, force=True)
         manifest["complete"] = True
