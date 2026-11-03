@@ -11,7 +11,7 @@ Le projet cible notamment les NAS sous Ubuntu équipés d'un GPU AMD compatible 
 - Interface web responsive, accessible depuis un navigateur du réseau local.
 - Analyse des dossiers et sous-dossiers à la recherche de vidéos.
 - Filtre selon la hauteur source (jusqu'à 240p, 360p, 480p ou 720p).
-- Upscaling IA avec Real-ESRGAN via Video2X.
+- Upscaling IA avec Real-ESRGAN via Video2X (modèles généralistes et animation).
 - Résolution de sortie configurable : 480p, 720p ou 1080p.
 - Sortie MKV H.264, conservation des pistes audio et sous-titres lorsque leurs codecs le permettent.
 - File persistante SQLite : pause, reprise, annulation et journaux par tâche.
@@ -200,7 +200,7 @@ L'interface affiche l'état de connexion au serveur et les dossiers configurés.
 2. Dans **Dossier de destination**, sélectionne /data/videos_upscaled.
 3. Choisis la hauteur maximale des vidéos sources. Pour traiter les vidéos 240p, 360p et 480p, sélectionne **480p**.
 4. Choisis la résolution de sortie, par exemple **720p**.
-5. Choisis Real-ESRGAN Plus pour les vidéos générales ou le modèle Anime pour les contenus animés.
+5. Choisis Real-ESRGAN Plus pour les vidéos réelles ; AnimeVideo v3 pour les dessins animés ; Plus Anime pour une restauration plus détaillée des images animées. General v3 est une variante plus légère.
 6. Clique sur **Analyser les vidéos** pour compter les fichiers éligibles.
 7. Clique sur **Lancer le traitement** pour ajouter les fichiers à la file.
 8. Consulte la file et ouvre **Logs** sur une tâche pour voir son journal.
@@ -239,14 +239,14 @@ Le montage /data est la racine autorisée par l'explorateur web. Les chemins ext
 |---|---|
 | Hauteur source maximale | Exclut les vidéos plus grandes que la valeur choisie |
 | Hauteur de sortie | Hauteur finale demandée : 480, 720 ou 1080 pixels |
-| Modèle IA | Real-ESRGAN Plus ou Real-ESRGAN Anime |
-| CRF | Qualité H.264 : une valeur basse augmente la qualité et la taille du fichier |
-| Preset | Compromis entre vitesse d'encodage et compression |
+| Modèle IA | Plus (général), General v3 (léger), AnimeVideo v3 (animation vidéo) ou Plus Anime (animation détaillée) |
+| CRF | Qualité H.264 : 16 est un réglage de haute qualité ; plus bas augmente la qualité et la taille du fichier |
+| Preset | slow améliore l'efficacité de compression, sans changer le modèle IA ; il prend plus de temps |
 | Sous-dossiers | Active ou désactive le parcours récursif |
 
-Real-ESRGAN effectue la reconstruction IA en facteur ×4 ; FFmpeg ajuste ensuite la hauteur à la résolution finale demandée en conservant le ratio d'image. L'encodage final utilise H.264 et un conteneur MKV. Les pistes audio et sous-titres sont copiées depuis l'original lorsque leurs codecs sont compatibles avec le conteneur de sortie.
+Real-ESRGAN effectue la reconstruction IA en facteur ×4 ; FFmpeg ajuste ensuite la hauteur à la résolution finale demandée en conservant le ratio d'image avec le filtre Lanczos. Video2X écrit d'abord un intermédiaire FFV1 sans perte ; FFmpeg réalise ensuite l'unique encodage avec perte en H.264 (CRF 16 et preset slow par défaut). Cela évite de compresser deux fois les détails reconstruits par l'IA. L'intermédiaire sans perte peut nécessiter beaucoup d'espace disque pendant le traitement ; il est supprimé automatiquement à la fin. Les pistes audio et sous-titres sont copiées depuis l'original lorsque leurs codecs sont compatibles avec le conteneur de sortie.
 
-Le traitement est séquentiel : une seule vidéo est envoyée à Video2X à la fois. Cela limite la consommation de VRAM et évite de saturer la RX 5500 XT. L'upscaling IA peut être lent, surtout sur les vidéos longues.
+Le traitement est séquentiel : une seule vidéo est envoyée à Video2X à la fois. Cela limite la consommation de VRAM et évite de saturer la RX 5500 XT. L'upscaling IA peut être lent, surtout sur les vidéos longues. Le modèle Plus est le point de départ recommandé pour les vidéos réelles ; les modèles spécialisés doivent être comparés sur un extrait court, car une netteté plus forte ne signifie pas toujours un rendu plus fidèle.
 
 ## Gestion du service
 
