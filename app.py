@@ -45,8 +45,8 @@ DEFAULT_SETTINGS = {
     "max_input_height": 480,
     "output_height": 720,
     "model": "realesrgan-plus",
-    "crf": 18,
-    "preset": "medium",
+    "crf": 16,
+    "preset": "slow",
     "include_subfolders": True,
     "ollama_enabled": False,
     "ollama_url": "http://host.docker.internal:11434",
@@ -134,7 +134,7 @@ def save_settings(payload: dict[str, Any]) -> dict[str, Any]:
                 raise ValueError(f"{key} doit être compris entre {low} et {high}")
             settings[key] = value
     if "model" in payload:
-        if payload["model"] not in {"realesrgan-plus", "realesr-animevideov3"}:
+        if payload["model"] not in {"realesrgan-plus", "realesr-generalv3", "realesr-animevideov3", "realesrgan-plus-anime"}:
             raise ValueError("Modèle non pris en charge")
         settings["model"] = payload["model"]
     if "preset" in payload:
@@ -266,8 +266,8 @@ def docker_command(job_id: str, source: Path, temp_output: Path,
         "-i", str(source), "-o", str(temp_output),
         "-p", "realesrgan", "-s", "4",
         "--realesrgan-model", settings["model"],
-        "-e", f"crf={settings['crf']}",
-        "-e", f"preset={settings['preset']}",
+        # Lossless intermediate: FFmpeg performs the only lossy encode after resizing.
+        "-c", "ffv1",
     ]
 
 def run_job(job: sqlite3.Row) -> None:
@@ -313,7 +313,7 @@ def run_job(job: sqlite3.Row) -> None:
             "ffmpeg", "-hide_banner", "-y", "-i", str(temp_ai), "-i", str(source),
             "-map", "0:v:0", "-map", "1:a?", "-map", "1:s?",
             "-map_metadata", "1", "-map_chapters", "1",
-            "-vf", f"scale=-2:{settings['output_height']}:flags=lanczos",
+            "-vf", f"scale=-2:{settings['output_height']}:flags=lanczos+accurate_rnd+full_chroma_int",
             "-c:v", "libx264", "-preset", settings["preset"], "-crf", str(settings["crf"]),
             "-pix_fmt", "yuv420p", "-c:a", "copy", "-c:s", "copy",
             "-max_muxing_queue_size", "2048", str(temp_final)
