@@ -82,6 +82,7 @@ async function refreshJobs() {
 async function renderOllamaResult(data) {
   const status=$("ollamaStatus"), badge=$("ollamaBadge"), select=$("ollamaModel");
   if(data.connected){
+    if(data.url) $("ollamaUrl").value=data.url;
     status.textContent="Connecté · Ollama "+(data.version||"");
     status.className="ollama-status ok"; badge.textContent="CONNECTÉ";
     const previous=select.value||data.selected_model||"";
