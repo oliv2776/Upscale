@@ -41,9 +41,151 @@ def run_pnnx(model_file: Path, work: Path, shape1: tuple[int, int], shape2: tupl
     tail = "\n".join((result.stdout + result.stderr).splitlines()[-25:])
     print(tail, flush=True)
     param, binary = work / "model.param", work / "model.bin"
+    if result.returncode in (-9, 137):
+        raise RuntimeError("pnnx arrêté faute de mémoire (modèle trop gros pour être converti ici)")
     if result.returncode != 0 or not param.exists() or not binary.exists():
         raise RuntimeError(f"pnnx a échoué (code {result.returncode}) : {tail[-600:]}")
     return param, binary
+
+
+# ---------------------------------------------------------------- écriture ncnn directe (sans pnnx)
+# Pour les architectures simples et très répandues (ESRGAN) : pnnx y consomme énormément de mémoire, alors que
+# le réseau ne contient que des convolutions, concaténations, sommes et agrandissements.
+
+NATIVE_ARCHITECTURES = {"ESRGAN"}
+
+
+class Unsupported(Exception):
+    pass
+
+
+class NcnnWriter:
+    def __init__(self) -> None:
+        self.layers: list[list] = []  # [type, nom, entrées, sorties, paramètres]
+        self.weights: list[bytes] = []
+        self.count = 0
+
+    def blob(self) -> str:
+        self.count += 1
+        return f"b{self.count}"
+
+    def add(self, kind: str, inputs: list[str], params: str = "", weights: bytes = b"") -> str:
+        out = self.blob()
+        self.layers.append([kind, f"{kind.lower()}_{len(self.layers)}", list(inputs), [out], params])
+        if weights:
+            self.weights.append(weights)
+        return out
+
+    def module(self, mod, x: str) -> str:  # noqa: PLR0911, PLR0912 - une branche par type de couche
+        import numpy as np  # noqa: PLC0415
+        import torch.nn as nn  # noqa: PLC0415
+
+        name = type(mod).__name__
+        if isinstance(mod, nn.Sequential):
+            for child in mod:
+                x = self.module(child, x)
+            return x
+        if isinstance(mod, nn.Identity):
+            return x
+        if isinstance(mod, nn.Conv2d):
+            if mod.groups != 1 or mod.padding_mode != "zeros" or isinstance(mod.padding, str):
+                raise Unsupported("convolution groupée ou remplissage non nul")
+            kh, kw = mod.kernel_size
+            sh, sw = mod.stride
+            dh, dw = mod.dilation
+            ph, pw = mod.padding
+            weight = mod.weight.detach().float().cpu().numpy().astype("<f4")
+            data = np.zeros(1, dtype="<u4").tobytes() + weight.tobytes()  # 0 : float32 brut
+            bias = mod.bias is not None
+            if bias:
+                data += mod.bias.detach().float().cpu().numpy().astype("<f4").tobytes()
+            params = (f"0={mod.out_channels} 1={kw} 11={kh} 2={dw} 12={dh} 3={sw} 13={sh} 4={pw} 15={pw} "
+                      f"14={ph} 16={ph} 5={int(bias)} 6={weight.size}")
+            return self.add("Convolution", [x], params, data)
+        if isinstance(mod, nn.LeakyReLU):
+            return self.add("ReLU", [x], f"0={mod.negative_slope:e}")
+        if isinstance(mod, nn.ReLU):
+            return self.add("ReLU", [x])
+        if isinstance(mod, nn.PReLU):
+            slope = mod.weight.detach().float().cpu().numpy().astype("<f4")
+            return self.add("PReLU", [x], f"0={slope.size}", slope.tobytes())
+        if isinstance(mod, nn.Sigmoid):
+            return self.add("Sigmoid", [x])
+        if isinstance(mod, nn.SiLU):
+            return self.add("Swish", [x])
+        if isinstance(mod, nn.PixelShuffle):
+            return self.add("PixelShuffle", [x], f"0={mod.upscale_factor}")
+        if isinstance(mod, nn.Upsample):
+            if mod.mode != "nearest" or mod.size is not None:
+                raise Unsupported(f"agrandissement {mod.mode}")
+            factor = float(mod.scale_factor if not isinstance(mod.scale_factor, tuple) else mod.scale_factor[0])
+            return self.add("Interp", [x], f"0=1 1={factor:e} 2={factor:e}")
+        if name == "ShortcutBlock":
+            return self.add("BinaryOp", [x, self.module(mod.sub, x)], "0=0")
+        if name == "RRDB":
+            out = x
+            for block in (mod.RDB1, mod.RDB2, mod.RDB3):
+                out = self.module(block, out)
+            return self.residual(out, x)
+        if name == "ResidualDenseBlock_5C":
+            x1 = self.module(mod.conv1, x)
+            x2 = self.module(mod.conv2, self.add("Concat", [x, x1], "0=0"))
+            if mod.conv1x1 is not None:
+                x2 = self.add("BinaryOp", [x2, self.module(mod.conv1x1, x)], "0=0")
+            x3 = self.module(mod.conv3, self.add("Concat", [x, x1, x2], "0=0"))
+            x4 = self.module(mod.conv4, self.add("Concat", [x, x1, x2, x3], "0=0"))
+            if mod.conv1x1 is not None:
+                x4 = self.add("BinaryOp", [x4, x2], "0=0")
+            x5 = self.module(mod.conv5, self.add("Concat", [x, x1, x2, x3, x4], "0=0"))
+            return self.residual(x5, x)
+        raise Unsupported(f"couche {name}")
+
+    def residual(self, out: str, x: str) -> str:
+        scaled = self.add("BinaryOp", [out], "0=2 1=1 2=2.000000e-01")
+        return self.add("BinaryOp", [scaled, x], "0=0")
+
+    def save(self, param: Path, binary: Path, inp: str, out: str) -> None:
+        # ncnn exige une couche Split quand un blob est lu par plusieurs couches.
+        readers: dict[str, int] = {}
+        for layer in self.layers:
+            for blob in layer[2]:
+                readers[blob] = readers.get(blob, 0) + 1
+        layers = [["Input", "input", [], [inp], ""]] + self.layers
+        result = []
+        for layer in layers:
+            result.append(layer)
+            for blob in layer[3]:
+                count = readers.get(blob, 0)
+                if count > 1:
+                    copies = [f"{blob}_{i}" for i in range(count)]
+                    result.append(["Split", f"split_{blob}", [blob], copies, ""])
+                    pending = iter(copies)
+                    for later in layers[layers.index(layer) + 1:]:
+                        later[2] = [next(pending) if b == blob else b for b in later[2]]
+        for layer in result:
+            layer[3] = ["output" if b == out else b for b in layer[3]]
+            layer[2] = ["output" if b == out else b for b in layer[2]]
+        blobs = {b for layer in result for b in layer[3]}
+        lines = ["7767517", f"{len(result)} {len(blobs)}"]
+        for kind, name, inputs, outputs, params in result:
+            lines.append(" ".join([kind, name, str(len(inputs)), str(len(outputs)), *inputs, *outputs, params]).rstrip())
+        param.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        binary.write_bytes(b"".join(self.weights))
+
+
+def write_native(descriptor, work: Path) -> None:
+    net = descriptor.model
+    arch = descriptor.architecture.name
+    writer = NcnnWriter()
+    if arch == "ESRGAN":
+        if getattr(net, "shuffle_factor", None):
+            raise Unsupported("variante ESRGAN à pixel-unshuffle")
+        body = net.model
+    else:
+        raise Unsupported(arch)
+    out = writer.module(body, "data")
+    writer.save(work / "model.param", work / "model.bin", "data", out)
+    print(f"Écriture ncnn directe : {len(writer.layers)} couches", flush=True)
 
 
 def input_sizes(multiple: int, minimum: int) -> tuple[tuple[int, int], tuple[int, int]]:
@@ -92,6 +234,13 @@ def convert_torch(path: Path, work: Path) -> tuple[dict, object]:
     net = descriptor.model.eval().float()
     shape1, shape2 = input_sizes(multiple, minimum)
     errors = []
+    if info["architecture"] in NATIVE_ARCHITECTURES:
+        try:
+            write_native(descriptor, work)
+            return info, net
+        except Unsupported as exc:
+            errors.append(f"écriture directe : {exc}")
+            print(errors[-1], flush=True)
     # 1) TorchScript -> pnnx (voie normale) ; 2) ONNX -> pnnx si le traçage TorchScript ne passe pas.
     with torch.no_grad():
         try:

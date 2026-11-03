@@ -17,7 +17,11 @@ jobs:
       - name: Install FFmpeg
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - name: Install Python dependencies
-        run: pip install -r requirements-dev.txt
+        run: |
+          pip install -r requirements-dev.txt
+          # Pour tester l'écriture ncnn directe face à PyTorch (convertisseur de modèles).
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install spandrel ncnn
       - name: Lint Python
         run: ruff check .
       - name: Tests
@@ -76,7 +80,8 @@ jobs:
           docker exec upscale-models sh -c '/app/state/convertisseur/bin/pip list 2>/dev/null | grep -i -E "^(torch|torchvision|spandrel|pnnx|onnx|numpy) "'
           # Autres architectures courantes (informatif : sources externes, dont Google Drive).
           install '{"source":"https://openmodeldb.info/models/2x-NomosUni-compact-multijpg"}' || echo "::warning::NomosUni compact non installé"
-          install '{"source":"https://openmodeldb.info/models/4x-realesrgan-x4plus"}' || echo "::warning::RealESRGAN x4plus non installé"
+          # ESRGAN (écriture ncnn directe, sans pnnx) : doit s'installer et passer la vérification.
+          install '{"source":"https://openmodeldb.info/models/4x-realesrgan-x4plus"}'
           curl -fsS http://127.0.0.1:27004/api/models | python3 -m json.tool | head -n 80
           model=$(curl -fsS http://127.0.0.1:27004/api/models | python3 -c "import json,sys; print(next(k for k,v in json.load(sys.stdin)['models'].items() if v.get('page','').endswith('2x-LiveActionV1-SPAN')))")
           curl -fsS -X POST -H "Content-Type: application/json" http://127.0.0.1:27004/api/queue \

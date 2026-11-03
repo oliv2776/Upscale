@@ -1098,3 +1098,36 @@ def test_converter_environment_is_installed_once(env, monkeypatch):
     commands.clear()
     assert converter.ensure_converter(task) == python and not commands  # déjà prêt : rien à installer
     assert converter.converter_status()["installed"] is True
+
+
+def test_native_esrgan_writer_matches_pytorch(tmp_path):
+    """Écriture ncnn directe d'ESRGAN, comparée à PyTorch (si torch, spandrel et ncnn sont installés)."""
+    torch = pytest.importorskip("torch")
+    ncnn = pytest.importorskip("ncnn")
+    rrdb = pytest.importorskip("spandrel.architectures.ESRGAN.__arch.RRDB")
+    import importlib.util
+
+    import numpy as np
+    spec = importlib.util.spec_from_file_location("convert_model", Path(converter.CONVERT_SCRIPT))
+    convert_model = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(convert_model)
+    torch.manual_seed(0)
+    for scale, plus in ((2, False), (4, True)):
+        net = rrdb.RRDBNet(num_filters=16, num_blocks=2, scale=scale, plus=plus).eval()
+        descriptor = type("D", (), {"model": net, "architecture": type("A", (), {"name": "ESRGAN"})})
+        work = tmp_path / f"x{scale}"
+        work.mkdir()
+        convert_model.write_native(descriptor, work)
+        models.normalize_param((work / "model.param").read_text())  # format accepté à l'import
+        sample = torch.rand(1, 3, 20, 26)
+        with torch.no_grad():
+            expected = net(sample)[0].numpy()
+        engine = ncnn.Net()
+        engine.opt.use_fp16_storage = engine.opt.use_fp16_packed = engine.opt.use_fp16_arithmetic = False
+        engine.load_param(str(work / "model.param"))
+        engine.load_model(str(work / "model.bin"))
+        extractor = engine.create_extractor()
+        pixels = np.ascontiguousarray(sample[0].numpy())  # référence gardée : ncnn.Mat ne copie pas
+        extractor.input("data", ncnn.Mat(pixels))
+        _, out = extractor.extract("output")
+        assert np.abs(np.array(out) - expected).max() < 1e-4
