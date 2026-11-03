@@ -23,3 +23,5 @@ jobs:
           node-version: "22"
       - name: Check browser JavaScript
         run: node --check static/app.js
+      - name: Check installer shell syntax
+        run: bash -n install.sh
