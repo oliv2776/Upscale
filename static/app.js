@@ -97,8 +97,13 @@ async function renderOllamaResult(data) {
 async function checkOllama() {
   try {
     const data=await api("/api/ollama/status");
-    if(!data.enabled){$("ollamaStatus").textContent="Intégration facultative, désactivée."; $("ollamaStatus").className="ollama-status"; $("ollamaBadge").textContent="DÉSACTIVÉ"; return;}
-    await renderOllamaResult(data);
+    if(data.connected){
+      await renderOllamaResult(data);
+      if(!data.enabled){$("ollamaStatus").textContent="Ollama détecté. Activez l'intégration pour l'utiliser."; $("ollamaBadge").textContent="DÉTECTÉ";}
+    } else if(!data.enabled){
+      $("ollamaStatus").textContent="Aucune instance détectée pour le moment. L'intégration reste facultative.";
+      $("ollamaStatus").className="ollama-status"; $("ollamaBadge").textContent="DÉSACTIVÉ";
+    } else { await renderOllamaResult(data); }
   } catch(error) {
     $("ollamaStatus").textContent=error.message; $("ollamaStatus").className="ollama-status error";
   }
