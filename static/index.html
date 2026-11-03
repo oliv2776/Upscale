@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Uscale — AI Video Upscaler</title><link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-mark">U</span><span>Uscale</span><small>LOCAL VIDEO LAB</small></div>
+    <nav><a class="active" href="#dashboard">◫ <span>Vue d'ensemble</span></a><a href="#settings">⚙ <span>Configuration</span></a><a href="#queue">▤ <span>File de traitement</span></a></nav>
+    <div class="side-bottom"><span class="pulse"></span><span>Traitement local</span><small>Vulkan · Video2X</small></div>
+  </aside>
+  <main>
+    <header class="topbar"><div><div class="eyebrow">ESPACE PERSONNEL / NAS</div><h1>Video upscaling</h1></div><div class="top-actions"><span id="connection" class="connection"><i></i> Connexion…</span><button class="icon-btn" id="refreshBtn" title="Actualiser">↻</button></div></header>
+    <section class="hero" id="dashboard">
+      <div><div class="eyebrow light">AI-POWERED RESTORATION</div><h2>Donnez une nouvelle<br>dimension à vos vidéos.</h2><p>Parcourez votre bibliothèque, sélectionnez vos paramètres et laissez votre GPU faire le travail.</p><button class="primary" id="scanHero">Analyser ma bibliothèque <span>→</span></button></div>
+      <div class="hero-art"><div class="orb orb-one"></div><div class="orb orb-two"></div><div class="frame frame-back"></div><div class="frame frame-front"><div class="frame-grid"></div><b>4×</b><small>AI UPSCALE</small></div><div class="hero-caption">240p <span>→</span> 720p</div></div>
+    </section>
+    <section class="stats">
+      <article class="stat"><span class="stat-label">En attente</span><strong id="queuedCount">0</strong><small>Vidéos dans la file</small></article>
+      <article class="stat"><span class="stat-label">En cours</span><strong id="runningCount">0</strong><small>Traitement actif</small></article>
+      <article class="stat"><span class="stat-label">Terminées</span><strong id="completedCount">0</strong><small>Vidéos converties</small></article>
+      <article class="stat"><span class="stat-label">En erreur</span><strong id="failedCount">0</strong><small>À vérifier</small></article>
+    </section>
+    <section class="panel" id="settings">
+      <div class="section-head"><div><div class="eyebrow">01 / SOURCE & DESTINATION</div><h3>Bibliothèque vidéo</h3><p>Choisissez les dossiers à analyser. Les originaux restent intacts.</p></div><span class="tag">SCAN RÉCURSIF</span></div>
+      <div class="path-grid">
+        <div class="field"><label>DOSSIER SOURCE</label><div class="path-control"><input id="source" value="/data/videos"><button data-picker="source" class="browse">Parcourir</button></div><small>Vidéos à analyser, sous-dossiers inclus.</small></div>
+        <div class="field"><label>DOSSIER DE DESTINATION</label><div class="path-control"><input id="destination" value="/data/videos_upscaled"><button data-picker="destination" class="browse">Parcourir</button></div><small>Arborescence conservée, sortie MKV.</small></div>
+      </div>
+      <div class="section-head compact"><div><div class="eyebrow">02 / PARAMÈTRES IA</div><h3>Qualité de traitement</h3></div></div>
+      <div class="settings-grid">
+        <div class="field"><label>RÉSOLUTION SOURCE MAX.</label><select id="maxInput"><option value="240">Jusqu'à 240p</option><option value="360">Jusqu'à 360p</option><option value="480" selected>Jusqu'à 480p</option><option value="720">Jusqu'à 720p</option></select></div>
+        <div class="field"><label>RÉSOLUTION DE SORTIE</label><select id="outputHeight"><option value="480">480p</option><option value="720" selected>720p</option><option value="1080">1080p</option></select></div>
+        <div class="field"><label>MODÈLE IA</label><select id="model"><option value="realesrgan-plus">Real-ESRGAN Plus · Vidéo générale</option><option value="realesr-animevideov3">Real-ESRGAN Anime · Animation</option></select></div>
+        <div class="field"><label>QUALITÉ VIDÉO (CRF)</label><div class="range-line"><input id="crf" type="range" min="12" max="30" value="18"><b id="crfValue">18</b></div><small>Plus bas = meilleure qualité, fichier plus lourd.</small></div>
+        <div class="field"><label>VITESSE D'ENCODAGE</label><select id="preset"><option value="fast">Rapide</option><option value="medium" selected>Équilibré</option><option value="slow">Lent · meilleure compression</option></select></div>
+        <div class="field"><label>SOUS-DOSSIERS</label><div class="toggle-row"><span>Inclure tous les sous-dossiers</span><label class="switch"><input id="recursive" type="checkbox" checked><span></span></label></div></div>
+      </div>
+      <div class="actions"><button class="secondary" id="scanBtn">⌕ Analyser les vidéos</button><button class="primary" id="queueBtn">Lancer le traitement <span>→</span></button></div>
+      <div id="scanResult" class="scan-result hidden"></div>
+    </section>
+    <section class="panel" id="queue">
+      <div class="section-head"><div><div class="eyebrow">03 / MONITORING</div><h3>File de traitement</h3><p>Suivez les tâches et consultez les journaux en cas de problème.</p></div><div class="queue-actions"><button class="secondary small" id="pauseBtn">Ⅱ Pause</button><button class="secondary small" id="resumeBtn">▶ Reprendre</button></div></div>
+      <div class="table-wrap"><table><thead><tr><th>FICHIER</th><th>RÉSOLUTION</th><th>ÉTAT</th><th>ÉTAPE</th><th></th></tr></thead><tbody id="jobsBody"><tr><td colspan="5" class="empty">Aucun traitement pour le moment.</td></tr></tbody></table></div>
+    </section>
+    <section class="panel health-panel">
+      <div class="section-head"><div><div class="eyebrow">SYSTÈME</div><h3>État du serveur</h3></div><button class="secondary small" id="healthBtn">Tester le GPU</button></div>
+      <div class="health-grid"><div><span class="health-label">Docker</span><strong id="dockerState">Vérification…</strong></div><div><span class="health-label">GPU Vulkan</span><strong id="gpuState">Non vérifié</strong></div><div><span class="health-label">Moteur</span><strong>Video2X 6.4.0</strong></div></div>
+      <pre id="healthDetails" class="health-details hidden"></pre>
+    </section>
+    <footer>USCALE <span>•</span> Traitement local, vos fichiers restent chez vous.</footer>
+  </main>
+</div>
+<div id="picker" class="modal hidden"><div class="modal-card"><div class="modal-head"><div><div class="eyebrow">EXPLORATEUR DE FICHIERS</div><h3>Choisir un dossier</h3></div><button id="closePicker" class="icon-btn">×</button></div><div id="currentPath" class="current-path">/data</div><div id="directoryList" class="directory-list"></div><div class="modal-actions"><button id="selectFolder" class="primary">Utiliser ce dossier</button></div></div></div>
+<div id="logModal" class="modal hidden"><div class="modal-card log-card"><div class="modal-head"><div><div class="eyebrow">JOURNAL DU TRAITEMENT</div><h3 id="logTitle">Logs</h3></div><button id="closeLogs" class="icon-btn">×</button></div><pre id="logContent" class="log-content"></pre></div></div>
+<div id="toast" class="toast"></div>
+<script src="/static/app.js"></script>
+</body></html>
