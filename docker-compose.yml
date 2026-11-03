@@ -13,6 +13,8 @@ services:
       RENDER_GID: "${RENDER_GID:-109}"
       DEFAULT_SOURCE: "${DEFAULT_SOURCE:-/data/videos}"
       DEFAULT_DESTINATION: "${DEFAULT_DESTINATION:-/data/videos_upscaled}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${USCALE_HOST_DATA:-/data}:/data
