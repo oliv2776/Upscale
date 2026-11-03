@@ -41,6 +41,16 @@
       <div class="actions"><button class="secondary" id="scanBtn">⌕ Analyser les vidéos</button><button class="primary" id="queueBtn">Lancer le traitement <span>→</span></button></div>
       <div id="scanResult" class="scan-result hidden"></div>
     </section>
+    <section class="panel" id="ollama">
+      <div class="section-head"><div><div class="eyebrow">OPTIONNEL / ASSISTANT IA</div><h3>Connexion Ollama</h3><p>Connectez votre instance Ollama existante pour les fonctions d'analyse et d'assistance IA.</p></div><span class="tag" id="ollamaBadge">DÉSACTIVÉ</span></div>
+      <div class="ollama-grid">
+        <div class="field"><label>ACTIVER L'INTÉGRATION</label><div class="toggle-row"><span>Utiliser Ollama (facultatif)</span><label class="switch"><input id="ollamaEnabled" type="checkbox"><span></span></label></div></div>
+        <div class="field"><label>ADRESSE DE L'API OLLAMA</label><input class="ollama-input" id="ollamaUrl" value="http://host.docker.internal:11434" placeholder="http://192.168.1.10:11434"><small>Adresse joignable depuis le conteneur Uscale.</small></div>
+        <div class="field"><label>MODÈLE PAR DÉFAUT</label><select id="ollamaModel"><option value="">Détecter les modèles disponibles…</option></select><small>Les modèles sont chargés depuis /api/tags.</small></div>
+      </div>
+      <div class="ollama-actions"><span id="ollamaStatus" class="ollama-status">Intégration facultative, désactivée par défaut.</span><button class="secondary small" id="testOllama">Tester la connexion</button><button class="secondary small" id="saveOllama">Enregistrer</button></div>
+      <p class="ollama-help">Si Ollama tourne directement sur le NAS, son API doit être accessible depuis Docker. Sur une installation Linux native, Ollama écoute souvent uniquement sur localhost : configure OLLAMA_HOST=0.0.0.0 puis redémarre Ollama, ou indique une adresse IP/port déjà accessible. Ne publie pas cette API sur Internet.</p>
+    </section>
     <section class="panel" id="queue">
       <div class="section-head"><div><div class="eyebrow">03 / MONITORING</div><h3>File de traitement</h3><p>Suivez les tâches et consultez les journaux en cas de problème.</p></div><div class="queue-actions"><button class="secondary small" id="pauseBtn">Ⅱ Pause</button><button class="secondary small" id="resumeBtn">▶ Reprendre</button></div></div>
       <div class="table-wrap"><table><thead><tr><th>FICHIER</th><th>RÉSOLUTION</th><th>ÉTAT</th><th>ÉTAPE</th><th></th></tr></thead><tbody id="jobsBody"><tr><td colspan="5" class="empty">Aucun traitement pour le moment.</td></tr></tbody></table></div>
