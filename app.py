@@ -197,13 +197,28 @@ def enqueue(files: list[dict[str, Any]]) -> int:
     conn = db()
     added = 0
     for item in files:
-        cur = conn.execute("""
-          INSERT OR IGNORE INTO jobs
+        signature = (item["source"], item["size"], item["mtime_ns"])
+        existing = conn.execute(
+            "SELECT id,status FROM jobs WHERE source=? AND source_size=? AND source_mtime_ns=?",
+            signature
+        ).fetchone()
+        if existing:
+            if existing["status"] in {"failed", "cancelled"}:
+                conn.execute("""
+                  UPDATE jobs SET status='queued',stage='En attente',error=NULL,
+                    destination=?,width=?,height=?,created_at=?,updated_at=?
+                  WHERE id=?
+                """, (item["destination"], item["width"], item["height"],
+                      now(), now(), existing["id"]))
+                added += 1
+            continue
+        conn.execute("""
+          INSERT INTO jobs
           (id,source,destination,source_size,source_mtime_ns,width,height,status,stage,created_at,updated_at)
           VALUES(?,?,?,?,?,?,?,'queued','En attente',?,?)
         """, (uuid.uuid4().hex[:12], item["source"], item["destination"],
               item["size"], item["mtime_ns"], item["width"], item["height"], now(), now()))
-        added += cur.rowcount
+        added += 1
     conn.commit()
     conn.close()
     worker_wakeup.set()
@@ -331,6 +346,16 @@ def ensure_worker() -> None:
     if worker_thread is None or not worker_thread.is_alive():
         worker_thread = threading.Thread(target=worker_loop, daemon=True)
         worker_thread.start()
+
+def recover_interrupted_jobs() -> None:
+    conn = db()
+    conn.execute("""
+      UPDATE jobs SET status='queued',stage='Reprise après redémarrage',
+        error='Le serveur a redémarré pendant ce traitement; tâche remise en file.',
+        updated_at=? WHERE status='running'
+    """, (now(),))
+    conn.commit()
+    conn.close()
 
 @app.get("/")
 def index():
@@ -484,5 +509,6 @@ def api_health():
     })
 
 if __name__ == "__main__":
+    recover_interrupted_jobs()
     ensure_worker()
     app.run(host="0.0.0.0", port=PORT, threaded=True)
