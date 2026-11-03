@@ -31,7 +31,31 @@ Le projet cible notamment les NAS sous Ubuntu équipés d'un GPU AMD compatible 
 
 La RX 5500 XT peut exécuter le traitement Vulkan si le pilote Mesa de l'hôte expose correctement le périphérique. La présence de la carte dans lspci ne suffit pas : vulkaninfo --summary doit afficher le GPU AMD, et non uniquement llvmpipe (rendu logiciel CPU).
 
-## Installation sur un NAS Ubuntu
+## Installation rapide (recommandée)
+
+Sur un NAS Ubuntu avec accès SSH et une clé GitHub autorisée pour ce dépôt privé, l'installation se résume à deux commandes :
+
+~~~bash
+git clone git@github.com:oliv2776/Upscale.git
+cd Upscale && sudo bash install.sh
+~~~
+
+Le script install.sh :
+- installe les dépendances système manquantes (Docker/Compose, Git et pilotes/outils Vulkan) ;
+- active Docker au démarrage ;
+- crée /data/videos et /data/videos_upscaled ;
+- détecte les GID des périphériques AMD /dev/dri ;
+- génère .env automatiquement sans écraser un fichier existant ;
+- construit et démarre Uscale sur le port **27000**.
+
+Une fois terminé, ouvre http://IP_DU_NAS:27000 depuis ton réseau local. Le reste se configure dans l'interface : dossiers, résolution, modèle Real-ESRGAN, file d'attente et paramètres Ollama. Pour trouver l'adresse IP du NAS : hostname -I.
+
+Le script part du principe que les vidéos se trouvent sous /data. Pour un autre point de montage, lance-le avec sudo USCALE_HOST_DATA=/chemin/du/stockage bash install.sh. L'explorateur affichera ce stockage dans le conteneur sous /data.
+
+Si le dépôt est privé, la clé SSH doit être ajoutée à ton compte GitHub avant le clonage. Le script ne modifie pas les paramètres de ton instance Ollama existante.
+
+## Installation manuelle et dépannage
+
 
 Toutes les commandes ci-dessous sont à exécuter dans un terminal SSH du NAS. Les commandes avec sudo nécessitent les droits administrateur.
 
@@ -95,8 +119,8 @@ Si tes médias sont ailleurs (par exemple /mnt/media), consulte la section **Uti
 Avec une clé SSH GitHub autorisée :
 
 ~~~bash
-git clone git@github.com:oliv2776/Uscale.git
-cd Uscale
+git clone git@github.com:oliv2776/Upscale.git
+cd Upscale
 ~~~
 
 Si le dépôt est privé, le clonage HTTPS demandera une authentification GitHub. N'inscris jamais un token personnel directement dans une commande ou dans le fichier .env.
@@ -318,6 +342,43 @@ docker compose logs -f uscale
 ~~~
 
 Teste d'abord un fichier court de quelques secondes avant de soumettre une grande collection.
+
+## Intégration Ollama (facultative)
+
+Uscale peut détecter une instance Ollama existante et afficher sa version ainsi que les modèles locaux. L'adresse et le modèle se configurent depuis le panneau **Connexion Ollama** de l'interface web. Uscale interroge l'API locale officielle : GET /api/version et GET /api/tags. Le modèle sélectionné est mémorisé dans les paramètres.
+
+Par défaut, Uscale essaie http://host.docker.internal:11434 puis la passerelle Docker habituelle http://172.17.0.1:11434. Le fichier Compose crée l'alias host.docker.internal vers l'hôte Linux. Si Ollama tourne dans un autre conteneur ou sur une autre machine, indique dans l'interface son URL accessible depuis Uscale, par exemple http://192.168.1.20:11434.
+
+### Ollama installé directement sur Ubuntu
+
+Par défaut, Ollama écoute souvent sur 127.0.0.1:11434, adresse qui n'est pas joignable depuis un conteneur Docker. Pour autoriser les connexions depuis le réseau Docker, configure le service Ollama sur l'hôte :
+
+~~~bash
+sudo systemctl edit ollama
+~~~
+
+Ajoute ces lignes dans l'éditeur :
+
+~~~ini
+[Service]
+Environment="OLLAMA_HOST=0.0.0.0:11434"
+~~~
+
+Puis applique le changement :
+
+~~~bash
+sudo systemctl daemon-reload
+sudo systemctl restart ollama
+curl http://127.0.0.1:11434/api/tags
+~~~
+
+Retourne dans Uscale, renseigne http://host.docker.internal:11434 et clique sur **Tester la connexion**, puis **Enregistrer**. Si l'instance Ollama est sur une autre machine, utilise son IP et son port à la place.
+
+**Sécurité :** n'expose pas le port 11434 sur Internet. Si Ollama écoute sur toutes les interfaces, limite son accès avec le pare-feu au réseau Docker et/ou au LAN de confiance. L'API locale Ollama ne nécessite normalement pas de clé d'API ; toute personne qui peut y accéder peut solliciter les modèles installés.
+
+### À quoi sert Ollama dans Uscale ?
+
+Ollama est un assistant optionnel pour des fonctions d'analyse, de classification ou de génération de métadonnées. Il ne remplace pas Video2X / Real-ESRGAN : le calcul d'upscaling des images reste effectué par le moteur vidéo dédié. Uscale n'installe, ne télécharge et ne modifie aucun modèle Ollama automatiquement.
 
 ## Sécurité — à lire avant toute exposition réseau
 
