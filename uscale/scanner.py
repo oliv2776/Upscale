@@ -58,8 +58,9 @@ def scan_files(settings: dict[str, Any], progress: Callable[[int, int], None] | 
     already_known = too_recent = 0
     with db.connect() as conn:
         known = {
-            (row["source"], row["source_size"], row["source_mtime_ns"]): row["status"]
-            for row in conn.execute("SELECT source,source_size,source_mtime_ns,status FROM jobs WHERE kind='upscale'")
+            (row["source"], row["source_size"], row["source_mtime_ns"]): (row["status"], row["destination"])
+            for row in conn.execute("SELECT source,source_size,source_mtime_ns,status,destination FROM jobs "
+                                    "WHERE kind='upscale'")
         }
         for index, path in enumerate(candidates, 1):
             if progress and (index % 10 == 0 or index == len(candidates)):
@@ -80,7 +81,10 @@ def scan_files(settings: dict[str, Any], progress: Callable[[int, int], None] | 
                 output = destination_root / media.output_relative(rel, ambiguous, suffix)
                 if output.exists():
                     continue
-                if known.get((str(path), stat.st_size, stat.st_mtime_ns)) in {"queued", "running", "completed"}:
+                status, previous = known.get((str(path), stat.st_size, stat.st_mtime_ns), (None, None))
+                # Déjà traité vers cette même sortie (ou en cours) : ignoré. Une autre destination ou un autre
+                # suffixe donne une nouvelle sortie, le fichier est alors retraité.
+                if status in {"queued", "running"} or (status == "completed" and previous == str(output)):
                     already_known += 1
                     continue
                 files.append({
@@ -112,14 +116,17 @@ def enqueue(files: list[dict[str, Any]], settings: dict[str, Any]) -> dict[str, 
                 continue
             snapshot = json.dumps(settings_mod.effective_settings(settings, Path(item["source"])))
             existing = conn.execute(
-                "SELECT id,status FROM jobs WHERE source=? AND source_size=? AND source_mtime_ns=?",
+                "SELECT id,status,destination FROM jobs WHERE source=? AND source_size=? AND source_mtime_ns=?",
                 (item["source"], item["size"], item["mtime_ns"]),
             ).fetchone()
             if existing:
-                if existing["status"] in {"failed", "cancelled"}:
+                retry = existing["status"] in {"failed", "cancelled"}
+                new_output = existing["status"] == "completed" and existing["destination"] != item["destination"]
+                if retry or new_output:
                     conn.execute("""
                       UPDATE jobs SET status='queued',stage='En attente',error=NULL,warning=NULL,progress=NULL,
-                        eta_seconds=NULL,destination=?,width=?,height=?,settings_json=?,position=?,updated_at=?
+                        eta_seconds=NULL,segments_done=NULL,segments_total=NULL,resolved_model=NULL,
+                        destination=?,width=?,height=?,settings_json=?,position=?,updated_at=?
                       WHERE id=?
                     """, (item["destination"], item["width"], item["height"], snapshot, next_position(conn),
                           db.now(), existing["id"]))

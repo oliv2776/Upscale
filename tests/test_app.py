@@ -367,6 +367,18 @@ def test_end_to_end_mp4_with_mov_text(env, fake_docker):
 
 
 @needs_ffmpeg
+def test_new_destination_reprocesses(env, fake_docker):
+    make_video(env / "videos" / "a.mp4")
+    [first] = process_all(env)
+    assert first["status"] == "completed"
+    assert scanner.scan_files(st.get_settings())["files"] == []  # même sortie : déjà traité
+    st.save_settings({"output_suffix": " - v2"})
+    [second] = process_all(env)
+    assert second["id"] == first["id"] and second["status"] == "completed"
+    assert sorted(p.name for p in (env / "out").iterdir()) == ["a - v2.mkv", "a.mkv"]
+
+
+@needs_ffmpeg
 def test_cover_art_is_not_processed(env, fake_docker):
     plain = make_video(env.parent / "plain.mkv")
     cover = env.parent / "cover.jpg"
