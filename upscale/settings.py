@@ -231,7 +231,9 @@ def available_models() -> dict[str, dict[str, Any]]:
         for key, scales in MODEL_SCALES.items()}
     for meta in models.list_models():
         result[meta["id"]] = {"label": meta["label"], "scales": [meta["scale"]], "custom": True,
-                              "tile": meta["tile"], "param_size": meta["param_size"], "bin_size": meta["bin_size"]}
+                              "tile": meta["tile"], "param_size": meta["param_size"], "bin_size": meta["bin_size"],
+                              **{k: meta.get(k) for k in ("architecture", "license", "author", "page", "verified")
+                                 if meta.get(k)}}
     return result
 
 

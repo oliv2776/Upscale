@@ -1,19 +1,21 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import json
 import os
 import subprocess
 import threading
 import time
+import zipfile
 from datetime import datetime
 from pathlib import Path
 
 import pytest
 from conftest import calls, make_video, needs_ffmpeg
 
-from upscale import config, db, gpu, media, models, notify, ollama, pipeline, runner, scanner, worker
+from upscale import config, converter, db, gpu, media, models, notify, ollama, pipeline, runner, scanner, worker
 from upscale import settings as st
 from upscale.web import app
 
@@ -643,7 +645,10 @@ def test_peau_normale_end_to_end(env, fake_docker, monkeypatch):
     assert jobs[0]["render"] == "peau-normale"
 
 
-def import_model(client, label="Peau réaliste 2x", scale=2, param=b"7767517\n3 3\nInput data 0 1 data\n"):
+TINY_PARAM = b"7767517\n2 2\nInput in0 0 1 in0\nConvolution conv0 1 1 in0 out0 0=3\n"
+
+
+def import_model(client, label="Peau réaliste 2x", scale=2, param=TINY_PARAM):
     return client.post("/api/models", headers={"X-Upscale-Upload": "1"}, content_type="multipart/form-data", data={
         "label": label, "scale": str(scale), "tile": "0",
         "param": (io.BytesIO(param), "modele.param"), "bin": (io.BytesIO(b"\0" * 4096), "modele.bin")})
@@ -911,3 +916,177 @@ def test_ollama_auto_model(env, http_server):
     recorder.responses["/api/generate"] = (200, json.dumps({"response": "LIVE"}).encode())
     assert ollama.classify(settings, clip, 2.0)[0] == st.LIVE_ACTION_MODEL
     assert ollama.classify({**settings, "ollama_enabled": False}, clip, 2.0)[0] == st.LIVE_ACTION_MODEL
+
+
+# ---------------------------------------------------------------- installation de modèles (OpenModelDB)
+
+PNNX_PARAM = "7767517\n3 3\nInput in0 0 1 in0\nConvolution conv_0 1 1 in0 1 0=3\nPixelShuffle ps_1 1 1 1 out0 0=2\n"
+
+
+def test_normalize_param_names_engine_blobs():
+    text = models.normalize_param(PNNX_PARAM)
+    assert "Input in0 0 1 data" in text and "conv_0 1 1 data 1 0=3" in text and "ps_1 1 1 1 output 0=2" in text
+    assert models.normalize_param(text) == text  # déjà conforme (chaiNNer) : inchangé
+    clash = "7767517\n3 3\nInput input 0 1 input\nConvolution c 1 1 input data\nSigmoid s 1 1 data out\n"
+    renamed = models.normalize_param(clash)
+    assert "c 1 1 data data_interne" in renamed and "s 1 1 data_interne output" in renamed
+    with pytest.raises(ValueError):  # deux sorties
+        models.normalize_param("7767517\n3 4\nInput in0 0 1 in0\nSplit sp 1 2 in0 a b\n")
+    with pytest.raises(ValueError):
+        models.normalize_param("pas ncnn\n")
+
+
+def test_direct_download_urls():
+    drive = converter.direct_url("https://drive.google.com/file/d/1CX9tpoS-OtU/view?usp=drive_link")
+    assert drive == "https://drive.usercontent.google.com/download?id=1CX9tpoS-OtU&export=download&confirm=t"
+    assert converter.direct_url("https://drive.google.com/drive/folders/1eHak") is None
+    assert converter.direct_url("https://mega.nz/file/abc") is None
+    assert converter.direct_url("https://github.com/u/r/blob/main/m.pth") == "https://github.com/u/r/raw/main/m.pth"
+    assert converter.direct_url("https://huggingface.co/u/r/blob/main/m.pth") == "https://huggingface.co/u/r/resolve/main/m.pth"
+    assert converter.direct_url("file:///etc/passwd") is None
+    assert converter.openmodeldb_id("https://openmodeldb.info/models/2x-LiveActionV1-SPAN?x=1") == "2x-LiveActionV1-SPAN"
+    assert converter.openmodeldb_id("2x-LiveActionV1-SPAN") == "2x-LiveActionV1-SPAN"
+    with pytest.raises(converter.InstallError):
+        converter.openmodeldb_id("../../etc/passwd")
+    ranked = converter.ordered_resources([{"platform": "onnx"}, {"platform": "pytorch"}, {"platform": "tensorrt"},
+                                          {"platform": "ncnn"}])
+    assert [r["platform"] for r in ranked] == ["ncnn", "pytorch", "onnx"]
+
+
+def omdb_entry(base: str, payload: bytes, **extra):
+    return {"name": "2xTestLive_SPAN", "author": "jcj83429", "license": "CC-BY-NC-SA-4.0", "architecture": "span",
+            "scale": 2, "inputChannels": 3, "outputChannels": 3,
+            "resources": [{"platform": "pytorch", "type": "pth", "size": len(payload),
+                           "sha256": hashlib.sha256(payload).hexdigest(),
+                           "urls": ["https://drive.google.com/drive/folders/inutilisable", f"{base}/files/2x_live.pth"]}],
+            **extra}
+
+
+@needs_ffmpeg
+def test_install_from_openmodeldb_link(env, fake_converter, http_server, monkeypatch):
+    base, recorder = http_server
+    monkeypatch.setattr(config, "OPENMODELDB_DATA", f"{base}/models")
+    payload = b"PK-faux-pth" * 500
+    recorder.responses["/models/2x-TestLive-SPAN.json"] = (200, json.dumps(omdb_entry(base, payload)).encode())
+    recorder.responses["/files/2x_live.pth"] = (200, payload)
+    client = app.test_client()
+    response = client.post("/api/models/install", json={"source": "https://openmodeldb.info/models/2x-TestLive-SPAN"})
+    assert response.status_code == 202, response.get_json()
+    install_id = response.get_json()["install"]["id"]
+    converter.process_pending()
+    task = client.get(f"/api/models/installs/{install_id}").get_json()["install"]
+    assert task["state"] == "done", task
+    meta = models.get(task["model_id"])
+    assert meta["label"] == "2xTestLive_SPAN" and meta["scale"] == 2 and meta["license"] == "CC-BY-NC-SA-4.0"
+    assert meta["page"] == "https://openmodeldb.info/models/2x-TestLive-SPAN" and meta["architecture"] == "SPAN"
+    assert meta["verified"]["psnr"] >= converter.MIN_PSNR  # moteur comparé au modèle d'origine
+    param = (Path(meta["folder"]) / f"{models.NCNN_NAME}.param").read_text()
+    assert "Input in0 0 1 data" in param and " output " in param  # noms attendus par le moteur
+    assert any("dossier Google Drive" in line for line in task["log"])  # lien inutilisable ignoré
+    listed = client.get("/api/models").get_json()
+    assert listed["models"][meta["id"]]["license"] == "CC-BY-NC-SA-4.0"
+    assert listed["installs"][0]["id"] == install_id and "_upload" not in listed["installs"][0]
+    assert listed["suggestions"][0]["id"] == "2x-LiveActionV1-SPAN"
+    ncnn = [c for c in calls(fake_converter) if c[0] == "ncnn"]
+    assert ncnn and ncnn[-1][ncnn[-1].index("-s") + 1] == "2"
+    st.save_settings({"model": meta["id"]})  # utilisable tout de suite
+    assert not list(models.models_dir().glob(".installation-*"))  # dossier de travail nettoyé
+
+
+@needs_ffmpeg
+def test_install_rejects_tampered_or_unsupported_models(env, fake_converter, http_server, monkeypatch):
+    base, recorder = http_server
+    monkeypatch.setattr(config, "OPENMODELDB_DATA", f"{base}/models")
+    payload = b"contenu" * 400
+    entry = omdb_entry(base, payload)
+    entry["resources"][0]["sha256"] = "0" * 64
+    recorder.responses["/models/2x-Modifie.json"] = (200, json.dumps(entry).encode())
+    recorder.responses["/files/2x_live.pth"] = (200, payload)
+    recorder.responses["/models/8x-Enorme.json"] = (200, json.dumps({**omdb_entry(base, payload), "scale": 8}).encode())
+    recorder.responses["/models/Absent.json"] = (404, b"{}")
+    client = app.test_client()
+    ids = [client.post("/api/models/install", json={"source": name}).get_json()["install"]["id"]
+           for name in ("2x-Modifie", "8x-Enorme", "Absent")]
+    converter.process_pending()
+    tampered, huge, missing = (converter.get_install(i) for i in ids)
+    assert tampered["state"] == "error" and "SHA-256" in tampered["message"]
+    assert huge["state"] == "error" and "×8" in huge["message"]
+    assert missing["state"] == "error" and "introuvable" in missing["message"]
+    assert client.post("/api/models/install", json={"source": "pas un lien/../x"}).status_code == 400
+    assert not models.list_models()
+
+
+@needs_ffmpeg
+def test_upload_pth_onnx_and_ncnn_zip(env, fake_converter, http_server):
+    client = app.test_client()
+    upload = lambda name, data, **form: client.post(  # noqa: E731
+        "/api/models", headers={"X-Upscale-Upload": "1"}, content_type="multipart/form-data",
+        data={"tile": "0", **form, "file": (io.BytesIO(data), name)})
+    pth = upload("4x_Peau.pth", b"x" * 5000, label="Peau ×4")
+    onnx_no_scale = upload("modele.onnx", b"x" * 5000)
+    onnx = upload("modele.onnx", b"x" * 5000, scale="3", label="Onnx x3")
+    gelu = upload("2x_gelu.pth", b"x" * 5000)
+    dat = upload("4x_DAT.pth", b"x" * 5000)
+    assert upload("notes.txt", b"x").status_code == 400
+    ids = [r.get_json()["install"]["id"] for r in (pth, onnx_no_scale, onnx, gelu, dat)]
+    assert all(r.status_code == 202 for r in (pth, onnx_no_scale, onnx, gelu, dat))
+    converter.process_pending()
+    done_pth, no_scale, done_onnx, failed_gelu, failed_dat = (converter.get_install(i) for i in ids)
+    assert done_pth["state"] == "done" and models.get(done_pth["model_id"])["scale"] == 4
+    assert models.get(done_pth["model_id"])["label"] == "Peau ×4"
+    assert no_scale["state"] == "error" and "facteur" in no_scale["message"]
+    assert done_onnx["state"] == "done" and models.get(done_onnx["model_id"])["scale"] == 3
+    assert models.get(done_onnx["model_id"])["verified"].get("psnr") is None  # pas de référence PyTorch
+    assert failed_gelu["state"] == "error" and "Gelu" in failed_gelu["message"]  # couche inconnue du moteur
+    assert failed_dat["state"] == "error" and "DAT" in failed_dat["message"]
+    assert not list(models.models_dir().glob(".envoi-*"))  # fichiers envoyés supprimés
+
+    # Archive ncnn prête à l'emploi (lien direct) : aucune conversion.
+    base, recorder = http_server
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as z:
+        z.writestr("modele/x2.param", PNNX_PARAM)
+        z.writestr("modele/x2.bin", b"\0" * 4096)
+        z.writestr("../../evasion.param", "ignoré : un seul .param attendu")
+    recorder.responses["/ncnn.zip"] = (200, archive.getvalue())
+    install = client.post("/api/models/install", json={"source": f"{base}/ncnn.zip", "scale": 2}).get_json()["install"]
+    converter.process_pending()
+    assert converter.get_install(install["id"])["state"] == "error"  # deux .param : ambigu
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as z:
+        z.writestr("modele/x2.param", PNNX_PARAM)
+        z.writestr("modele/x2.bin", b"\0" * 4096)
+    recorder.responses["/ncnn.zip"] = (200, archive.getvalue())
+    before = len([c for c in calls(fake_converter) if c[0] == "converter"])
+    install = client.post("/api/models/install", json={"source": f"{base}/ncnn.zip", "scale": 2,
+                                                       "label": "Zip ncnn"}).get_json()["install"]
+    converter.process_pending()
+    task = converter.get_install(install["id"])
+    assert task["state"] == "done", task
+    assert len([c for c in calls(fake_converter) if c[0] == "converter"]) == before
+    assert not (env.parent / "evasion.param").exists()
+
+
+def test_converter_environment_is_installed_once(env, monkeypatch):
+    monkeypatch.setattr(config, "CONVERTER_PYTHON", "")
+    commands = []
+
+    def fake_stream(task, command, **kwargs):
+        commands.append(command)
+        if command[1:3] == ["-m", "venv"]:
+            python = Path(command[3]) / "bin" / "python"
+            python.parent.mkdir(parents=True)
+            python.write_text("#!/bin/sh\nexit 0\n")
+            python.chmod(0o755)
+        return 0, []
+
+    monkeypatch.setattr(converter, "stream", fake_stream)
+    task = {"id": "t", "log": []}
+    python = converter.ensure_converter(task)
+    assert python == config.converter_dir() / "bin" / "python"
+    pip_torch = next(c for c in commands if "--index-url" in c)
+    assert pip_torch[pip_torch.index("--index-url") + 1] == config.TORCH_INDEX and "torch" in pip_torch
+    assert any("spandrel" in c and "pnnx" in c for c in commands)
+    commands.clear()
+    assert converter.ensure_converter(task) == python and not commands  # déjà prêt : rien à installer
+    assert converter.converter_status()["installed"] is True

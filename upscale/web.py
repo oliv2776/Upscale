@@ -7,18 +7,19 @@ import logging
 import re
 import shutil
 import subprocess
+import uuid
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
 from flask import Flask, Response, jsonify, request, send_from_directory
 
-from . import config, db, gpu, media, models, notify, ollama, runner, scanner, worker
+from . import config, converter, db, gpu, media, models, notify, ollama, runner, scanner, worker
 from . import settings as settings_mod
 
 app = Flask(__name__, static_folder=str(config.STATIC_DIR), static_url_path="/static")
 app.json.sort_keys = False  # garder l'ordre des modèles
-app.config["MAX_CONTENT_LENGTH"] = 800 * 1024**2  # import de modèles personnalisés
+app.config["MAX_CONTENT_LENGTH"] = 2100 * 1024**2  # import de modèles personnalisés
 UPLOAD_PATHS = {"/api/models"}
 PREVIEW_FILE_RE = re.compile(r"[a-z0-9-]+\.(mp4|json)")
 
@@ -355,22 +356,71 @@ def api_preview_file(job_id: str, name: str):
 @app.get("/api/models")
 def api_models():
     return jsonify({"models": settings_mod.available_models(), "engine": config.NCNN_BIN,
-                    "engine_present": Path(config.NCNN_BIN).exists()})
+                    "engine_present": Path(config.NCNN_BIN).exists(), "installs": converter.list_installs(),
+                    "converter": converter.converter_status(), "suggestions": converter.SUGGESTIONS})
 
 
 @app.post("/api/models")
 def api_model_import():
-    param, binary = request.files.get("param"), request.files.get("bin")
+    """Envoi depuis l'interface : paire ncnn (.param + .bin) ou fichier à convertir (.pth, .onnx, .zip...)."""
+    param, binary, single = request.files.get("param"), request.files.get("bin"), request.files.get("file")
+    form = request.form
+    if single and single.filename:
+        name = Path(single.filename).name
+        if Path(name).suffix.lower() not in converter.MODEL_EXTENSIONS | {".zip"}:
+            return error("Fichier attendu : .pth, .safetensors, .ckpt, .onnx ou .zip (ou la paire .param + .bin)")
+        models.models_dir().mkdir(parents=True, exist_ok=True)
+        folder = models.models_dir() / f".envoi-{uuid.uuid4().hex[:12]}"
+        folder.mkdir()
+        target = folder / (re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("._") or "modele.pth")
+        single.save(target)
+        try:
+            task = converter.submit("file", name, label=form.get("label") or Path(name).stem,
+                                    scale=form.get("scale") or None, tile=form.get("tile", 0), upload=target)
+        except ValueError as exc:
+            shutil.rmtree(folder, ignore_errors=True)
+            return error(str(exc))
+        return jsonify({"ok": True, "install": task}), 202
     if not param or not binary:
-        return error("Envoie les deux fichiers du modèle : .param et .bin")
+        return error("Envoie un fichier de modèle (.pth, .onnx...) ou les deux fichiers ncnn : .param et .bin")
     if not param.filename.lower().endswith(".param") or not binary.filename.lower().endswith(".bin"):
         return error("Fichiers attendus : un .param et un .bin (format ncnn)")
     try:
-        meta = models.create(request.form.get("label") or Path(param.filename).stem, request.form.get("scale", 4),
-                             request.form.get("tile", 0), param.stream, binary.stream)
+        meta = models.create(form.get("label") or Path(param.filename).stem, form.get("scale", 4),
+                             form.get("tile", 0), param.stream, binary.stream)
         return jsonify({"ok": True, "model": meta}), 201
     except ValueError as exc:
         return error(str(exc))
+
+
+@app.post("/api/models/install")
+def api_model_install():
+    """Installation depuis un lien : page OpenModelDB (ou son identifiant) ou lien direct vers le fichier."""
+    try:
+        payload = json_body()
+        source = str(payload.get("source") or "").strip()
+        if not source:
+            return error("Colle le lien de la page OpenModelDB du modèle")
+        if len(source) > 2000:
+            return error("Lien trop long")
+        kind = "openmodeldb"
+        if source.startswith(("http://", "https://")) and "openmodeldb.info/models/" not in source:
+            kind = "url"
+        else:
+            converter.openmodeldb_id(source)  # validation immédiate
+        task = converter.submit(kind, source, label=str(payload.get("label") or ""), scale=payload.get("scale"),
+                                tile=payload.get("tile", 0))
+        return jsonify({"ok": True, "install": task}), 202
+    except converter.InstallError as exc:
+        return error(str(exc))
+    except ValueError as exc:
+        return error(str(exc))
+
+
+@app.get("/api/models/installs/<install_id>")
+def api_model_install_status(install_id: str):
+    task = converter.get_install(install_id)
+    return jsonify({"install": task}) if task else error("Installation inconnue", 404)
 
 
 @app.post("/api/models/<model_id>/update")
@@ -501,5 +551,6 @@ def main() -> None:
     db.init_db()
     settings_mod.migrate()
     worker.recover_interrupted_jobs()
+    converter.cleanup_staging()
     worker.start_background()
     serve(app, host="0.0.0.0", port=config.PORT, threads=8, ident="Upscale")

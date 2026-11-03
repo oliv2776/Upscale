@@ -1,15 +1,15 @@
 """Modèles personnalisés (format ncnn .param + .bin), gérés depuis l'interface.
 
 Video2X n'accepte que ses trois modèles intégrés : les modèles personnalisés passent par le moteur
-realesrgan-ncnn-vulkan (Vulkan, compatible AMD). Architectures prises en charge : celles que ce moteur sait
-exécuter, en pratique ESRGAN (RRDBNet) et Compact (SRVGGNet), converties au format ncnn par exemple avec
-chaiNNer (« Convert to NCNN »).
+realesrgan-ncnn-vulkan (Vulkan, compatible AMD). Ils arrivent soit déjà au format ncnn, soit en PyTorch/ONNX
+convertis sur place par converter.py (OpenModelDB, fichier .pth...).
 """
 from __future__ import annotations
 
 import json
 import re
 import shutil
+import tempfile
 import unicodedata
 from pathlib import Path
 from typing import Any
@@ -88,38 +88,108 @@ def _validate_meta(label: Any, scale: Any, tile: Any) -> tuple[str, int, int]:
 def _check_param(head: bytes) -> None:
     first = head.split(b"\n", 1)[0].strip().decode("ascii", "ignore")
     if first != NCNN_MAGIC:
-        raise ValueError("Le fichier .param n'est pas un modèle ncnn (convertis le .pth avec chaiNNer → NCNN)")
+        raise ValueError("Le fichier .param n'est pas un modèle ncnn : importe plutôt le .pth ou le .onnx, "
+                         "Upscale le convertit lui-même")
 
 
-def create(label: Any, scale: Any, tile: Any, param_stream: Any, bin_stream: Any) -> dict[str, Any]:
-    """Enregistre un modèle importé. Les flux sont des fichiers ouverts en lecture binaire."""
-    label, scale, tile = _validate_meta(label, scale, tile)
+def normalize_param(text: str) -> str:
+    """Renomme l'entrée et la sortie du réseau en « data » / « output », les noms qu'utilise le moteur.
+
+    pnnx produit « in0 » / « out0 », d'autres convertisseurs « input »... Format d'une ligne de couche :
+    type nom nb_entrées nb_sorties entrées... sorties... paramètres...
+    """
+    lines = text.splitlines()
+    if len(lines) < 3 or lines[0].strip() != NCNN_MAGIC:
+        raise ValueError("Fichier .param ncnn invalide")
+    layers = []
+    produced: list[str] = []
+    consumed: set[str] = set()
+    inputs: list[str] = []
+    for line in lines[2:]:
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        try:
+            count_in, count_out = int(parts[2]), int(parts[3])
+        except ValueError:
+            raise ValueError("Fichier .param ncnn invalide") from None
+        blobs_in, blobs_out = parts[4:4 + count_in], parts[4 + count_in:4 + count_in + count_out]
+        consumed.update(blobs_in)
+        produced.extend(blobs_out)
+        if parts[0] == "Input":
+            inputs.extend(blobs_out)
+        layers.append((parts, count_in, count_out))
+    outputs = [blob for blob in produced if blob not in consumed]
+    if len(inputs) != 1 or len(outputs) != 1 or inputs == outputs:
+        raise ValueError(f"Le modèle doit avoir une entrée et une sortie (trouvé {len(inputs)} entrée(s), "
+                         f"{len(outputs)} sortie(s))")
+    mapping = {inputs[0]: "data", outputs[0]: "output"}
+    others = set(produced) - set(mapping)
+    for reserved in ("data", "output"):
+        if reserved in others:  # nom déjà pris par un blob intermédiaire
+            mapping[reserved] = f"{reserved}_interne"
+    result = lines[:2]
+    for parts, count_in, count_out in layers:
+        span = 4 + count_in + count_out
+        renamed = [mapping.get(blob, blob) for blob in parts[4:span]]
+        result.append(" ".join(parts[:4] + renamed + parts[span:]))
+    return "\n".join(result) + "\n"
+
+
+def _new_id(label: str) -> str:
     base = PREFIX + slugify(label)
     model_id, index = base, 2
-    while (models_dir() / model_id).exists():
+    while (models_dir() / model_id).exists() or (models_dir() / f"{model_id}.import").exists():
         model_id, index = f"{base}-{index}", index + 1
+    return model_id
+
+
+def create_from_files(label: Any, scale: Any, tile: Any, param_path: Path, bin_path: Path,
+                      extra: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Enregistre un modèle ncnn à partir de deux fichiers (copiés) ; extra = provenance, licence..."""
+    label, scale, tile = _validate_meta(label, scale, tile)
+    raw = Path(param_path).read_bytes()
+    _check_param(raw[:64])
+    try:
+        param_text = normalize_param(raw.decode("utf-8"))
+    except UnicodeDecodeError:
+        raise ValueError("Fichier .param ncnn invalide") from None
+    if Path(bin_path).stat().st_size < 1024:
+        raise ValueError("Le fichier .bin est vide ou incomplet")
+    model_id = _new_id(label)
     folder = _folder(model_id)
     temp = folder.with_name(folder.name + ".import")
     shutil.rmtree(temp, ignore_errors=True)
     temp.mkdir(parents=True)
     try:
         param = temp / f"{NCNN_NAME}.param"
-        with param.open("wb") as out:
-            shutil.copyfileobj(param_stream, out)
-        _check_param(param.read_bytes()[:64])
+        param.write_text(param_text, encoding="utf-8")
         binary = temp / f"{NCNN_NAME}.bin"
-        with binary.open("wb") as out:
-            shutil.copyfileobj(bin_stream, out)
-        if binary.stat().st_size < 1024:
-            raise ValueError("Le fichier .bin est vide ou incomplet")
+        shutil.copyfile(bin_path, binary)
         meta = {"id": model_id, "label": label, "scale": scale, "tile": tile,
-                "param_size": param.stat().st_size, "bin_size": binary.stat().st_size}
+                "param_size": param.stat().st_size, "bin_size": binary.stat().st_size, **(extra or {})}
         (temp / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
         temp.rename(folder)
     except BaseException:
         shutil.rmtree(temp, ignore_errors=True)
         raise
     return get(model_id) or meta
+
+
+def create(label: Any, scale: Any, tile: Any, param_stream: Any, bin_stream: Any) -> dict[str, Any]:
+    """Enregistre un modèle ncnn envoyé depuis l'interface (flux ouverts en lecture binaire)."""
+    _validate_meta(label, scale, tile)
+    models_dir().mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=".envoi-", dir=models_dir()))
+    try:
+        param, binary = staging / "model.param", staging / "model.bin"
+        with param.open("wb") as out:
+            shutil.copyfileobj(param_stream, out)
+        with binary.open("wb") as out:
+            shutil.copyfileobj(bin_stream, out)
+        return create_from_files(label, scale, tile, param, binary, {"source": {"kind": "ncnn"}})
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
 
 
 def update(model_id: str, label: Any, scale: Any, tile: Any) -> dict[str, Any]:

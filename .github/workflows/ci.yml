@@ -51,6 +51,49 @@ jobs:
           docker exec upscale-ci ffmpeg -hide_banner -encoders | grep -E "libx265|libsvtav1|hevc_vaapi"
           docker exec upscale-ci sh -c '/opt/realesrgan/realesrgan-ncnn-vulkan -h 2>&1 | head -n 5' | grep -i usage
           docker rm -f upscale-ci
+      - name: Install real OpenModelDB models and upscale with them (CPU Vulkan)
+        run: |
+          mkdir -p ci-data/videos
+          docker run --rm -v "$PWD/ci-data:/data" --entrypoint ffmpeg upscale:ci -v error \
+            -f lavfi -i testsrc2=size=160x120:rate=10:duration=2 -c:v libx264 -pix_fmt yuv420p /data/videos/clip.mp4
+          docker run -d --name upscale-models -p 27004:27000 -v "$PWD/ci-data:/data" \
+            -e UPSCALE_MIN_FREE_GB=0 -e UPSCALE_CUSTOM_SEGMENT_SECONDS=1 upscale:ci
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:27004/api/ping && break; sleep 1; done
+          install() {
+            curl -fsS -X POST -H "Content-Type: application/json" http://127.0.0.1:27004/api/models/install -d "$1" > start.json
+            id=$(python3 -c "import json; print(json.load(open('start.json'))['install']['id'])")
+            for i in $(seq 1 240); do
+              sleep 5
+              curl -fsS "http://127.0.0.1:27004/api/models/installs/$id" > task.json
+              python3 -c "import json; t=json.load(open('task.json'))['install']; print(t['state'], t['step'], t['progress'])"
+              python3 -c "import json,sys; sys.exit(0 if json.load(open('task.json'))['install']['state'] in ('done','error') else 1)" && break
+            done
+            python3 -c "import json; t=json.load(open('task.json'))['install']; print('\n'.join(t['log'])); print('=>', t['state'], t['message'])"
+            python3 -c "import json,sys; sys.exit(0 if json.load(open('task.json'))['install']['state'] == 'done' else 1)"
+          }
+          # Modèle conseillé dans l'interface : il doit s'installer, se convertir et passer la vérification.
+          install '{"source":"https://openmodeldb.info/models/2x-LiveActionV1-SPAN"}'
+          docker exec upscale-models sh -c '/app/state/convertisseur/bin/pip list 2>/dev/null | grep -i -E "^(torch|torchvision|spandrel|pnnx|onnx|numpy) "'
+          # Autres architectures courantes (informatif : sources externes, dont Google Drive).
+          install '{"source":"https://openmodeldb.info/models/2x-NomosUni-compact-multijpg"}' || echo "::warning::NomosUni compact non installé"
+          install '{"source":"https://openmodeldb.info/models/4x-realesrgan-x4plus"}' || echo "::warning::RealESRGAN x4plus non installé"
+          curl -fsS http://127.0.0.1:27004/api/models | python3 -m json.tool | head -n 80
+          model=$(curl -fsS http://127.0.0.1:27004/api/models | python3 -c "import json,sys; print(next(k for k,v in json.load(sys.stdin)['models'].items() if v.get('page','').endswith('2x-LiveActionV1-SPAN')))")
+          curl -fsS -X POST -H "Content-Type: application/json" http://127.0.0.1:27004/api/queue \
+            -d "{\"source\":\"/data/videos\",\"destination\":\"/data/out\",\"max_input_height\":480,\"output_height\":240,\"model\":\"$model\",\"preset\":\"ultrafast\"}"
+          for i in $(seq 1 120); do
+            sleep 5
+            curl -fsS http://127.0.0.1:27004/api/jobs > all.json
+            python3 -c "import json; print([(j['status'], j['stage'], j['progress']) for j in json.load(open('all.json'))['jobs']])"
+            python3 -c "import json,sys; j=json.load(open('all.json'))['jobs']; sys.exit(0 if j and j[0]['status'] in ('completed','failed') else 1)" && break
+          done
+          id=$(python3 -c "import json; print(json.load(open('all.json'))['jobs'][0]['id'])")
+          curl -fsS "http://127.0.0.1:27004/api/logs/$id" | python3 -c "import json,sys; print(json.load(sys.stdin)['log'][-4000:])"
+          docker rm -f upscale-models
+          python3 -c "import json,sys; j=json.load(open('all.json'))['jobs'][0]; sys.exit(0 if j['status']=='completed' else 1)"
+          docker run --rm -v "$PWD/ci-data:/data" --entrypoint ffprobe upscale:ci -v error \
+            -show_entries stream=codec_name,width,height -of csv /data/out/clip.mkv | tee probe.txt
+          grep -q ",320,240" probe.txt
 
   docker-local:
     # Variante sans socket Docker (Video2X AppImage dans l'image) : vérifie qu'elle se construit et démarre.

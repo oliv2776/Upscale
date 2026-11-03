@@ -121,13 +121,23 @@ function updateReplaceUi() {
 
 // ------------------------------------------------------------------ modèles personnalisés
 const sizeMo = bytes => (bytes / 1048576).toFixed(bytes > 10485760 ? 0 : 1) + " Mo";
+function modelMeta(m) {
+  const bits = [];
+  if (m.architecture) bits.push(escapeHtml(m.architecture));
+  if (m.author) bits.push("par " + escapeHtml(m.author));
+  if (m.license) bits.push("licence " + escapeHtml(m.license));
+  if (m.verified && m.verified.psnr) bits.push('<span class="ok">vérifié (' + m.verified.psnr + " dB)</span>");
+  else if (m.verified && m.verified.engine) bits.push('<span class="ok">testé sur le moteur</span>');
+  if (m.page) bits.push('<a href="' + escapeHtml(m.page) + '" target="_blank" rel="noopener">fiche</a>');
+  return bits.length ? '<span class="model-meta">' + bits.join(" · ") + "</span>" : "";
+}
 function renderModels() {
   const custom = Object.entries(state.models).filter(([, m]) => m.custom);
   const scaleOpts = v => [2, 3, 4].map(s => '<option value="' + s + '"' + (s === v ? " selected" : "") + ">×" + s + "</option>").join("");
   const tileOpts = v => [[0, "Automatique"], [512, "512 px"], [256, "256 px"], [128, "128 px"], [64, "64 px"]]
     .map(([t, l]) => '<option value="' + t + '"' + (t === v ? " selected" : "") + ">" + l + "</option>").join("");
   $("modelsBody").innerHTML = custom.length ? custom.map(([id, m]) =>
-    '<tr data-model-row="' + escapeHtml(id) + '"><td><input class="m-label" value="' + escapeHtml(m.label) + '" maxlength="60"></td>' +
+    '<tr data-model-row="' + escapeHtml(id) + '"><td><input class="m-label" value="' + escapeHtml(m.label) + '" maxlength="60">' + modelMeta(m) + "</td>" +
     '<td><select class="m-scale">' + scaleOpts(m.scales[0]) + "</select></td>" +
     '<td><select class="m-tile">' + tileOpts(m.tile || 0) + "</select></td>" +
     "<td><small>" + sizeMo(m.param_size + m.bin_size) + "</small></td>" +
@@ -135,28 +145,79 @@ function renderModels() {
     '<button class="text-btn danger" data-model-delete="' + escapeHtml(id) + '">Supprimer</button></div></td></tr>').join("") :
     '<tr><td colspan="5" class="empty">Aucun modèle personnalisé : seuls les modèles de Video2X sont utilisés.</td></tr>';
 }
+function renderSuggestions(list) {
+  const installed = Object.values(state.models).map(m => m.page || "");
+  $("modelSuggestions").innerHTML = (list || []).map(s => {
+    const done = installed.some(p => p.endsWith("/" + s.id));
+    return '<div class="suggestion"><div><b>Conseillé : ' + escapeHtml(s.label) + "</b><p>" + escapeHtml(s.why) + "</p></div>" +
+      (done ? '<span class="done">✓ Installé</span>' : '<button class="secondary small" data-suggest="' + escapeHtml(s.id) + '">Installer</button>') + "</div>";
+  }).join("");
+}
+let installPolling = null, installsSeen = {};
+function renderInstalls(list) {
+  $("modelInstalls").innerHTML = (list || []).slice(0, 4).map(t => {
+    const pct = t.progress == null ? null : Math.round(t.progress * 100);
+    const bar = t.state === "running" || t.state === "queued"
+      ? '<div class="progress"><div class="progress-bar"><i style="width:' + (pct == null ? 100 : pct) + '%' + (pct == null ? ";opacity:.35" : "") + '"></i></div><small>' + escapeHtml(t.step) + (pct == null ? "" : " · " + pct + " %") + "</small></div>" : "";
+    const logs = t.log && t.log.length ? "<details><summary>Journal</summary><pre>" + escapeHtml(t.log.join("\n")) + "</pre></details>" : "";
+    return '<div class="install ' + t.state + '"><b>' + escapeHtml(t.label || t.source) + "</b>" + bar +
+      (t.message ? '<div class="msg">' + escapeHtml(t.message) + "</div>" : "") + (t.state === "error" ? logs : "") + "</div>";
+  }).join("");
+}
 async function reloadModels() {
   const data = await api("/api/models");
   state.models = data.models; fillModelSelects(); renderModels();
   $("engineBadge").textContent = data.engine_present ? "MOTEUR NCNN PRÊT" : "MOTEUR NCNN ABSENT";
-  const profiles = readProfiles(); renderProfiles(profiles);
+  renderSuggestions(data.suggestions); renderInstalls(data.installs);
+  let finished = false;
+  for (const t of data.installs || []) {
+    const before = installsSeen[t.id];
+    if (before && before !== t.state && (t.state === "done" || t.state === "error")) {
+      finished = true; toast(t.state === "done" ? t.message : "Installation impossible : " + t.message);
+    }
+    installsSeen[t.id] = t.state;
+  }
+  const active = (data.installs || []).some(t => t.state === "queued" || t.state === "running");
+  if (active && !installPolling) installPolling = setInterval(() => reloadModels().catch(e => console.warn(e)), 2000);
+  if (!active && installPolling) { clearInterval(installPolling); installPolling = null; }
+  if (finished || !installPolling) { const profiles = readProfiles(); renderProfiles(profiles); }
+}
+async function installModel(source) {
+  source = (source || $("installSource").value).trim();
+  if (!source) { toast("Colle le lien de la page du modèle sur OpenModelDB"); return; }
+  try {
+    const data = await post("/api/models/install", { source, tile: Number($("installTile").value) });
+    installsSeen[data.install.id] = data.install.state;
+    $("installSource").value = ""; toast("Installation lancée : suis sa progression ci-dessous");
+    await reloadModels();
+  } catch (e) { toast(e.message); }
 }
 function importModel() {
-  const param = $("modelParam").files[0], bin = $("modelBin").files[0];
-  if (!param || !bin) { toast("Choisis le fichier .param et le fichier .bin"); return; }
+  const files = [...$("modelFiles").files];
+  if (!files.length) { toast("Choisis un fichier de modèle"); return; }
+  const param = files.find(f => /\.param$/i.test(f.name)), bin = files.find(f => /\.bin$/i.test(f.name));
+  const single = files.find(f => !/\.(param|bin)$/i.test(f.name));
   const form = new FormData();
-  form.append("label", $("modelLabel").value.trim() || param.name.replace(/\.param$/i, ""));
-  form.append("scale", $("modelScale").value); form.append("tile", $("modelTile").value);
-  form.append("param", param); form.append("bin", bin);
+  form.append("tile", $("modelTile").value);
+  if (single) {
+    form.append("label", $("modelLabel").value.trim() || single.name.replace(/\.[^.]+$/, ""));
+    if ($("modelScale").value) form.append("scale", $("modelScale").value);
+    form.append("file", single);
+  } else if (param && bin) {
+    if (!$("modelScale").value) { toast("Indique le facteur du modèle ncnn (×2, ×3 ou ×4)"); return; }
+    form.append("label", $("modelLabel").value.trim() || param.name.replace(/\.param$/i, ""));
+    form.append("scale", $("modelScale").value); form.append("param", param); form.append("bin", bin);
+  } else { toast("Pour un modèle ncnn, choisis à la fois le .param et le .bin"); return; }
   const xhr = new XMLHttpRequest();
   xhr.open("POST", "/api/models"); xhr.setRequestHeader("X-Upscale-Upload", "1");
   xhr.upload.onprogress = e => { if (e.lengthComputable) $("importModel").textContent = "Envoi… " + Math.round(e.loaded / e.total * 100) + " %"; };
   xhr.onloadend = async () => {
-    $("importModel").textContent = "Importer le modèle"; $("importModel").disabled = false;
+    $("importModel").textContent = "Importer"; $("importModel").disabled = false;
     let data = {}; try { data = JSON.parse(xhr.responseText); } catch (e) { /* réponse vide */ }
-    if (xhr.status === 201) {
-      toast("Modèle « " + data.model.label + " » importé : teste-le dans l'Aperçu");
-      ["modelLabel", "modelParam", "modelBin"].forEach(id => { $(id).value = ""; });
+    if (xhr.status === 201 || xhr.status === 202) {
+      if (data.install) installsSeen[data.install.id] = data.install.state;
+      toast(data.model ? "Modèle « " + data.model.label + " » importé : teste-le dans l'Aperçu" : "Fichier envoyé : conversion en cours");
+      ["modelLabel", "modelFiles"].forEach(id => { $(id).value = ""; });
       await reloadModels();
     } else toast(data.error || "Import impossible (HTTP " + xhr.status + ")");
   };
@@ -530,6 +591,7 @@ document.addEventListener("click", async event => {
   const id = attr => t.closest("[" + attr + "]")?.getAttribute(attr);
   if (id("data-log")) return loadLogs(id("data-log")).catch(e => toast(e.message));
   if (id("data-cancel")) return jobAction(() => post("/api/jobs/" + id("data-cancel") + "/cancel"), "Annulation demandée");
+  if (id("data-suggest")) { await installModel("https://openmodeldb.info/models/" + id("data-suggest")); return; }
   if (id("data-model-save")) {
     const row = t.closest("tr");
     try { await post("/api/models/" + id("data-model-save") + "/update", { label: row.querySelector(".m-label").value, scale: Number(row.querySelector(".m-scale").value), tile: Number(row.querySelector(".m-tile").value) }); toast("Modèle mis à jour"); await reloadModels(); } catch (e) { toast(e.message); }
@@ -550,6 +612,8 @@ document.addEventListener("click", async event => {
   if (filter) { state.filter = filter.dataset.filter; state.page = 1; document.querySelectorAll("#filters button").forEach(b => b.classList.toggle("active", b === filter)); refreshJobs(); }
 });
 $("importModel").addEventListener("click", importModel);
+$("installModel").addEventListener("click", () => installModel());
+$("installSource").addEventListener("keydown", e => { if (e.key === "Enter") installModel(); });
 $("addSource").addEventListener("click", () => { $("sourcesList").insertAdjacentHTML("beforeend", sourceRow("")); openPicker([...document.querySelectorAll("#sourcesList .s-path")].pop(), "dir"); });
 $("addProfile").addEventListener("click", () => { $("profilesBody").querySelector(".empty-row")?.remove(); $("profilesBody").insertAdjacentHTML("beforeend", profileRow({ path: firstSource() })); });
 $("selectFolder").addEventListener("click", () => { if (picker.input) picker.input.value = picker.path; $("picker").classList.add("hidden"); });

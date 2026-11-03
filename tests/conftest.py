@@ -129,6 +129,11 @@ FAKE_NCNN = textwrap.dedent("""\
     folder, name, scale = opt("-m"), opt("-n"), int(opt("-s"))
     if not os.path.exists(os.path.join(folder, name + ".param")):
         sys.exit("modèle introuvable")
+    if "\\nGelu " in open(os.path.join(folder, name + ".param")).read():
+        sys.exit("layer Gelu not exists or registered")
+    if os.path.isfile(opt("-i")):  # une seule image (vérification d'un modèle installé)
+        sys.exit(subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", opt("-i"), "-vf",
+                                 f"scale=iw*{{scale}}:ih*{{scale}}", opt("-o")]).returncode)
     sys.exit(subprocess.run(["ffmpeg", "-v", "error", "-y", "-start_number", "0",
                              "-i", os.path.join(opt("-i"), "%08d.png"), "-vf", f"scale=iw*{{scale}}:ih*{{scale}}",
                              "-start_number", "0", os.path.join(opt("-o"), "%08d.png")]).returncode)
@@ -158,6 +163,57 @@ def fake_docker(tmp_path, monkeypatch):
 
 def calls(log: Path) -> list[list[str]]:
     return [json.loads(line) for line in log.read_text().splitlines()]
+
+
+FAKE_CONVERTER = textwrap.dedent("""\
+    #!{python}
+    # Faux interpréteur du convertisseur (torch + spandrel + pnnx) : produit un modèle ncnn « façon pnnx ».
+    import json, os, re, subprocess, sys
+    args = [a for a in sys.argv[1:] if a != "-I"]
+    if args[:1] == ["-c"]:
+        sys.exit(0)  # « import torch, spandrel, pnnx » réussit
+    script, source, out = args[0], args[1], args[2]
+    opt = lambda name: args[args.index(name) + 1] if name in args else None
+    name = os.path.basename(source).lower()
+    with open(os.environ["FAKE_DOCKER_LOG"], "a") as log:
+        log.write(json.dumps(["converter", os.path.basename(script), name]) + "\\n")
+    if "dat" in name:
+        print(json.dumps({{"ok": False, "error": "Conversion en ncnn impossible pour l'architecture DAT"}}))
+        sys.exit(2)
+    match = re.search(r"([234])x", name)
+    scale = int(match.group(1)) if match else 4
+    os.makedirs(out, exist_ok=True)
+    layer = "Gelu" if "gelu" in name else "Convolution"
+    with open(os.path.join(out, "model.param"), "w") as f:
+        f.write("7767517\\n3 3\\nInput in0 0 1 in0\\n" + layer + " conv_0 1 1 in0 1 0=3\\n"
+                "PixelShuffle ps_1 1 1 1 out0 0=2\\n")
+    with open(os.path.join(out, "model.bin"), "wb") as f:
+        f.write(b"\\0" * 4096)
+    info = {{"ok": True, "architecture": "SPAN", "scale": scale}}
+    if not name.endswith(".onnx") and opt("--ref-in"):
+        width, height = opt("--ref-size").split("x")
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{{width}}x{{height}}",
+                        "-i", opt("--ref-in"), "-vf", f"scale=iw*{{scale}}:ih*{{scale}}", "-f", "rawvideo",
+                        "-pix_fmt", "rgb24", opt("--ref-out")], check=True)
+        info["reference_size"] = [int(width) * scale, int(height) * scale]
+    else:
+        info.pop("scale") if name.endswith(".onnx") else None
+    print(json.dumps(info))
+""")
+
+
+@pytest.fixture()
+def fake_converter(tmp_path, monkeypatch, fake_docker):
+    script = tmp_path / "bin" / "python-convertisseur"
+    script.write_text(FAKE_CONVERTER.format(python=sys.executable))
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    monkeypatch.setattr(config, "CONVERTER_PYTHON", str(script))
+    from upscale import converter
+    monkeypatch.setattr(converter, "start_worker", lambda: None)  # les tests traitent la file eux-mêmes
+    converter.INSTALLS.clear()
+    while not converter._queue.empty():
+        converter._queue.get_nowait()
+    return fake_docker
 
 
 class Recorder(BaseHTTPRequestHandler):

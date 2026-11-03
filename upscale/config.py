@@ -47,6 +47,13 @@ VIDEO2X_WORKDIR = _env("VIDEO2X_WORKDIR")
 VIDEO2X_GPU = _env("VIDEO2X_GPU")
 # Moteur des modèles personnalisés (realesrgan-ncnn-vulkan, installé dans l'image).
 NCNN_BIN = _env("UPSCALE_NCNN_BIN", "/opt/realesrgan/realesrgan-ncnn-vulkan")
+# Convertisseur des modèles PyTorch/ONNX en ncnn (torch + spandrel + pnnx). Installé à la première conversion
+# dans le dossier d'état (environ 1 Go), sauf si UPSCALE_CONVERTER_PYTHON désigne un interpréteur déjà prêt.
+CONVERTER_PYTHON = _env("UPSCALE_CONVERTER_PYTHON")
+TORCH_INDEX = _env("UPSCALE_TORCH_INDEX", "https://download.pytorch.org/whl/cpu")
+OPENMODELDB_DATA = _env("UPSCALE_OPENMODELDB_DATA",
+                        "https://raw.githubusercontent.com/OpenModelDB/open-model-database/main/data/models")
+MODEL_MAX_BYTES = int(float(_env("UPSCALE_MODEL_MAX_MB", "2048")) * 1024**2)
 # Segments plus courts avec ce moteur : il travaille sur des images PNG, plus volumineuses.
 CUSTOM_SEGMENT_SECONDS = int(_env("UPSCALE_CUSTOM_SEGMENT_SECONDS", "30"))
 VIDEO_GID = _env("VIDEO_GID", "44")
@@ -89,6 +96,10 @@ def log_dir() -> Path:
 
 def preview_dir() -> Path:
     return STATE_DIR / "previews"
+
+
+def converter_dir() -> Path:
+    return STATE_DIR / "convertisseur"
 
 
 def roots() -> list[Path]:
