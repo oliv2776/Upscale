@@ -40,12 +40,14 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "model": "realesrgan-plus",
     "crf": 16,
     "preset": "slow",
-    "codec": "h264",
+    "codec": "hevc",
     "include_subfolders": True,
     "deinterlace": "auto",
     "denoise": "off",
     "interpolate": 1,
     "output_suffix": "",
+    "replace_original": False,
+    "trash_days": 30,
     "profiles": [],
     "watch_enabled": False,
     "watch_interval": 30,
@@ -63,7 +65,10 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "ollama_enabled": False,
     "ollama_url": "http://host.docker.internal:11434",
     "ollama_model": "",
+    "settings_version": 2,
 }
+SETTINGS_VERSION = 2
+TRASH_DIR = ".upscale-corbeille"
 
 TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
@@ -84,6 +89,18 @@ def get_settings() -> dict[str, Any]:
     result = dict(DEFAULT_SETTINGS)
     result.update(db.load_settings_payload())
     return normalize(result)
+
+
+def migrate() -> None:
+    """Migrations des réglages enregistrés (appelée au démarrage)."""
+    payload = db.load_settings_payload()
+    if not payload or int(payload.get("settings_version", 1)) >= SETTINGS_VERSION:
+        return
+    # 2.2 : HEVC devient l'encodeur par défaut ; l'ancien défaut H.264 est converti.
+    if payload.get("codec", "h264") == "h264":
+        payload["codec"] = "hevc"
+    payload["settings_version"] = SETTINGS_VERSION
+    db.store_settings_payload(payload)
 
 
 def public_settings(settings: dict[str, Any]) -> dict[str, Any]:
@@ -173,6 +190,8 @@ VALIDATORS: dict[str, Any] = {
     "preset": lambda v: _choice(v, "preset", PRESETS),
     "codec": lambda v: _choice(v, "codec", CODECS),
     "include_subfolders": bool,
+    "replace_original": bool,
+    "trash_days": lambda v: _int_in(v, "trash_days", 0, 365),
     "deinterlace": lambda v: _choice(v, "deinterlace", DEINTERLACE_MODES),
     "denoise": lambda v: _choice(v, "denoise", DENOISE_LEVELS),
     "interpolate": lambda v: _int_in(v, "interpolate", 1, 2),

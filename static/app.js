@@ -44,6 +44,7 @@ function settingsPayload() {
   return {
     source: $("source").value.trim(), destination: $("destination").value.trim(),
     output_suffix: $("outputSuffix").value, include_subfolders: $("recursive").checked,
+    replace_original: $("replaceOriginal").checked, trash_days: Number($("trashDays").value),
     max_input_height: Number($("maxInput").value), output_height: Number($("outputHeight").value),
     model: $("model").value, deinterlace: $("deinterlace").value, denoise: $("denoise").value,
     interpolate: Number($("interpolate").value), codec: $("codec").value,
@@ -70,9 +71,10 @@ function setSelect(id, value) { if (value != null) $(id).value = String(value); 
 function applySettings(s) {
   $("source").value = s.source; $("destination").value = s.destination;
   $("outputSuffix").value = s.output_suffix || ""; $("recursive").checked = s.include_subfolders;
+  $("replaceOriginal").checked = !!s.replace_original; setSelect("trashDays", s.trash_days ?? 30); updateReplaceUi();
   setSelect("maxInput", s.max_input_height); setSelect("outputHeight", s.output_height);
   setSelect("model", s.model); setSelect("deinterlace", s.deinterlace || "auto"); setSelect("denoise", s.denoise || "off");
-  setSelect("interpolate", s.interpolate || 1); setSelect("codec", s.codec || "h264");
+  setSelect("interpolate", s.interpolate || 1); setSelect("codec", s.codec || "hevc");
   $("crf").value = s.crf; $("crfValue").textContent = s.crf; setSelect("preset", s.preset);
   renderProfiles(s.profiles || []);
   $("watchEnabled").checked = !!s.watch_enabled; setSelect("watchInterval", s.watch_interval || 30);
@@ -94,6 +96,14 @@ async function saveSettings(quiet = false) {
   applySettings(result.settings);
   if (!quiet) toast("Réglages enregistrés");
   return result.settings;
+}
+
+function updateReplaceUi() {
+  const on = $("replaceOriginal").checked;
+  $("replaceBox").classList.toggle("active", on);
+  $("destination").disabled = on; document.querySelector('[data-picker="destination"]').disabled = on;
+  $("destination").closest(".field").classList.toggle("disabled", on);
+  $("trashDays").disabled = !on;
 }
 
 // ------------------------------------------------------------------ profils
@@ -182,6 +192,7 @@ function jobActions(job) {
   if (job.status === "queued") parts.push(b("data-move-top", "⤒", "icon"), b("data-move-up", "↑", "icon"), b("data-move-down", "↓", "icon"));
   if (["queued", "running"].includes(job.status)) parts.push(b("data-cancel", "Arrêter"));
   if (["failed", "cancelled"].includes(job.status)) parts.push(b("data-retry", "Relancer"));
+  if (job.trash_path) parts.push(b("data-restore", "Restaurer l'original"));
   if (job.status !== "running") parts.push(b("data-delete", "Supprimer", "danger"));
   return parts.join("");
 }
@@ -206,12 +217,13 @@ async function refreshJobs() {
       const name = job.source.split("/").pop();
       const conf = [modelLabel(job.model), job.output_height ? job.output_height + "p" : "", codecLabels[job.codec] || ""].filter(Boolean).join(" · ");
       const profile = job.profile ? '<br><small class="muted" title="' + escapeHtml(job.profile) + '">profil ' + escapeHtml(job.profile.split("/").pop()) + "</small>" : "";
+      const trash = job.trash_path ? '<br><small class="muted" title="' + escapeHtml(job.trash_path) + '">original dans la corbeille</small>' : "";
       const warning = job.warning ? '<br><small class="warn" title="' + escapeHtml(job.warning) + '">⚠ ' + escapeHtml(job.warning.slice(0, 120)) + "</small>" : "";
       const err = job.error ? '<br><small title="' + escapeHtml(job.error) + '">' + escapeHtml(job.error.slice(0, 120)) + "</small>" : "";
       return '<tr><td title="' + escapeHtml(job.source) + '">' + escapeHtml(name) + '<br><small class="muted">' + (job.width || "—") + " × " + (job.height || "—") + "</small></td>" +
         "<td><small>" + escapeHtml(conf) + "</small>" + profile + "</td>" +
         '<td><span class="status ' + escapeHtml(job.status) + '">' + escapeHtml(labels[job.status] || job.status) + "</span></td>" +
-        "<td>" + escapeHtml(job.stage || "—") + progressHtml(job) + warning + err + "</td>" +
+        "<td>" + escapeHtml(job.stage || "—") + progressHtml(job) + trash + warning + err + "</td>" +
         '<td><div class="row-actions">' + jobActions(job) + "</div></td></tr>";
     }).join("");
   } catch (error) { console.warn(error); }
@@ -438,6 +450,7 @@ document.addEventListener("click", async event => {
   const id = attr => t.closest("[" + attr + "]")?.getAttribute(attr);
   if (id("data-log")) return loadLogs(id("data-log")).catch(e => toast(e.message));
   if (id("data-cancel")) return jobAction(() => post("/api/jobs/" + id("data-cancel") + "/cancel"), "Annulation demandée");
+  if (id("data-restore")) { if (!confirm("Supprimer la version Upscale et remettre le fichier d'origine à sa place ?")) return; return jobAction(() => post("/api/jobs/" + id("data-restore") + "/restore"), "Original restauré"); }
   if (id("data-retry")) return jobAction(() => post("/api/jobs/" + id("data-retry") + "/retry"), "Tâche remise en file (reprise au dernier segment)");
   if (id("data-delete")) { if (!confirm("Supprimer cette tâche, son journal et ses fichiers temporaires ?")) return; return jobAction(() => post("/api/jobs/" + id("data-delete") + "/delete"), "Tâche supprimée"); }
   for (const where of ["top", "up", "down"]) if (id("data-move-" + where)) return jobAction(() => post("/api/jobs/" + id("data-move-" + where) + "/move", { to: where }));
@@ -466,6 +479,13 @@ $("clearBtn").addEventListener("click", () => { if (confirm("Supprimer l'histori
 $("prevPage").addEventListener("click", () => { state.page = Math.max(1, state.page - 1); refreshJobs(); });
 $("nextPage").addEventListener("click", () => { state.page += 1; refreshJobs(); });
 $("crf").addEventListener("input", () => $("crfValue").textContent = $("crf").value);
+$("replaceOriginal").addEventListener("change", () => {
+  if ($("replaceOriginal").checked && !confirm("Les fichiers d'origine seront remplacés par la version Upscale (l'original part dans la corbeille selon le réglage choisi). Activer ?")) $("replaceOriginal").checked = false;
+  updateReplaceUi();
+});
+$("trashDays").addEventListener("change", () => {
+  if ($("trashDays").value === "0" && !confirm("Les originaux seront supprimés définitivement, sans possibilité de restauration. Confirmer ?")) setSelect("trashDays", 30);
+});
 $("previewBtn").addEventListener("click", startPreview);
 $("previewPick").addEventListener("change", () => { state.currentPreview = $("previewPick").value; loadComparison(); });
 $("leftVariant").addEventListener("change", () => setVariant("left"));

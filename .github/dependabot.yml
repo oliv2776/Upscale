@@ -8,6 +8,11 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # Le client Docker 29 abandonne les anciennes API : il pourrait ne plus parler au daemon
+      # d'un NAS sous Ubuntu 22.04 (Docker 24). Mise à jour majeure à faire volontairement.
+      - dependency-name: docker
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:

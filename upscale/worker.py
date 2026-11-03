@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import shutil
 import threading
 import time
 import uuid
@@ -172,9 +173,46 @@ def fix_ownership() -> int:
     return fixed
 
 
+def purge_trash(moment: float | None = None) -> int:
+    """Supprime de la corbeille les originaux remplacés depuis plus de trash_days jours.
+
+    L'ancienneté se lit sur la date de changement d'inode (ctime), mise à jour par le déplacement :
+    la date de modification de la vidéo, elle, est conservée.
+    """
+    settings = settings_mod.get_settings()
+    days = int(settings.get("trash_days", 30))
+    moment = moment or time.time()
+    roots = {Path(settings["source"]) / settings_mod.TRASH_DIR}
+    with db.connect() as conn:
+        tracked = conn.execute("SELECT id,trash_path FROM jobs WHERE trash_path IS NOT NULL").fetchall()
+    for row in tracked:
+        parts = Path(row["trash_path"]).parts
+        if settings_mod.TRASH_DIR in parts:
+            roots.add(Path(*parts[: parts.index(settings_mod.TRASH_DIR) + 1]))
+    removed = 0
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for path in sorted(root.rglob("*"), reverse=True):
+            try:
+                if path.is_file() and moment - path.stat().st_ctime > days * 86400:
+                    path.unlink()
+                    removed += 1
+                elif path.is_dir() and not any(path.iterdir()):
+                    path.rmdir()
+            except OSError:
+                continue
+    with db.connect() as conn:
+        for row in tracked:
+            if not Path(row["trash_path"]).exists():
+                conn.execute("UPDATE jobs SET trash_path=NULL WHERE id=?", (row["id"],))
+    return removed
+
+
 def maintenance() -> dict[str, int]:
-    """Supprime les vieux journaux, le cache ffprobe obsolète et les anciens aperçus ; corrige les propriétaires."""
-    removed = {"logs": 0, "probe_cache": 0, "previews": 0, "owners": fix_ownership()}
+    """Supprime les vieux journaux, le cache ffprobe obsolète, les anciens aperçus et la corbeille expirée ;
+    corrige les propriétaires."""
+    removed = {"logs": 0, "probe_cache": 0, "previews": 0, "owners": fix_ownership(), "trash": purge_trash()}
     cutoff = (datetime.now(UTC) - timedelta(days=config.LOG_RETENTION_DAYS)).isoformat()
     with db.connect() as conn:
         jobs = {row["id"]: row for row in conn.execute("SELECT id,status,updated_at FROM jobs")}
@@ -278,6 +316,25 @@ def clear(statuses: list[str]) -> int:
     for row in rows:
         delete(row["id"])
     return len(rows)
+
+
+def restore(job_id: str) -> None:
+    """Annule un remplacement : supprime la version Upscale et remet l'original à sa place."""
+    row = db.get_job(job_id)
+    if not row:
+        raise LookupError("Tâche introuvable")
+    trash = Path(row["trash_path"]) if row["trash_path"] else None
+    if not trash or not trash.exists():
+        raise ValueError("L'original n'est plus dans la corbeille")
+    original, produced = Path(row["source"]), Path(row["destination"])
+    if original.exists() and original != produced:
+        raise ValueError(f"Un fichier occupe déjà l'emplacement de l'original : {original}")
+    produced.unlink(missing_ok=True)
+    original.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(trash), str(original))
+    db.set_job(job_id, trash_path=None, stage="Original restauré",
+               warning="Original restauré, la version Upscale a été supprimée.")
+    db.log_line(job_id, f"[{db.now()}] Original restauré : {original}")
 
 
 def move(job_id: str, where: str) -> None:

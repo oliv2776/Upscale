@@ -233,6 +233,19 @@ def api_delete(job_id: str):
         return error(str(exc))
 
 
+@app.post("/api/jobs/<job_id>/restore")
+def api_restore(job_id: str):
+    if not valid_job_id(job_id):
+        return error("Identifiant invalide")
+    try:
+        worker.restore(job_id)
+        return jsonify({"ok": True})
+    except LookupError as exc:
+        return error(str(exc), 404)
+    except (ValueError, OSError) as exc:
+        return error(str(exc))
+
+
 @app.post("/api/jobs/<job_id>/move")
 def api_move(job_id: str):
     try:
@@ -413,6 +426,7 @@ def main() -> None:
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     db.init_db()
+    settings_mod.migrate()
     worker.recover_interrupted_jobs()
     worker.start_background()
     serve(app, host="0.0.0.0", port=config.PORT, threads=8, ident="Upscale")

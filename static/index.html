@@ -32,7 +32,7 @@
     </section>
 
     <section class="panel" id="settings">
-      <div class="section-head"><div><div class="eyebrow">01 / SOURCE & DESTINATION</div><h3>Bibliothèque vidéo</h3><p>Choisissez les dossiers à analyser. Les originaux restent intacts.</p></div><span class="tag">SCAN RÉCURSIF</span></div>
+      <div class="section-head"><div><div class="eyebrow">01 / SOURCE & DESTINATION</div><h3>Bibliothèque vidéo</h3><p>Choisissez les dossiers à analyser. Les originaux restent intacts, sauf si vous activez leur remplacement.</p></div><span class="tag">SCAN RÉCURSIF</span></div>
       <div class="path-grid">
         <div class="field"><label>DOSSIER SOURCE</label><div class="path-control"><input id="source" value="/data/videos"><button data-picker="source" class="browse">Parcourir</button></div><small>Vidéos à analyser, sous-dossiers inclus.</small></div>
         <div class="field"><label>DOSSIER DE DESTINATION</label><div class="path-control"><input id="destination" value="/data/videos_upscaled"><button data-picker="destination" class="browse">Parcourir</button></div><small>Arborescence conservée, sortie MKV.</small></div>
@@ -40,6 +40,10 @@
       <div class="settings-grid top-gap">
         <div class="field"><label>SUFFIXE DES FICHIERS PRODUITS</label><input class="text-input" id="outputSuffix" placeholder="ex. « - 720p IA »" maxlength="60"><small>Film (2001).avi → Film (2001) - 720p IA.mkv (pratique pour Jellyfin/Plex).</small></div>
         <div class="field"><label>SOUS-DOSSIERS</label><div class="toggle-row"><span>Inclure tous les sous-dossiers</span><label class="switch"><input id="recursive" type="checkbox" checked><span></span></label></div></div>
+      </div>
+      <div class="replace-box" id="replaceBox">
+        <div class="field"><label>REMPLACER LES FICHIERS D'ORIGINE</label><div class="toggle-row"><span>La nouvelle version prend la place de l'original, dans son dossier</span><label class="switch"><input id="replaceOriginal" type="checkbox"><span></span></label></div><small>film.avi → film.mkv au même endroit. Le dossier de destination n'est alors plus utilisé. Si la vérification automatique relève un problème, l'original est conservé et la nouvelle version est posée à côté.</small></div>
+        <div class="field"><label>ORIGINAUX REMPLACÉS</label><select id="trashDays"><option value="7">Gardés 7 jours dans la corbeille</option><option value="30" selected>Gardés 30 jours dans la corbeille</option><option value="90">Gardés 90 jours dans la corbeille</option><option value="0">Supprimés immédiatement</option></select><small>Corbeille : dossier .upscale-corbeille dans le dossier source. « Restaurer l'original » est possible depuis la file tant qu'il y est.</small></div>
       </div>
 
       <div class="section-head compact"><div><div class="eyebrow">02 / PARAMÈTRES IA</div><h3>Qualité de traitement</h3></div></div>
@@ -54,7 +58,7 @@
 
       <div class="section-head compact"><div><div class="eyebrow">03 / ENCODAGE</div><h3>Fichier final</h3></div></div>
       <div class="settings-grid">
-        <div class="field"><label>ENCODEUR</label><select id="codec" class="codec-select"><option value="h264">H.264 · compatibilité maximale</option><option value="hevc">HEVC 10 bits · ~40 % plus léger</option><option value="av1">AV1 10 bits · le plus léger, plus lent</option><option value="h264_vaapi">H.264 matériel (VAAPI, GPU AMD)</option><option value="hevc_vaapi">HEVC matériel (VAAPI, GPU AMD)</option></select><small>Le matériel est bien plus rapide mais moins efficace à qualité égale.</small></div>
+        <div class="field"><label>ENCODEUR</label><select id="codec" class="codec-select"><option value="hevc">HEVC 10 bits · recommandé, ~40 % plus léger</option><option value="h264">H.264 · compatibilité maximale</option><option value="av1">AV1 10 bits · le plus léger, plus lent</option><option value="h264_vaapi">H.264 matériel (VAAPI, GPU AMD)</option><option value="hevc_vaapi">HEVC matériel (VAAPI, GPU AMD)</option></select><small>Le matériel est bien plus rapide mais moins efficace à qualité égale.</small></div>
         <div class="field"><label>QUALITÉ VIDÉO (CRF)</label><div class="range-line"><input id="crf" type="range" min="12" max="30" value="16"><b id="crfValue">16</b></div><small>Plus bas = meilleure qualité. Converti automatiquement pour HEVC, AV1 et VAAPI.</small></div>
         <div class="field"><label>VITESSE D'ENCODAGE</label><select id="preset"><option value="fast">Rapide</option><option value="medium">Équilibré</option><option value="slow" selected>Lent · compression plus efficace</option></select></div>
       </div>

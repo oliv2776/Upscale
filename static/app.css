@@ -38,3 +38,6 @@
 /* Statuts : « en cours » se distingue de « erreur » maintenant que la marque est rouge. */
 .status.running{background:#24151a;color:#fff}.status.running:before{background:var(--accent);box-shadow:0 0 0 3px #d92d3f55}
 .status.failed{background:#fdecee;color:#a31d2b}
+.replace-box{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px;padding:16px;border:1px dashed #ece5e7;border-radius:12px;transition:.2s}.replace-box.active{border-color:#f2c3ca;background:#fff8f9}
+.field.disabled{opacity:.45}.field.disabled input,.field.disabled button{cursor:not-allowed}
+@media(max-width:720px){.replace-box{grid-template-columns:1fr}}

@@ -13,14 +13,14 @@ Le projet cible notamment les NAS sous Ubuntu équipés d'un GPU AMD compatible 
 - Modèle **Automatique** : un modèle de vision Ollama regarde trois images de la vidéo et choisit entre animation et prise de vue réelle.
 - Désentrelacement automatique (bwdif), débruitage optionnel avant l'IA (hqdn3d ou nlmeans), doublement des images par seconde (RIFE, expérimental).
 - Format d'affichage respecté (DVD anamorphiques), sortie en pixels carrés.
-- Encodage final H.264, HEVC 10 bits, AV1 10 bits, ou matériel VAAPI (H.264/HEVC) sur GPU AMD.
+- Encodage final HEVC 10 bits par défaut, ou H.264, AV1 10 bits, matériel VAAPI (H.264/HEVC) sur GPU AMD.
 - Audio, sous-titres (mov_text converti en SRT), chapitres et polices jointes conservés ; vérification automatique de la durée et des pistes du fichier produit.
 
 **Fiabilité**
 - Traitement par **segments** (3 min par défaut) : une coupure, un redémarrage ou une pause ne fait perdre que le segment en cours ; « Relancer » reprend là où la tâche s'était arrêtée.
 - Espace disque borné : l'intermédiaire sans perte ne dépasse jamais un segment ; vérification avant et pendant le traitement.
 - **Réglages figés par tâche** au moment de la mise en file : changer un réglage n'affecte pas les vidéos déjà en attente.
-- Les originaux ne sont jamais modifiés, une sortie existante n'est jamais écrasée, l'arborescence relative est conservée.
+- Par défaut, les originaux ne sont jamais modifiés, une sortie existante n'est jamais écrasée et l'arborescence relative est conservée. En option, la nouvelle version **remplace l'original** (gardé en corbeille, restaurable).
 
 **Organisation**
 - Profils par dossier (ex. Animation → AnimeVideo v3, Films → Plus 1080p HEVC).
@@ -139,7 +139,7 @@ Les sorties reprennent l'arborescence du dossier source en .mkv, avec le suffixe
 | Désentrelacement | Automatique (selon ffprobe), toujours ou jamais |
 | Débruitage | Aucun, léger / moyen (hqdn3d), fort (nlmeans, pour VHS, plus lent) |
 | Images par seconde | Inchangées ou doublées avec RIFE (expérimental, avant l'upscaling) |
-| Encodeur | H.264, HEVC 10 bits (~40 % plus léger), AV1 10 bits (le plus léger, lent), H.264/HEVC VAAPI (matériel, rapide) |
+| Encodeur | HEVC 10 bits (défaut, ~40 % plus léger que H.264), H.264 (compatibilité maximale), AV1 10 bits (le plus léger, lent), H.264/HEVC VAAPI (matériel, rapide) |
 | CRF | 16 par défaut pour H.264 ; converti pour HEVC (+2), AV1 (+10) et VAAPI (QP +4) |
 | Preset | Vitesse de l'encodeur logiciel (converti pour SVT-AV1) |
 
@@ -155,6 +155,22 @@ Les fichiers de travail sont dans un dossier caché .upscale-ID à côté de la 
 **Pause** : la vidéo en cours s'arrête à la fin de son segment et reprendra à partir du suivant. **Arrêter** interrompt immédiatement et supprime les fichiers de travail.
 
 **Espace disque** : Upscale estime l'espace nécessaire (segments à la résolution source, un segment agrandi, la sortie) et refuse de démarrer s'il manque de la place ; pendant le traitement, la tâche s'arrête si l'espace libre descend sous UPSCALE_MIN_FREE_GB.
+
+### HEVC par défaut
+
+Depuis la version 2.2, l'encodeur par défaut est HEVC 10 bits : environ 40 % plus léger que H.264 à qualité égale, et moins de bandes dans les dégradés. Les réglages enregistrés avec l'ancien défaut (H.264) sont convertis une fois à la mise à jour ; un choix fait ensuite est respecté. Les vieux téléviseurs, certains navigateurs et appareils ne lisent pas le HEVC 10 bits : choisis H.264 (globalement ou dans un profil) si tu en as besoin. Jellyfin et Plex peuvent aussi le transcoder à la volée.
+
+### Remplacer les fichiers d'origine
+
+Option **Remplacer les fichiers d'origine** (section Bibliothèque vidéo) : la nouvelle version prend la place de l'original dans son dossier (film.avi → film.mkv, film.mkv → film.mkv) et le dossier de destination n'est plus utilisé. Garde-fous :
+
+- l'original est déplacé dans **.upscale-corbeille** à la racine du dossier source (même arborescence) et conservé 7, 30 (défaut) ou 90 jours, ou supprimé immédiatement si tu le choisis ;
+- tant qu'il est dans la corbeille, **Restaurer l'original** (dans la file) supprime la version Upscale et remet l'original à sa place ;
+- si la vérification automatique relève un problème (durée, pistes), rien n'est remplacé : la nouvelle version est posée à côté (« film - Upscale.mkv ») et la tâche est signalée ⚠ ;
+- un fichier produit par Upscale n'est jamais retraité, même s'il reste sous la hauteur maximale, et les dossiers .upscale-* ne sont jamais analysés ;
+- si un autre fichier porte déjà le nom de sortie (film.mkv à côté de film.avi), la vidéo est ignorée.
+
+Le réglage est figé dans chaque tâche au moment de la mise en file, comme les autres. La corbeille est vidée par la maintenance (au démarrage puis toutes les 6 h).
 
 ## Automatisation
 

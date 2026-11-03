@@ -153,7 +153,9 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
     disk_dir = destination.parent
     destination.parent.mkdir(parents=True, exist_ok=True)
     temp_final.unlink(missing_ok=True)
-    if destination.exists():
+    replace = bool(settings.get("replace_original"))
+    in_place = replace and destination == source  # film.mkv remplacé par film.mkv
+    if destination.exists() and not in_place:
         raise JobError(f"La destination existe déjà, elle n'est pas écrasée : {destination}")
 
     info = media.probe_source(source)
@@ -238,21 +240,74 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
     if not temp_final.exists() or temp_final.stat().st_size == 0:
         raise JobError("Le fichier MKV final est vide")
     problems = media.verify_output(temp_final, info, len(info["subtitles"]) - len(skipped), multiplier)
-    if destination.exists():
+    if destination.exists() and not in_place:
         raise JobError(f"La destination a été créée pendant le traitement, elle n'est pas écrasée : {destination}")
-    temp_final.replace(destination)
-    chown_tree(destination, Path(settings.get("destination", destination.parent)),
-               output_owner(source, settings, destination))
-    remove_tree(work)
+    owner = output_owner(source, settings, destination)  # avant de déplacer l'original
     warning = ("Vérification : " + "; ".join(problems)) if problems else None
+    if replace:
+        destination, warning = place_replacing_original(job_id, source, destination, temp_final, settings, warning)
+        stop = Path(settings.get("source", source.parent))
+    else:
+        temp_final.replace(destination)
+        stop = Path(settings.get("destination", destination.parent))
+    chown_tree(destination, stop, owner)
+    remove_tree(work)
     if warning:
         db.log_line(job_id, f"[{db.now()}] ATTENTION {warning}")
     db.set_job(job_id, status="completed", stage="Terminé", progress=1.0, eta_seconds=None, warning=warning,
-               segments_done=total)
+               segments_done=total, destination=str(destination))
     db.log_line(job_id, f"[{db.now()}] Terminé : {destination}")
     live = settings_mod.get_settings()
     notify.notify_job(live, "completed", dict(job), warning or "")
     notify.refresh_async(live)
+
+
+def unique_path(path: Path) -> Path:
+    candidate, index = path, 2
+    while candidate.exists():
+        candidate = path.with_name(f"{path.stem} ({index}){path.suffix}")
+        index += 1
+    return candidate
+
+
+def trash_location(source: Path, settings: dict[str, Any]) -> Path:
+    """Emplacement de l'original dans la corbeille : <dossier source>/.upscale-corbeille/<chemin relatif>."""
+    root = Path(settings.get("source", source.parent))
+    try:
+        relative = source.relative_to(root)
+    except ValueError:
+        root, relative = source.parent, Path(source.name)
+    return unique_path(root / settings_mod.TRASH_DIR / relative)
+
+
+def place_replacing_original(job_id: str, source: Path, destination: Path, temp_final: Path,
+                             settings: dict[str, Any], warning: str | None) -> tuple[Path, str | None]:
+    """Remplace l'original par la nouvelle version. L'original va dans la corbeille (ou est supprimé).
+
+    Si la vérification a relevé un problème, rien n'est remplacé : la nouvelle version est posée à côté.
+    """
+    if warning:
+        alternative = unique_path(source.with_name(f"{source.stem} - Upscale.mkv"))
+        temp_final.replace(alternative)
+        db.log_line(job_id, f"[{db.now()}] Original conservé (vérification en échec), nouvelle version : {alternative}")
+        return alternative, f"{warning} — original conservé, nouvelle version à côté : {alternative.name}"
+    trash = trash_location(source, settings)
+    trash.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(source), str(trash))
+    try:
+        temp_final.replace(destination)
+    except OSError:
+        shutil.move(str(trash), str(source))  # on remet l'original en place
+        raise
+    days = int(settings.get("trash_days", 30))
+    if days == 0:
+        trash.unlink(missing_ok=True)
+        db.log_line(job_id, f"[{db.now()}] Original remplacé et supprimé : {source}")
+        db.set_job(job_id, trash_path=None, trashed_at=db.now())
+    else:
+        db.log_line(job_id, f"[{db.now()}] Original remplacé, conservé {days} jours dans la corbeille : {trash}")
+        db.set_job(job_id, trash_path=str(trash), trashed_at=db.now())
+    return destination, None
 
 
 def media_progress(duration: float) -> Callable[[str], float | None]:

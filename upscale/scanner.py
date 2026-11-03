@@ -20,12 +20,22 @@ _lock = threading.Lock()
 worker_wakeup = threading.Event()
 
 
+HIDDEN_PREFIXES = (".upscale", ".uscale")
+
+
+def is_upscale_internal(path: Path, root: Path) -> bool:
+    """Dossiers de travail, aperçus et corbeille d'Upscale : jamais analysés."""
+    return any(part.startswith(HIDDEN_PREFIXES) for part in path.relative_to(root).parts)
+
+
 def list_candidates(source_root: Path, recursive: bool) -> list[Path]:
     iterator = source_root.rglob("*") if recursive else source_root.iterdir()
     found = []
     for path in iterator:
         try:
             if path.is_symlink() or path.suffix.lower() not in media.VIDEO_EXTENSIONS or not path.is_file():
+                continue
+            if is_upscale_internal(path, source_root):
                 continue
             if source_root not in path.resolve(strict=True).parents:
                 continue
@@ -54,6 +64,7 @@ def scan_files(settings: dict[str, Any], progress: Callable[[int, int], None] | 
     candidates = list_candidates(source_root, settings.get("include_subfolders", True))
     stems = Counter((p.parent, p.stem.lower()) for p in candidates)
     suffix = settings.get("output_suffix", "")
+    replace = bool(settings.get("replace_original"))
     files: list[dict[str, Any]] = []
     already_known = too_recent = 0
     with db.connect() as conn:
@@ -62,10 +73,14 @@ def scan_files(settings: dict[str, Any], progress: Callable[[int, int], None] | 
             for row in conn.execute("SELECT source,source_size,source_mtime_ns,status,destination FROM jobs "
                                     "WHERE kind='upscale'")
         }
+        # Fichiers produits par Upscale : à ne jamais retraiter (indispensable en mode remplacement).
+        produced = {destination for status, destination in known.values() if status == "completed"}
         for index, path in enumerate(candidates, 1):
             if progress and (index % 10 == 0 or index == len(candidates)):
                 progress(index, len(candidates))
             try:
+                if str(path) in produced:
+                    continue
                 stat = path.stat()
                 if min_age_seconds and time.time() - stat.st_mtime < min_age_seconds:
                     too_recent += 1  # fichier probablement en cours de copie
@@ -78,9 +93,15 @@ def scan_files(settings: dict[str, Any], progress: Callable[[int, int], None] | 
                     continue
                 rel = path.relative_to(source_root)
                 ambiguous = stems[(path.parent, path.stem.lower())] > 1
-                output = destination_root / media.output_relative(rel, ambiguous, suffix)
-                if output.exists():
-                    continue
+                if replace:
+                    # Remplacement : la nouvelle version prend la place de l'original, dans son dossier.
+                    output = path.parent / media.output_relative(Path(path.name), ambiguous, suffix).name
+                    if output != path and output.exists():
+                        continue  # un autre fichier occupe déjà ce nom
+                else:
+                    output = destination_root / media.output_relative(rel, ambiguous, suffix)
+                    if output.exists():
+                        continue
                 status, previous = known.get((str(path), stat.st_size, stat.st_mtime_ns), (None, None))
                 # Déjà traité vers cette même sortie (ou en cours) : ignoré. Une autre destination ou un autre
                 # suffixe donne une nouvelle sortie, le fichier est alors retraité.

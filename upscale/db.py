@@ -26,6 +26,8 @@ JOB_COLUMNS = {
     "segments_done": "INTEGER",
     "segments_total": "INTEGER",
     "resolved_model": "TEXT",
+    "trash_path": "TEXT",
+    "trashed_at": "TEXT",
 }
 
 

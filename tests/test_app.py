@@ -277,7 +277,7 @@ def test_maintenance(env, monkeypatch):
         (config.preview_dir() / job_id).mkdir(parents=True)
         db.set_job(job_id, updated_at=f"2026-01-0{index + 1}T00:00:00+00:00")
     result = worker.maintenance()
-    assert result == {"logs": 1, "probe_cache": 1, "previews": 2, "owners": 0}
+    assert result == {"logs": 1, "probe_cache": 1, "previews": 2, "owners": 0, "trash": 0}
     assert sorted(p.name for p in config.preview_dir().iterdir()) == ["ccccccccccc2"]
 
 
@@ -357,7 +357,7 @@ def test_end_to_end_mp4_with_mov_text(env, fake_docker):
     output = env / "out" / "serie" / "ep1.mkv"
     streams = ffprobe_streams(output)
     video = video_stream(output)
-    assert (video["codec_name"], video["width"], video["height"]) == ("h264", 960, 720)
+    assert (video["codec_name"], video["width"], video["height"]) == ("hevc", 960, 720)  # HEVC par défaut
     assert any(s["codec_type"] == "audio" for s in streams)
     assert any(s["codec_type"] == "subtitle" and s["codec_name"] == "subrip" for s in streams)
     assert sorted(p.name for p in (env / "out" / "serie").iterdir()) == ["ep1.mkv"]  # travail nettoyé
@@ -515,6 +515,78 @@ def test_legacy_names_still_work(env, monkeypatch):
     (out / ".uscale-dddddddddddd" / "enc").mkdir(parents=True)
     work = pipeline.upscale_work_dir(db.get_job("dddddddddddd"))
     assert work.name == ".upscale-dddddddddddd" and (work / "enc").is_dir()
+
+
+def test_hevc_default_and_migration(env):
+    assert st.DEFAULT_SETTINGS["codec"] == "hevc"
+    payload = {k: v for k, v in st.get_settings().items() if k != "settings_version"}
+    db.store_settings_payload({**payload, "codec": "h264"})  # réglages d'une version précédente
+    st.migrate()
+    assert st.get_settings()["codec"] == "hevc"
+    st.save_settings({"codec": "h264"})  # choix explicite après migration : respecté
+    st.migrate()
+    assert st.get_settings()["codec"] == "h264"
+
+
+def test_scan_ignores_upscale_internal_folders(env):
+    for folder in (".upscale-abc123def456/src", ".upscale-corbeille", ".uscale-old"):
+        (env / "videos" / folder).mkdir(parents=True)
+        (env / "videos" / folder / "seg.mkv").write_bytes(b"x")
+    (env / "videos" / "vrai.mkv").write_bytes(b"x")
+    names = [p.name for p in scanner.list_candidates(env / "videos", True)]
+    assert names == ["vrai.mkv"]
+
+
+@needs_ffmpeg
+def test_replace_original_and_restore(env, fake_docker):
+    st.save_settings({"replace_original": True, "trash_days": 30})
+    original = make_video(env / "videos" / "serie" / "film.avi", extra=["-f", "avi"])
+    size = original.stat().st_size
+    [row] = process_all(env)
+    assert row["status"] == "completed", job_log(row)
+    produced = env / "videos" / "serie" / "film.mkv"
+    trash = env / "videos" / ".upscale-corbeille" / "serie" / "film.avi"
+    assert not original.exists() and produced.exists() and trash.stat().st_size == size
+    assert video_stream(produced)["codec_name"] == "hevc"
+    assert row["destination"] == str(produced) and row["trash_path"] == str(trash)
+    assert not (env / "out").exists()  # la destination n'est pas utilisée
+    assert scanner.scan_files(st.get_settings())["files"] == []  # pas de retraitement en boucle
+
+    assert app.test_client().post(f"/api/jobs/{row['id']}/restore", json={}).status_code == 200
+    assert original.exists() and original.stat().st_size == size and not produced.exists() and not trash.exists()
+    assert scanner.scan_files(st.get_settings())["files"] == []  # restauré : pas retraité non plus
+    assert app.test_client().post(f"/api/jobs/{row['id']}/restore", json={}).status_code == 400
+
+
+@needs_ffmpeg
+def test_replace_in_place_and_immediate_delete(env, fake_docker):
+    st.save_settings({"replace_original": True, "trash_days": 0})
+    original = make_video(env / "videos" / "clip.mkv")
+    [row] = process_all(env)
+    assert row["status"] == "completed", job_log(row)
+    assert video_stream(original)["codec_name"] == "hevc"  # même nom, nouvelle version
+    assert row["trash_path"] is None and not any((env / "videos" / ".upscale-corbeille").rglob("*.mkv"))
+
+
+@needs_ffmpeg
+def test_replace_keeps_original_when_verification_fails(env, fake_docker, monkeypatch):
+    st.save_settings({"replace_original": True})
+    original = make_video(env / "videos" / "film.mp4")
+    monkeypatch.setattr(media, "verify_output", lambda *a, **k: ["durée 0.5 s au lieu de 1.0 s"])
+    [row] = process_all(env)
+    assert row["status"] == "completed" and "original conservé" in row["warning"]
+    assert original.exists() and (env / "videos" / "film - Upscale.mkv").exists()
+    assert row["trash_path"] is None
+
+
+def test_purge_trash(env):
+    trash = env / "videos" / ".upscale-corbeille" / "a" / "vieux.avi"
+    trash.parent.mkdir(parents=True)
+    trash.write_bytes(b"x")
+    st.save_settings({"trash_days": 30})
+    assert worker.purge_trash(time.time() + 10 * 86400) == 0 and trash.exists()
+    assert worker.purge_trash(time.time() + 31 * 86400) == 1
+    assert not trash.exists() and not trash.parent.exists()
 
 
 def test_verify_output_reports_problems(env):
