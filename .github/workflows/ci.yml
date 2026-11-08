@@ -53,7 +53,7 @@ jobs:
         run: docker build -t upscale:ci .
       - name: Smoke test
         run: |
-          docker run -d --name upscale-ci -p 27000:27000 upscale:ci
+          docker run -d --name upscale-ci -p 27000:27000 -e UPSCALE_ALLOW_ANONYMOUS=1 upscale:ci
           for i in $(seq 1 30); do
             curl -fsS http://127.0.0.1:27000/api/ping && break
             sleep 1
@@ -70,7 +70,7 @@ jobs:
           docker run --rm -v "$PWD/ci-data:/data" --entrypoint ffmpeg upscale:ci -v error \
             -f lavfi -i testsrc2=size=160x120:rate=10:duration=2 -c:v libx264 -pix_fmt yuv420p /data/videos/clip.mp4
           docker run -d --name upscale-models -p 27004:27000 -v "$PWD/ci-data:/data" \
-            -e UPSCALE_MIN_FREE_GB=0 -e UPSCALE_CUSTOM_SEGMENT_SECONDS=1 upscale:ci
+            -e UPSCALE_MIN_FREE_GB=0 -e UPSCALE_CUSTOM_SEGMENT_SECONDS=1 -e UPSCALE_ALLOW_ANONYMOUS=1 upscale:ci
           for i in $(seq 1 30); do curl -fsS http://127.0.0.1:27004/api/ping && break; sleep 1; done
           install() {
             curl -fsS -X POST -H "Content-Type: application/json" http://127.0.0.1:27004/api/models/install -d "$1" > start.json
@@ -161,7 +161,7 @@ jobs:
             -f lavfi -i testsrc=size=160x120:rate=10:duration=3 -f lavfi -i sine=duration=3 \
             -c:v libx264 -pix_fmt yuv420p -c:a aac /data/videos/clip.mp4
           docker run -d --name upscale-e2e -p 27002:27000 -v "$PWD/ci-data:/data" \
-            -e UPSCALE_SEGMENT_SECONDS=1 -e UPSCALE_MIN_FREE_GB=0 upscale-local:ci
+            -e UPSCALE_SEGMENT_SECONDS=1 -e UPSCALE_MIN_FREE_GB=0 -e UPSCALE_ALLOW_ANONYMOUS=1 upscale-local:ci
           for i in $(seq 1 30); do curl -fsS http://127.0.0.1:27002/api/ping && break; sleep 1; done
           run_job() {
             curl -fsS -X POST -H "Content-Type: application/json" http://127.0.0.1:27002/api/queue -d "$1"
@@ -190,7 +190,7 @@ jobs:
           done
       - name: Smoke test
         run: |
-          docker run -d --name upscale-local -p 27001:27000 upscale-local:ci
+          docker run -d --name upscale-local -p 27001:27000 -e UPSCALE_ALLOW_ANONYMOUS=1 upscale-local:ci
           for i in $(seq 1 30); do
             curl -fsS http://127.0.0.1:27001/api/ping && break
             sleep 1
@@ -221,7 +221,7 @@ jobs:
           done
           docker run -d --name upscale-socket -p 27003:27000 \
             -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD/ci-data:/data" -v "$PWD/ci-disk2:/disques/Disque2" \
-            -e UPSCALE_SEGMENT_SECONDS=1 -e UPSCALE_MIN_FREE_GB=0 upscale:ci
+            -e UPSCALE_SEGMENT_SECONDS=1 -e UPSCALE_MIN_FREE_GB=0 -e UPSCALE_ALLOW_ANONYMOUS=1 upscale:ci
           for i in $(seq 1 30); do curl -fsS http://127.0.0.1:27003/api/ping && break; sleep 1; done
           curl -fsS http://127.0.0.1:27003/api/browse | python3 -m json.tool
           curl -fsS -X POST -H "Content-Type: application/json" http://127.0.0.1:27003/api/health/gpu -d '{}'
