@@ -363,6 +363,22 @@ def restore(job_id: str) -> None:
     db.log_line(job_id, f"[{db.now()}] Original restauré : {original}")
 
 
+def move_to(job_id: str, index: int) -> None:
+    """Place une tâche en attente à l'index donné (glisser-déposer)."""
+    with db.connect() as conn:
+        queued = conn.execute("SELECT id FROM jobs WHERE status='queued' AND kind='upscale' "
+                              "ORDER BY position ASC").fetchall()
+        ids = [row["id"] for row in queued]
+        if job_id not in ids:
+            raise ValueError("Seules les tâches en attente peuvent être déplacées")
+        ids.remove(job_id)
+        index = max(0, min(index, len(ids)))
+        ids.insert(index, job_id)
+        for position, queued_id in enumerate(ids):
+            conn.execute("UPDATE jobs SET position=?,updated_at=? WHERE id=?",
+                         (float(position), db.now(), queued_id))
+
+
 def move(job_id: str, where: str) -> None:
     """Réordonne une tâche en attente : top, up, down, bottom."""
     with db.connect() as conn:

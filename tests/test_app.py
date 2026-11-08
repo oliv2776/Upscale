@@ -31,19 +31,24 @@ def test_safe_path_rejects_outside_and_relative(env):
     assert st.safe_path(str(env / "videos"), must_exist=True) == (env / "videos").resolve()
 
 
-def test_validate_folders_rejects_nesting(env):
+def test_validate_folders_accepts_parent_and_destination_inside(env):
     base = st.get_settings()
-    videos = str(env / "videos")
-    with pytest.raises(ValueError, match="dans un dossier source"):
-        st.validate_folders({**base, "destination": str(env / "videos" / "out")})
-    (env / "out" / "videos").mkdir(parents=True)
+    videos = env / "videos"
+    out = videos / "out"
+    sources, destination = st.validate_folders({**base, "sources": [str(videos)], "destination": str(out)})
+    assert sources == [videos.resolve()]
+    assert destination == out.resolve()
+    (env / "out2" / "videos").mkdir(parents=True)
     with pytest.raises(ValueError, match="source ne peut pas"):
-        st.validate_folders({**base, "sources": [str(env / "out" / "videos")], "destination": str(env / "out")})
+        st.validate_folders({**base, "sources": [str(env / "out2" / "videos")],
+                             "destination": str(env / "out2")})
     with pytest.raises(ValueError):
         st.validate_folders({**base, "destination": str(env)})
-    (env / "videos" / "Films").mkdir()
-    with pytest.raises(ValueError, match="déjà inclus"):
-        st.validate_folders({**base, "sources": [videos, str(env / "videos" / "Films")]})
+    (videos / "Films").mkdir()
+    sources, _ = st.validate_folders({**base, "sources": [str(videos), str(videos / "Films")]})
+    assert sources == [videos.resolve()]
+    sources, _ = st.validate_folders({**base, "sources": [str(videos), str(videos)]})
+    assert sources == [videos.resolve()]
     with pytest.raises(ValueError, match="au moins un"):
         st.validate_folders({**base, "sources": [], "source": ""})
 
@@ -263,6 +268,38 @@ def test_scan_disambiguates_collisions_and_uses_cache(env, monkeypatch):
 
 
 @needs_ffmpeg
+def test_scan_parent_with_subfolders_and_destination_inside(env):
+    videos = env / "videos"
+    make_video(videos / "Films" / "film.mkv", width=160, height=120)
+    make_video(videos / "Series" / "episode.mkv", width=160, height=120)
+    make_video(videos / "out" / "deja_traite.mkv", width=160, height=120)
+    settings = st.get_settings()
+    settings.update({"sources": [str(videos)], "source": str(videos),
+                     "destination": str(videos / "out"), "include_subfolders": True})
+    result = scanner.scan_files(settings)
+    names = sorted(Path(item["source"]).name for item in result["files"])
+    assert names == ["episode.mkv", "film.mkv"]
+
+
+@needs_ffmpeg
+def test_scan_non_recursive_ignores_subfolders(env):
+    videos = env / "videos"
+    make_video(videos / "racine.mkv", width=160, height=120)
+    make_video(videos / "Sous" / "enfant.mkv", width=160, height=120)
+    settings = st.get_settings()
+    settings.update({"sources": [str(videos)], "source": str(videos),
+                     "destination": str(env / "out"), "include_subfolders": False})
+    assert [Path(item["source"]).name for item in scanner.scan_files(settings)["files"]] == ["racine.mkv"]
+
+
+def test_save_dedupes_nested_sources(env):
+    videos = env / "videos"
+    (videos / "Films").mkdir()
+    saved = st.save_settings({"sources": [str(videos / "Films"), str(videos)],
+                              "destination": str(env / "out")})
+    assert saved["sources"] == [str(videos.resolve())]
+
+
 def test_scan_skips_files_being_copied(env):
     path = make_video(env / "videos" / "copie.mp4")
     assert scanner.scan_files(st.get_settings(), min_age_seconds=120)["too_recent"] == 1
@@ -323,6 +360,19 @@ def test_queue_management(env):
     assert client.post("/api/jobs/aaaaaaaaaaa2/delete", json={}).status_code == 200
     data = client.get("/api/jobs?limit=1&page=1").get_json()
     assert data["total"] == 1 and len(data["jobs"]) == 1
+
+
+def test_move_to_index(env):
+    for index, job_id in enumerate(["aaaaaaaaaaa1", "aaaaaaaaaaa2", "aaaaaaaaaaa3"]):
+        insert_job(job_id, position=float(index))
+    client = app.test_client()
+    assert client.post("/api/jobs/aaaaaaaaaaa3/move", json={"to": "index", "index": 0}).status_code == 200
+    assert [job["id"] for job in client.get("/api/jobs?status=queued").get_json()["jobs"]] == \
+        ["aaaaaaaaaaa3", "aaaaaaaaaaa1", "aaaaaaaaaaa2"]
+    assert client.post("/api/jobs/aaaaaaaaaaa1/move", json={"to": "index", "index": 2}).status_code == 200
+    assert [job["id"] for job in client.get("/api/jobs?status=queued").get_json()["jobs"]] == \
+        ["aaaaaaaaaaa3", "aaaaaaaaaaa2", "aaaaaaaaaaa1"]
+    assert client.post("/api/jobs/aaaaaaaaaaa1/move", json={"to": "index", "index": "x"}).status_code == 400
 
 
 def test_previews_jump_the_queue_and_ignore_pause(env):

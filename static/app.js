@@ -325,6 +325,7 @@ function describeScan(s) {
   let text = (s.origin === "watch" ? "Analyse automatique : " : "") + s.found + " vidéo(s) éligible(s) sur " + s.checked + " fichier(s) vidéo.";
   if (s.already_known) text += " " + s.already_known + " déjà en file ou traitée(s).";
   if (s.too_recent) text += " " + s.too_recent + " en cours de copie, ignorée(s) pour l'instant.";
+  if (s.recursive === false) text += " Les sous-dossiers ne sont pas inclus (Bibliothèque → Inclure tous les sous-dossiers).";
   if (s.enqueue) {
     text += " " + (s.added || 0) + " ajoutée(s) à la file.";
     if (s.conflicts) text += " " + s.conflicts + " ignorée(s) : même fichier de sortie qu'une tâche en cours.";
@@ -482,7 +483,8 @@ function renderDashboard(data) {
 
   const queued = jobs.filter(job => job.status === "queued").slice(0, 3);
   $("dashNext").innerHTML = queued.length ? queued.map((job, index) =>
-    '<div class="row"><span class="idx">' + (index + 1) + '</span><div class="info"><b>' + escapeHtml(compactName(job.source)) +
+    '<div class="row" draggable="true" data-queue-id="' + job.id + '" data-queue-index="' + index + '">' +
+    '<span class="idx">' + (index + 1) + '</span><div class="info"><b>' + escapeHtml(compactName(job.source)) +
     '</b><small>' + escapeHtml((job.height || "?")) + 'p → ' + (job.output_height || "?") + 'p · ' + escapeHtml(modelLabel(job.model)) +
     '</small></div><span class="chip">' + (job.output_height || "—") + 'p</span></div>').join("")
     : '<div class="empty">Aucune tâche en attente.</div>';
@@ -781,6 +783,48 @@ function showView(name, updateHash = true) {
   window.scrollTo({ top: 0, behavior: "auto" });
   setTimeout(() => window.scrollTo({ top: 0, behavior: "auto" }), 60);
 }
+let draggedJobId = null;
+function setupDashboardDrag() {
+  const list = $("dashNext");
+  if (!list) return;
+  list.addEventListener("dragstart", event => {
+    const row = event.target.closest("[data-queue-id]");
+    if (!row) return;
+    draggedJobId = row.dataset.queueId;
+    row.classList.add("dragging");
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", draggedJobId);
+  });
+  list.addEventListener("dragend", () => {
+    draggedJobId = null;
+    list.querySelectorAll(".dragging,.drag-over").forEach(el => el.classList.remove("dragging", "drag-over"));
+  });
+  list.addEventListener("dragover", event => {
+    const row = event.target.closest("[data-queue-id]");
+    if (!row || !draggedJobId) return;
+    event.preventDefault();
+    list.querySelectorAll(".drag-over").forEach(el => el.classList.remove("drag-over"));
+    row.classList.add("drag-over");
+  });
+  list.addEventListener("drop", async event => {
+    const row = event.target.closest("[data-queue-id]");
+    if (!row || !draggedJobId) return;
+    event.preventDefault();
+    const sourceRow = list.querySelector('[data-queue-id="' + draggedJobId + '"]');
+    if (!sourceRow) return;
+    const from = Number(sourceRow.dataset.queueIndex);
+    const target = Number(row.dataset.queueIndex);
+    const index = from < target ? target - 1 : target;
+    const jobId = draggedJobId;
+    draggedJobId = null;
+    try {
+      await post("/api/jobs/" + jobId + "/move", { to: "index", index });
+      await refreshDashboard();
+      await refreshJobs();
+    } catch (error) { toast(error.message); }
+  });
+}
+
 function setupNav() {
   document.querySelectorAll(".sidebar nav a[data-view]").forEach(link => {
     link.addEventListener("click", event => { event.preventDefault(); showView(link.dataset.view); });
@@ -846,7 +890,33 @@ $("installModel").addEventListener("click", () => installModel());
 $("installSource").addEventListener("keydown", e => { if (e.key === "Enter") installModel(); });
 $("addSource").addEventListener("click", () => { $("sourcesList").insertAdjacentHTML("beforeend", sourceRow("")); openPicker([...document.querySelectorAll("#sourcesList .s-path")].pop(), "dir"); });
 $("addProfile").addEventListener("click", () => { $("profilesBody").querySelector(".empty-row")?.remove(); $("profilesBody").insertAdjacentHTML("beforeend", profileRow({ path: firstSource() })); });
-$("selectFolder").addEventListener("click", () => { if (picker.input) picker.input.value = picker.path; $("picker").classList.add("hidden"); });
+function pruneSources(selected) {
+  const clean = String(selected || "").replace(/\/+$/, "");
+  const currentRow = picker.input && picker.input.closest(".source-row");
+  if (!clean) return;
+  const covered = [...document.querySelectorAll("#sourcesList .source-row")].some(row => {
+    if (row === currentRow) return false;
+    const value = (row.querySelector(".s-path").value || "").replace(/\/+$/, "");
+    return value && clean.startsWith(value + "/");
+  });
+  if (covered) {
+    currentRow?.remove();
+    toast("Ce dossier est déjà couvert par un dossier parent");
+    return;
+  }
+  document.querySelectorAll("#sourcesList .source-row").forEach(row => {
+    if (row === currentRow) return;
+    const value = (row.querySelector(".s-path").value || "").replace(/\/+$/, "");
+    if (value && value.startsWith(clean + "/")) row.remove();
+  });
+}
+$("selectFolder").addEventListener("click", () => {
+  if (picker.input) {
+    picker.input.value = picker.path;
+    if (picker.input.classList.contains("s-path")) pruneSources(picker.path);
+  }
+  $("picker").classList.add("hidden");
+});
 $("closePicker").addEventListener("click", () => $("picker").classList.add("hidden"));
 $("closeLogs").addEventListener("click", () => $("logModal").classList.add("hidden"));
 $("picker").addEventListener("click", e => { if (e.target.id === "picker") $("picker").classList.add("hidden"); });
@@ -895,6 +965,7 @@ $("videoLeft").addEventListener("seeked", () => { $("videoRight").currentTime = 
 
 (async function init() {
   setupNav();
+  setupDashboardDrag();
   try {
     const data = await api("/api/config"); state.models = data.models; fillModelSelects(); applySettings(data.settings); renderDisks(data.disks || []); applyAuthState(data.auth);
     reloadModels().catch(e => console.warn(e));

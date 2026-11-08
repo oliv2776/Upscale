@@ -404,7 +404,16 @@ def api_restore(job_id: str):
 @app.post("/api/jobs/<job_id>/move")
 def api_move(job_id: str):
     try:
-        worker.move(job_id, str(json_body().get("to", "")))
+        payload = json_body()
+        where = str(payload.get("to", ""))
+        if where == "index":
+            try:
+                index = int(payload.get("index"))
+            except (TypeError, ValueError):
+                return error("Index de déplacement invalide")
+            worker.move_to(job_id, index)
+        else:
+            worker.move(job_id, where)
         return jsonify({"ok": True})
     except ValueError as exc:
         return error(str(exc))

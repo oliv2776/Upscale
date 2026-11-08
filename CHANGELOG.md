@@ -3,6 +3,23 @@
 Toutes les évolutions notables sont consignées ici. Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet utilise le [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [2.12.0] — 2026-11-08
+
+### Ajouté
+
+- **Glisser-déposer** dans « À suivre » du tableau de bord pour réordonner la file
+  (`POST /api/jobs/<id>/move` accepte désormais un index).
+- **Analyse d'un dossier parent** : tous les sous-dossiers sont parcourus, les dossiers source
+  imbriqués sont fusionnés (le plus large suffit) et la destination peut être un sous-dossier de la
+  source (elle est exclue du scan).
+- Message d'analyse précisant quand les sous-dossiers sont exclus (`Inclure tous les sous-dossiers`).
+
+### Corrigé
+
+- Analyse robuste des grandes arborescences : dossiers illisibles et liens symboliques ignorés sans
+  faire échouer tout le scan ; parcours `os.walk` avec élagage des dossiers internes et de la destination.
+- Le sélecteur de dossier source retire les sous-dossiers déjà couverts par le parent choisi.
+
 ## [2.11.1] — 2026-11-08
 
 ### Corrigé

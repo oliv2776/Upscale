@@ -28,20 +28,48 @@ def is_upscale_internal(path: Path, root: Path) -> bool:
     return any(part.startswith(HIDDEN_PREFIXES) for part in path.relative_to(root).parts)
 
 
-def list_candidates(source_root: Path, recursive: bool) -> list[Path]:
-    iterator = source_root.rglob("*") if recursive else source_root.iterdir()
-    found = []
-    for path in iterator:
-        try:
-            if path.is_symlink() or path.suffix.lower() not in media.VIDEO_EXTENSIONS or not path.is_file():
-                continue
-            if is_upscale_internal(path, source_root):
-                continue
-            if source_root not in path.resolve(strict=True).parents:
-                continue
-            found.append(path)
-        except OSError:
+def _inside(path: Path, parent: Path) -> bool:
+    return path == parent or parent in path.parents
+
+
+def list_candidates(source_root: Path, recursive: bool, exclude: Path | None = None) -> list[Path]:
+    """Parcourt récursivement sans échouer sur un dossier illisible ou un lien symbolique.
+
+    ``exclude`` (la destination) est ignoré : on peut ainsi choisir un dossier parent qui contient
+    la destination sans rescanner les sorties.
+    """
+    found: list[Path] = []
+    excluded = exclude.resolve() if exclude is not None else None
+
+    def onerror(_error: OSError) -> None:  # dossier illisible : on continue l'analyse
+        return
+
+    for dirpath, dirnames, filenames in os.walk(source_root, topdown=True, onerror=onerror,
+                                                  followlinks=False):
+        current = Path(dirpath)
+        if not recursive:
+            dirnames[:] = []
+        if excluded is not None and _inside(current, excluded):
+            dirnames[:] = []
             continue
+        dirnames[:] = [
+            name for name in dirnames
+            if not name.startswith(HIDDEN_PREFIXES)
+            and not (current / name).is_symlink()
+            and not (excluded is not None and _inside(current / name, excluded))
+        ]
+        for name in filenames:
+            path = current / name
+            try:
+                if path.is_symlink() or path.suffix.lower() not in media.VIDEO_EXTENSIONS or not path.is_file():
+                    continue
+                if is_upscale_internal(path, source_root):
+                    continue
+                if source_root not in path.parents:
+                    continue
+                found.append(path)
+            except OSError:
+                continue
     found.sort()
     return found
 
@@ -77,7 +105,8 @@ def scan_files(settings: dict[str, Any], progress: Callable[[int, int], None] | 
     sources, destination_root = settings_mod.validate_folders(settings)
     labels = source_labels(sources)
     candidates = [(source, path) for source in sources
-                  for path in list_candidates(source, settings.get("include_subfolders", True))]
+                  for path in list_candidates(source, settings.get("include_subfolders", True),
+                                              destination_root)]
     stems = Counter((p.parent, p.stem.lower()) for _, p in candidates)
     suffix = settings.get("output_suffix", "")
     replace = bool(settings.get("replace_original"))
@@ -201,6 +230,7 @@ def _run_scan(settings: dict[str, Any], enqueue_files: bool, min_age_seconds: fl
         update: dict[str, Any] = {
             "found": len(result["files"]), "already_known": result["already_known"],
             "too_recent": result["too_recent"], "checked": result["checked"], "total": result["checked"],
+            "recursive": bool(settings.get("include_subfolders", True)),
             "files": [f["relative"] for f in result["files"][:200]],
         }
         if enqueue_files:

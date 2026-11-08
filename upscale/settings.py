@@ -155,18 +155,20 @@ def validate_folders(settings: dict[str, Any]) -> tuple[list[Path], Path]:
     for source in sources:
         if not source.is_dir():
             raise ValueError(f"Le dossier source doit exister et être un dossier : {source}")
-        if dest == source or source in dest.parents:
-            raise ValueError(f"La destination ne peut pas être dans un dossier source : {source}")
+        if dest == source:
+            raise ValueError("La destination ne peut pas être le dossier source lui-même")
         if dest in source.parents:
             raise ValueError(f"Le dossier source ne peut pas être dans la destination : {source}")
-        for other in sources:
-            if other != source and other in source.parents:
-                raise ValueError(f"{source} est déjà inclus dans {other}")
-    if len(set(sources)) != len(sources):
-        raise ValueError("Un dossier source est indiqué deux fois")
+    # Dossiers imbriqués : le plus large suffit (les profils gèrent les cas particuliers).
+    sources = sorted(set(sources), key=lambda path: (len(path.parts), str(path)))
+    unique: list[Path] = []
+    for source in sources:
+        if any(parent == source or parent in source.parents for parent in unique):
+            continue
+        unique.append(source)
     if config.root_of(dest) in (None, dest):
         raise ValueError("La destination doit être un sous-dossier d'un disque (ex. /data/videos_upscaled)")
-    return sources, dest
+    return unique, dest
 
 
 def source_root_for(path: Path, settings: dict[str, Any]) -> Path:
@@ -351,7 +353,10 @@ def save_settings(payload: dict[str, Any]) -> dict[str, Any]:
         elif payload.get(key):
             settings[key] = str(payload[key]).strip()[:500]
     if "source" in payload or "sources" in payload or "destination" in payload:
-        validate_folders(settings)
+        sources, destination = validate_folders(settings)
+        settings["sources"] = [str(source) for source in sources]
+        settings["source"] = settings["sources"][0] if settings["sources"] else ""
+        settings["destination"] = str(destination)
     db.store_settings_payload(settings)
     return settings
 
