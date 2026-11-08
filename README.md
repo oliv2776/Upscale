@@ -1,6 +1,6 @@
 # Upscale
 
-Upscale est une application auto-hébergée qui analyse une bibliothèque vidéo et lance des traitements d'upscaling IA avec Video2X / Real-ESRGAN. Elle fournit une interface web en français sur le port **27000**, une file de tâches persistante, un comparateur avant/après et des automatisations (dossier surveillé, plage horaire, notifications, Jellyfin/Plex).
+Upscale est une application auto-hébergée qui analyse une bibliothèque vidéo et lance des traitements d'upscaling IA avec Video2X / Real-ESRGAN. Elle fournit une interface web en français sur le port **27000**, une file de tâches persistante, un comparateur avant/après et des automatisations (dossier surveillé, plage horaire, notifications, Jellyfin/Emby/Plex).
 
 Le projet cible notamment les NAS sous Ubuntu équipés d'un GPU AMD compatible Vulkan, comme la Radeon RX 5500 XT.
 
@@ -34,9 +34,9 @@ Le projet cible notamment les NAS sous Ubuntu équipés d'un GPU AMD compatible 
 - Profils par dossier (ex. Animation → AnimeVideo v3, Films → Plus 1080p HEVC).
 - Aperçu multi-modèles avec comparateur à curseur.
 - **Tableau de bord** : tâche en cours, progression, temps restant, GPU, disque, prochaines tâches et derniers résultats, avec une **miniature extraite de la vidéo**.
-- File d'attente : réordonner par glisser-déposer (tableau de bord et file, tâches en attente) ou avec les boutons, relancer, supprimer, filtrer, paginer ; progression et temps restant.
+- File d'attente : vignettes des vidéos, réordonner par glisser-déposer (tableau de bord et file, tâches en attente) ou avec les boutons, relancer, supprimer, filtrer, paginer ; progression et temps restant.
 - **Dossier parent** : sélectionne un dossier et tous ses sous-dossiers sont analysés ; les dossiers source imbriqués sont fusionnés et la destination peut être un sous-dossier de la source (elle est exclue du scan).
-- Dossier surveillé, plage horaire (ex. 22 h – 7 h), notifications ntfy / Gotify / webhook, actualisation Jellyfin / Plex, suffixe de nom de fichier.
+- Dossier surveillé, plage horaire (ex. 22 h – 7 h), notifications ntfy / Gotify / webhook, actualisation Jellyfin / Emby / Plex, suffixe de nom de fichier.
 - Statistiques GPU en direct (charge, température, VRAM, puissance).
 - Fichiers produits attribués au propriétaire de la vidéo d'origine (ou à PUID/PGID), jamais à root par défaut.
 - Authentification par mot de passe (lecture seule sans mot de passe), protection CSRF et en-têtes de sécurité.
@@ -257,7 +257,7 @@ Le réglage est figé dans chaque tâche au moment de la mise en file, comme les
 - **Dossier surveillé** : le dossier source est analysé à intervalle régulier et les nouvelles vidéos sont mises en file. Les fichiers modifiés depuis moins de 2 minutes sont ignorés (copie en cours).
 - **Plage horaire** : les upscalings ne démarrent qu'à l'intérieur de la plage (qui peut passer minuit, ex. 22:00–07:00, heure du fuseau TZ). Hors plage, la vidéo en cours s'arrête à la fin de son segment.
 - **Notifications** : ntfy (URL du sujet, jeton optionnel), Gotify (URL du serveur + jeton d'application) ou webhook JSON (POST avec event, title, message, job_id, source, destination). Bouton **Tester la notification**.
-- **Serveur multimédia** : après chaque vidéo terminée, Jellyfin (clé API, POST /Library/Refresh) ou Plex (X-Plex-Token, actualisation de chaque bibliothèque) réanalyse ses bibliothèques. Pointe la bibliothèque du serveur sur le dossier de destination ; le suffixe aide à distinguer les versions.
+- **Serveur multimédia** : après chaque vidéo terminée, Jellyfin ou Emby (clé API, POST /Library/Refresh) ou Plex (X-Plex-Token, actualisation de chaque bibliothèque) réanalyse ses bibliothèques. Pointe la bibliothèque du serveur sur le dossier de destination ; le suffixe aide à distinguer les versions.
 
 Les jetons ne sont jamais renvoyés au navigateur : laisse le champ vide pour conserver le jeton enregistré.
 
@@ -391,7 +391,7 @@ pytest -q
 
 Le code est dans le paquet upscale/ : config, db, settings (réglages et profils), media (ffprobe et commandes FFmpeg), runner (processus, Video2X), scanner, pipeline (segments et aperçus), worker (file, plage horaire, surveillance, maintenance), converter et models (installation des modèles), net (garde-fous réseau), notify, gpu, ollama, web (API Flask).
 
-Les tests utilisent FFmpeg, un faux Video2X (Docker et local, Real-ESRGAN et RIFE) et un faux serveur HTTP : ils couvrent le pipeline complet, la reprise après pause, les aperçus, les notifications, Jellyfin/Plex, Ollama et la sécurité, sans GPU. La CI construit aussi les deux images Docker et exécute un vrai traitement Video2X sur Vulkan logiciel (lavapipe).
+Les tests utilisent FFmpeg, un faux Video2X (Docker et local, Real-ESRGAN et RIFE) et un faux serveur HTTP : ils couvrent le pipeline complet, la reprise après pause, les aperçus, les notifications, Jellyfin/Emby/Plex, Ollama et la sécurité, sans GPU. La CI construit aussi les deux images Docker et exécute un vrai traitement Video2X sur Vulkan logiciel (lavapipe).
 
 ## Licence
 

@@ -315,3 +315,9 @@ td{border-bottom-color:#f1ebe1}
 #jobsBody tr.dragging{opacity:.45}
 #jobsBody tr.drop-before td{border-top:2px solid var(--accent)}
 #jobsBody tr.drop-after td{border-bottom:2px solid var(--accent)}
+.tag.ok{background:#e7f2ee;border-color:#cbe4dc;color:#256b5a}
+.tag.warn{background:#fdf3df;border-color:#f0d9ad;color:#9a6414}
+.queue-file{display:flex;align-items:center;gap:10px;min-width:0}
+.queue-file .thumb-small{width:48px;height:34px}
+.queue-name{min-width:0}
+#mediaStatus{display:block;margin-top:4px;color:#8b7f70}

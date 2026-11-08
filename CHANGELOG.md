@@ -3,6 +3,22 @@
 Toutes les évolutions notables sont consignées ici. Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet utilise le [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [2.17.0] — 2026-11-08
+
+### Ajouté
+
+- **Emby** est accepté comme serveur multimédia, aux côtés de Jellyfin et Plex (même API
+  `/Library/Refresh` avec `X-Emby-Token`).
+- **État de la connexion multimédia** visible dans Automatisation : badge « Jellyfin/Emby/Plex
+  configuré », « adresse manquante », « jeton manquant », puis « joignable » ou « échec » après le test.
+- **Vignettes dans la file de traitement** : chaque ligne affiche une image extraite de la vidéo
+  (ou un visuel de repli si la source n'est plus accessible).
+
+### Note
+
+- **Stash n'est pas encore pris en charge** : l'interface l'indique explicitement. Un connecteur
+  Stash (métadonnées/GraphQL) reste à ajouter séparément.
+
 ## [2.16.0] — 2026-11-08
 
 ### Ajouté

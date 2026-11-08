@@ -33,7 +33,7 @@ RENDER_LABELS = {"ai": "IA pure", "peau-normale": "Peau normale", "custom": "Per
 GRAIN_LEVELS = ("off", "light", "medium")
 CODECS = ("h264", "hevc", "av1", "h264_vaapi", "hevc_vaapi")
 NOTIFY_TYPES = ("", "ntfy", "gotify", "webhook")
-MEDIA_TYPES = ("", "jellyfin", "plex")
+MEDIA_TYPES = ("", "jellyfin", "plex", "emby")
 SECRET_KEYS = ("notify_token", "media_token")
 PROFILE_KEYS = ("model", "output_height", "crf", "denoise", "codec", "interpolate", "render")
 

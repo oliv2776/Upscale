@@ -76,6 +76,31 @@ function ollamaPayload() {
   return { ollama_enabled: $("ollamaEnabled").checked, ollama_url: $("ollamaUrl").value.trim(), ollama_model: $("ollamaModel").value };
 }
 function setSelect(id, value) { if (value != null) $(id).value = String(value); }
+function updateMediaStatus(s) {
+  const badge = $("mediaBadge");
+  if (!badge) return;
+  const labels = { jellyfin: "Jellyfin", emby: "Emby", plex: "Plex" };
+  const type = (s && s.media_type) || "";
+  const url = (s && s.media_url) || "";
+  const tokenSet = !!(s && s.media_token_set) || !!($("mediaToken").value || "").trim();
+  if (!type) {
+    badge.textContent = "NON CONFIGURÉ"; badge.className = "tag";
+    $("mediaStatus").textContent = "Aucun serveur multimédia sélectionné.";
+  } else if (!url) {
+    badge.textContent = "ADRESSE MANQUANTE"; badge.className = "tag warn";
+    $("mediaStatus").textContent = "Renseigne l'adresse de " + labels[type] + ".";
+  } else if (!tokenSet) {
+    badge.textContent = "JETON MANQUANT"; badge.className = "tag warn";
+    $("mediaStatus").textContent = "Renseigne la clé API de " + labels[type] + ".";
+  } else {
+    badge.textContent = labels[type].toUpperCase() + " CONFIGURÉ"; badge.className = "tag ok";
+    $("mediaStatus").textContent = labels[type] + " · " + url + " · jeton enregistré — clique sur « Tester le serveur » pour vérifier la connexion.";
+  }
+}
+function updateMediaStatusFromForm() {
+  updateMediaStatus({ media_type: $("mediaType").value, media_url: $("mediaUrl").value.trim(),
+    media_token_set: state.mediaTokenSet });
+}
 function applySettings(s) {
   renderSources(s.sources && s.sources.length ? s.sources : [s.source || ""]); $("destination").value = s.destination;
   $("outputSuffix").value = s.output_suffix || ""; $("recursive").checked = s.include_subfolders;
@@ -93,6 +118,8 @@ function applySettings(s) {
   $("notifyToken").value = ""; $("notifyTokenHint").textContent = s.notify_token_set ? "Jeton enregistré (laisser vide pour le conserver)." : "";
   setSelect("mediaType", s.media_type || ""); $("mediaUrl").value = s.media_url || "";
   $("mediaToken").value = ""; $("mediaTokenHint").textContent = s.media_token_set ? "Jeton enregistré (laisser vide pour le conserver)." : "";
+  state.mediaTokenSet = !!s.media_token_set;
+  updateMediaStatus(s);
   $("ollamaEnabled").checked = !!s.ollama_enabled; $("ollamaUrl").value = s.ollama_url || "http://host.docker.internal:11434";
   const select = $("ollamaModel");
   if (s.ollama_model && ![...select.options].some(o => o.value === s.ollama_model)) {
@@ -416,12 +443,14 @@ async function refreshJobs() {
       const err = job.error ? '<br><small title="' + escapeHtml(job.error) + '">' + escapeHtml(job.error.slice(0, 120)) + "</small>" : "";
       const drag = job.kind === "upscale" && job.status === "queued"
         ? ' draggable="true" data-queue-id="' + job.id + '"' : "";
-      return '<tr' + drag + '><td title="' + escapeHtml(job.source) + '">' + previewTag + escapeHtml(name) + '<br><small class="muted">' + (job.width || "—") + " × " + (job.height || "—") + "</small></td>" +
+      return '<tr' + drag + '><td title="' + escapeHtml(job.source) + '"><div class="queue-file">' + thumbHtml(job.id, "thumb-small") +
+        '<div class="queue-name">' + previewTag + escapeHtml(name) + '<br><small class="muted">' + (job.width || "—") + " × " + (job.height || "—") + "</small></div></div></td>" +
         "<td><small>" + escapeHtml(conf) + "</small>" + profile + "</td>" +
         '<td><span class="status ' + escapeHtml(job.status) + '">' + escapeHtml(labels[job.status] || job.status) + "</span></td>" +
         "<td>" + escapeHtml(job.stage || "—") + progressHtml(job) + trash + warning + err + "</td>" +
         '<td><div class="row-actions">' + jobActions(job) + "</div></td></tr>";
     }).join("");
+    attachThumbFallbacks();
   } catch (error) { console.warn(error); }
 }
 function compactName(path) {
@@ -574,12 +603,13 @@ function renderPreviewHistory() {
     const when = preview.updated_at ? new Date(preview.updated_at).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" }) : "";
     const variants = preview.manifest && preview.manifest.variants ? preview.manifest.variants.length : 0;
     const running = preview.status === "running";
-    return '<div class="history-item"><div class="info"><b>' + escapeHtml(previewLabel(preview)) + '</b><small>' +
+    return '<div class="history-item">' + thumbHtml(preview.id, "thumb-small") + '<div class="info"><b>' + escapeHtml(previewLabel(preview)) + '</b><small>' +
       escapeHtml(when) + ' · ' + escapeHtml(labels[preview.status] || preview.status) +
       (variants ? ' · ' + variants + ' variante(s)' : '') + '</small></div>' +
       '<button class="btn ' + (running ? "" : "danger") + '" data-delete-preview="' + preview.id + '"' +
       (running ? " disabled" : "") + '>Supprimer</button></div>';
   }).join("");
+  attachThumbFallbacks();
 }
 async function deletePreview(id) {
   if (!confirm("Supprimer cet aperçu et ses fichiers ?")) return;
@@ -700,7 +730,17 @@ async function testIntegration(url, label) {
   try {
     await saveAutomation(true); status.textContent = label + "…"; status.className = "ollama-status";
     const data = await post(url); status.textContent = data.message || "Envoyé avec succès"; status.className = "ollama-status ok";
-  } catch (error) { status.textContent = error.message; status.className = "ollama-status error"; }
+    if (url === "/api/media/test") {
+      $("mediaBadge").textContent = "JOIGNABLE"; $("mediaBadge").className = "tag ok";
+      $("mediaStatus").textContent = data.message || "Serveur joignable.";
+    }
+  } catch (error) {
+    status.textContent = error.message; status.className = "ollama-status error";
+    if (url === "/api/media/test") {
+      $("mediaBadge").textContent = "ÉCHEC"; $("mediaBadge").className = "tag warn";
+      $("mediaStatus").textContent = error.message;
+    }
+  }
 }
 
 // ------------------------------------------------------------------ système
@@ -1023,6 +1063,7 @@ $("healthBtn").addEventListener("click", testGpu);
 $("testOllama").addEventListener("click", testOllama); $("saveOllama").addEventListener("click", saveOllama);
 $("saveAutomation").addEventListener("click", () => saveAutomation().catch(e => toast(e.message)));
 $("testNotify").addEventListener("click", () => testIntegration("/api/notify/test", "Envoi de la notification"));
+["mediaType", "mediaUrl", "mediaToken"].forEach(id => $(id).addEventListener("input", updateMediaStatusFromForm));
 $("testMedia").addEventListener("click", () => testIntegration("/api/media/test", "Contact du serveur"));
 $("pauseBtn").addEventListener("click", () => jobAction(() => post("/api/pause"), "La vidéo en cours s'arrêtera à la fin de son segment"));
 $("resumeBtn").addEventListener("click", () => jobAction(() => post("/api/resume"), "Traitement repris"));

@@ -1,4 +1,4 @@
-"""Notifications (ntfy, Gotify, webhook) et actualisation de Jellyfin / Plex."""
+"""Notifications (ntfy, Gotify, webhook) et actualisation de Jellyfin / Emby / Plex."""
 from __future__ import annotations
 
 import json
@@ -72,9 +72,10 @@ def refresh_media_server(settings: dict[str, Any]) -> str:
     token = settings.get("media_token", "")
     if not kind or not base:
         raise ValueError("Aucun serveur multimédia configuré")
-    if kind == "jellyfin":
+    if kind in {"jellyfin", "emby"}:
+        label = "Jellyfin" if kind == "jellyfin" else "Emby"
         _request(base + "/Library/Refresh", data=b"", headers={"X-Emby-Token": token})
-        return "Jellyfin : actualisation de la bibliothèque demandée"
+        return f"{label} : actualisation de la bibliothèque demandée"
     query = urllib.parse.urlencode({"X-Plex-Token": token})
     raw = _request(f"{base}/library/sections?{query}", method="GET", headers={"Accept": "application/json"})
     sections = json.loads(raw.decode("utf-8")).get("MediaContainer", {}).get("Directory", [])

@@ -1274,6 +1274,9 @@ def test_media_server_refresh(env, http_server):
     assert "Jellyfin" in notify.refresh_media_server({"media_type": "jellyfin", "media_url": base, "media_token": "j"})
     assert recorder.received[-1]["path"] == "/Library/Refresh"
     assert recorder.received[-1]["headers"]["X-Emby-Token"] == "j"
+    assert "Emby" in notify.refresh_media_server({"media_type": "emby", "media_url": base, "media_token": "e"})
+    assert recorder.received[-1]["path"] == "/Library/Refresh"
+    assert recorder.received[-1]["headers"]["X-Emby-Token"] == "e"
     recorder.responses["/library/sections"] = (200, json.dumps(
         {"MediaContainer": {"Directory": [{"key": "1"}, {"key": "4"}]}}).encode())
     message = notify.refresh_media_server({"media_type": "plex", "media_url": base, "media_token": "p"})
