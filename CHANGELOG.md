@@ -13,6 +13,7 @@ Version de sécurité : durcissement de l'interface, des téléchargements et de
 - `CHANGELOG.md`, `SECURITY.md` et workflow de publication d'une GitHub Release sur tag `vX.Y.Z`.
 - En-têtes de sécurité HTTP (CSP, `X-Frame-Options`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`).
 - Limitation des tentatives d'authentification Basic (429 après 15 échecs en 5 minutes).
+- `update.sh` : mise à jour sans perdre le segment en cours (pause, sauvegarde de la base, reprise).
 - Bandeau d'avertissement dans l'interface quand aucun mot de passe n'est configuré.
 - `UPSCALE_ALLOW_PRIVATE_MODEL_URLS` pour autoriser explicitement un miroir de modèles sur le LAN.
 - Contre-pression de la découpe : `SIGSTOP`/`SIGCONT` pour borner les segments en attente.
@@ -43,6 +44,7 @@ Version de sécurité : durcissement de l'interface, des téléchargements et de
 - Course possible entre la suppression d'une tâche et sa réservation par le worker.
 - Fuite de secrets vers les sous-processus de conversion de modèles.
 - Processus enfants du convertisseur laissés en vie après un délai dépassé.
+- Fichiers partiels (`tmp_*`, `ai_*`) nettoyés à la reprise d'une tâche interrompue.
 
 ## [2.7.0] — 2026-11-03
 

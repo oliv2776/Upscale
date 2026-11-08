@@ -185,6 +185,9 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
         "segment_seconds": segment_seconds,
     }
     prepare_work_dir(work, fingerprint)
+    # Reliquats d'une exécution interrompue (redémarrage, mise à jour) : jamais réutilisés.
+    for stale in [*(work / "enc").glob("tmp_*"), *work.glob("ai_*")]:
+        stale.unlink(missing_ok=True)
     segmented = (work / "segments.json").exists()
     resumed = segmented or any((work / "enc").glob("seg_*.mkv"))  # segments déjà encodés conservés
     progress = Progress(job_id, start=float(job["progress"] or 0) if resumed else 0.0)

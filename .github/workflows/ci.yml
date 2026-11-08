@@ -39,10 +39,11 @@ jobs:
           node-version: "22"
       - name: Check browser JavaScript
         run: node --check static/app.js
-      - name: Check installer
+      - name: Check shell scripts
         run: |
           bash -n install.sh
-          shellcheck install.sh
+          bash -n update.sh
+          shellcheck install.sh update.sh
 
   docker:
     runs-on: ubuntu-latest

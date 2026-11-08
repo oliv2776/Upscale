@@ -60,14 +60,20 @@ Le script install.sh :
 
 Ouvre ensuite http://IP_DU_NAS:27000 (hostname -I donne l'adresse). Pour un autre point de montage : sudo UPSCALE_HOST_DATA=/chemin/du/stockage bash install.sh — l'interface affiche toujours ce stockage sous /data. Vidéos sur plusieurs disques : voir **Plusieurs disques** ci-dessous (ou directement sudo UPSCALE_DISQUES="/mnt/disque2 /mnt/disque3" bash install.sh).
 
-**Mise à jour :**
+**Mise à jour (sans perdre le travail en cours) :**
 
 ~~~bash
 git pull
-docker compose up -d --build
+bash update.sh          # pause au segment, sauvegarde de la base, reconstruction, reprise
 ~~~
 
+update.sh construit d'abord la nouvelle image (le traitement continue), met ensuite la file en pause et attend la fin du **segment en cours**, sauvegarde la base dans backups/, bascule vers la nouvelle image puis remet la file en route. Les segments déjà encodés, la file, les réglages et les dossiers `.upscale-*` sont conservés. Le script passe par la base : il fonctionne même sans mot de passe. Options : `-y` (sans confirmation), `--sans-sauvegarde`, et `UPSCALE_UPDATE_TIMEOUT` (secondes, 900 par défaut).
+
+Sans le script, `docker compose up -d --build` reprend aussi au segment suivant, mais le segment en cours est refait.
+
 L'historique, les réglages et les tâches en attente sont conservés (migration automatique de la base).
+
+> **Ne lance jamais `docker compose down -v`** : l'option `-v` supprime le volume `uscale-state` (file, réglages, historique, modèles installés).
 
 > **2.8 — sécurité** : sans UPSCALE_PASSWORD, l'interface passe en **lecture seule** (les actions sont refusées). Définis un mot de passe, ou UPSCALE_ALLOW_ANONYMOUS=1 pour conserver l'ancien comportement sur un réseau de confiance. install.sh génère désormais un mot de passe et l'affiche à la fin de l'installation.
 
@@ -325,6 +331,8 @@ docker compose logs -f --tail=200 upscale
 docker compose restart upscale
 docker compose down          # conserve le volume uscale-state et les vidéos
 ~~~
+
+`docker compose down` sans `-v` ne touche ni au volume d'état, ni aux vidéos, ni aux dossiers de travail `.upscale-*` : une tâche interrompue reprend au segment suivant. `down -v` supprime la file et les réglages.
 
 La file, les réglages, les journaux et les aperçus sont dans le volume Docker uscale-state (/app/state). Les journaux des tâches terminées sont supprimés après UPSCALE_LOG_RETENTION_DAYS jours, et seuls les 10 derniers aperçus sont gardés. Pour tout effacer sans toucher aux vidéos :
 
