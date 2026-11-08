@@ -98,7 +98,7 @@ main{margin-left:248px;padding:26px 34px 110px;max-width:1500px}
 .btn:disabled{opacity:.45;cursor:not-allowed}
 
 .list{padding:4px 0}
-#dashNext .row{cursor:grab}
+#dashNext .row[draggable="true"]{cursor:grab}
 #dashNext .row.dragging{opacity:.45}
 #dashNext .row.drag-over{outline:2px dashed var(--accent);outline-offset:-2px;border-radius:8px}
 .list .empty{padding:18px;color:var(--muted);font-size:12px}
@@ -309,3 +309,5 @@ td{border-bottom-color:#f1ebe1}
 .status{white-space:nowrap}
 #queue td:nth-child(3){white-space:nowrap}
 #preview .field.grow{min-width:0}
+.chip.preview-chip{background:#eef0fb;border-color:#dfe3fb;color:#4b5bd6;margin-right:6px;
+  font-size:9px;letter-spacing:.05em;vertical-align:middle}

@@ -3,6 +3,15 @@
 Toutes les évolutions notables sont consignées ici. Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet utilise le [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [2.15.1] — 2026-11-08
+
+### Corrigé
+
+- Les **aperçus sont visibles dans la file d'attente** : badge « Aperçu », priorité, progression, logs,
+  arrêt et suppression, sans boutons de déplacement réservés aux upscales.
+- Les aperçus en cours apparaissent aussi sur le tableau de bord ; les compteurs « File d'attente » et
+  « En cours » les incluent.
+
 ## [2.15.0] — 2026-11-08
 
 ### Ajouté

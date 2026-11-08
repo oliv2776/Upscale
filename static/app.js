@@ -372,23 +372,28 @@ function progressHtml(job) {
 function jobActions(job) {
   const b = (attr, label, cls = "") => '<button class="text-btn ' + cls + '" ' + attr + '="' + escapeHtml(job.id) + '">' + label + "</button>";
   const parts = [b("data-log", "Logs")];
-  if (job.status === "queued") parts.push(b("data-move-top", "⤒", "icon"), b("data-move-up", "↑", "icon"), b("data-move-down", "↓", "icon"));
+  if (job.kind === "upscale" && job.status === "queued") parts.push(b("data-move-top", "⤒", "icon"), b("data-move-up", "↑", "icon"), b("data-move-down", "↓", "icon"));
   if (["queued", "running"].includes(job.status)) parts.push(b("data-cancel", "Arrêter"));
   if (["failed", "cancelled"].includes(job.status)) parts.push(b("data-retry", "Relancer"));
   if (job.trash_path) parts.push(b("data-restore", "Restaurer l'original"));
-  if (job.status === "completed" && !job.trash_path && !job.replace_original && !job.warning && job.stage !== "Original remplacé")
+  if (job.kind === "upscale" && job.status === "completed" && !job.trash_path && !job.replace_original && !job.warning && job.stage !== "Original remplacé")
     parts.push(b("data-replace-original", "Remplacer l'original"));
   if (job.status !== "running") parts.push(b("data-delete", "Supprimer", "danger"));
   return parts.join("");
 }
 async function refreshJobs() {
   try {
-    const query = "?limit=" + state.limit + "&page=" + state.page + (state.filter ? "&status=" + state.filter : "");
+    const query = "?limit=" + state.limit + "&page=" + state.page + "&kind=all" +
+      (state.filter ? "&status=" + state.filter : "");
     const data = await api("/api/jobs" + query), counts = data.counts || {};
-    $("queuedCount").textContent = counts.queued || 0; $("runningCount").textContent = counts.running || 0;
+    const previews = data.preview_counts || {};
+    $("queuedCount").textContent = (counts.queued || 0) + (previews.queued || 0);
+    $("runningCount").textContent = (counts.running || 0) + (previews.running || 0);
     $("completedCount").textContent = counts.completed || 0; $("failedCount").textContent = counts.failed || 0;
     $("queuedHint").textContent = data.deferred ? data.deferred : "Vidéos dans la file";
-    $("queueInfo").textContent = data.deferred ? "⏸ " + data.deferred + " — les aperçus restent possibles." : "Suivez les tâches et consultez les journaux en cas de problème.";
+    const previewActive = (previews.queued || 0) + (previews.running || 0);
+    $("queueInfo").textContent = (data.deferred ? "⏸ " + data.deferred + " — les aperçus restent possibles." : "Suivez les tâches et consultez les journaux en cas de problème.")
+      + (previewActive ? " · " + previewActive + " aperçu(s) dans la file." : "");
     $("pauseBtn").classList.toggle("hidden", data.paused); $("resumeBtn").classList.toggle("hidden", !data.paused);
     state.total = data.total;
     const pages = Math.max(1, Math.ceil(data.total / state.limit));
@@ -400,13 +405,14 @@ async function refreshJobs() {
     const labels = { queued: "En attente", running: "En cours", completed: "Terminée", failed: "Erreur", cancelled: "Annulée" };
     body.innerHTML = data.jobs.map(job => {
       const name = job.source.split("/").pop();
+      const previewTag = job.kind === "preview" ? '<span class="chip preview-chip">Aperçu</span> ' : "";
       const conf = [modelLabel(job.model), job.output_height ? job.output_height + "p" : "", codecLabels[job.codec] || "",
         renderLabels[job.render] || ""].filter(Boolean).join(" · ");
       const profile = job.profile ? '<br><small class="muted" title="' + escapeHtml(job.profile) + '">profil ' + escapeHtml(job.profile.split("/").pop()) + "</small>" : "";
       const trash = job.trash_path ? '<br><small class="muted" title="' + escapeHtml(job.trash_path) + '">original dans la corbeille</small>' : "";
       const warning = job.warning ? '<br><small class="warn" title="' + escapeHtml(job.warning) + '">⚠ ' + escapeHtml(job.warning.slice(0, 120)) + "</small>" : "";
       const err = job.error ? '<br><small title="' + escapeHtml(job.error) + '">' + escapeHtml(job.error.slice(0, 120)) + "</small>" : "";
-      return '<tr><td title="' + escapeHtml(job.source) + '">' + escapeHtml(name) + '<br><small class="muted">' + (job.width || "—") + " × " + (job.height || "—") + "</small></td>" +
+      return '<tr><td title="' + escapeHtml(job.source) + '">' + previewTag + escapeHtml(name) + '<br><small class="muted">' + (job.width || "—") + " × " + (job.height || "—") + "</small></td>" +
         "<td><small>" + escapeHtml(conf) + "</small>" + profile + "</td>" +
         '<td><span class="status ' + escapeHtml(job.status) + '">' + escapeHtml(labels[job.status] || job.status) + "</span></td>" +
         "<td>" + escapeHtml(job.stage || "—") + progressHtml(job) + trash + warning + err + "</td>" +
@@ -448,18 +454,20 @@ function attachThumbFallbacks() {
   });
 }
 function renderDashboard(data) {
-  const jobs = data.jobs || [], counts = data.counts || {};
+  const jobs = data.jobs || [], counts = data.counts || {}, previews = data.preview_counts || {};
+  const allQueued = (counts.queued || 0) + (previews.queued || 0);
+  const allRunning = (counts.running || 0) + (previews.running || 0);
   state.paused = !!data.paused;
-  $("railQueued").textContent = counts.queued || 0;
-  $("railRunning").textContent = counts.running || 0;
-  $("railRunningDot").classList.toggle("on", (counts.running || 0) > 0);
-  $("navQueueBadge").textContent = (counts.queued || 0) + (counts.running || 0);
+  $("railQueued").textContent = allQueued;
+  $("railRunning").textContent = allRunning;
+  $("railRunningDot").classList.toggle("on", allRunning > 0);
+  $("navQueueBadge").textContent = allQueued + allRunning;
   $("railDeferred").textContent = data.deferred ? "⏸ " + data.deferred : "";
   const railPause = $("railPause");
   railPause.textContent = data.paused ? "Reprendre" : "Pause";
   railPause.dataset.paused = data.paused ? "1" : "0";
-  $("queuedCount").textContent = counts.queued || 0;
-  $("runningCount").textContent = counts.running || 0;
+  $("queuedCount").textContent = allQueued;
+  $("runningCount").textContent = (counts.running || 0) + (previews.running || 0);
   $("completedCount").textContent = counts.completed || 0;
   $("failedCount").textContent = counts.failed || 0;
 
@@ -499,12 +507,15 @@ function renderDashboard(data) {
   }
 
   const queued = jobs.filter(job => job.status === "queued").slice(0, 3);
-  $("dashNext").innerHTML = queued.length ? queued.map((job, index) =>
-    '<div class="row" draggable="true" data-queue-id="' + job.id + '" data-queue-index="' + index + '">' +
-    thumbHtml(job.id, "thumb-small") + '<span class="idx">' + (index + 1) + '</span><div class="info"><b>' + escapeHtml(compactName(job.source)) +
-    '</b><small>' + escapeHtml((job.height || "?")) + 'p → ' + (job.output_height || "?") + 'p · ' + escapeHtml(modelLabel(job.model)) +
-    '</small></div><span class="chip">' + (job.output_height || "—") + 'p</span></div>').join("")
-    : '<div class="empty">Aucune tâche en attente.</div>';
+  let upscaleIndex = 0;
+  $("dashNext").innerHTML = queued.length ? queued.map((job, index) => {
+    const drag = job.kind === "upscale"
+      ? ' draggable="true" data-queue-id="' + job.id + '" data-queue-index="' + (upscaleIndex++) + '"' : "";
+    return '<div class="row"' + drag + '>' +
+      thumbHtml(job.id, "thumb-small") + '<span class="idx">' + (index + 1) + '</span><div class="info"><b>' + escapeHtml(compactName(job.source)) +
+      '</b><small>' + escapeHtml((job.height || "?")) + 'p → ' + (job.output_height || "?") + 'p · ' + escapeHtml(modelLabel(job.model)) +
+      '</small></div><span class="chip">' + (job.output_height || "—") + 'p</span></div>';
+  }).join("") : '<div class="empty">Aucune tâche en attente.</div>';
 
   const recent = jobs.filter(job => ["completed", "failed", "cancelled"].includes(job.status)).slice(0, 3);
   $("dashRecent").innerHTML = recent.length ? recent.map(job => {
@@ -520,7 +531,7 @@ function renderDashboard(data) {
 }
 async function refreshDashboard() {
   try {
-    const data = await api("/api/jobs?limit=30");
+    const data = await api("/api/jobs?limit=30&kind=all");
     renderDashboard(data);
     renderSystem();
   } catch (error) { console.warn(error); }

@@ -340,6 +340,17 @@ def test_cancel_before_claim_wins(env):
     assert db.get_job("aaaaaaaaaaaa")["status"] == "cancelled"
 
 
+def test_jobs_all_includes_previews(env):
+    insert_job("aaaaaaaaaaa1", status="queued", position=1.0)
+    insert_job("bbbbbbbbbbb1", status="queued", position=2.0, kind="preview", priority=100)
+    data = app.test_client().get("/api/jobs?kind=all").get_json()
+    assert {job["id"] for job in data["jobs"]} == {"aaaaaaaaaaa1", "bbbbbbbbbbb1"}
+    assert data["preview_counts"]["queued"] == 1
+    assert [job["id"] for job in data["jobs"]][0] == "bbbbbbbbbbb1"  # aperçu prioritaire
+    previews = app.test_client().get("/api/jobs?kind=preview").get_json()["jobs"]
+    assert [job["id"] for job in previews] == ["bbbbbbbbbbb1"]
+
+
 def test_queue_management(env):
     for index, job_id in enumerate(["aaaaaaaaaaa1", "aaaaaaaaaaa2", "aaaaaaaaaaa3"]):
         insert_job(job_id, position=float(index))

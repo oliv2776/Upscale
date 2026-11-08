@@ -311,12 +311,16 @@ def api_jobs():
         page = max(1, int(request.args.get("page", 1)))
     except ValueError:
         return error("Pagination invalide")
-    where, params = ["kind=?"], [kind if kind in {"upscale", "preview"} else "upscale"]
+    if kind == "all":
+        where, params = [], []
+    else:
+        where, params = ["kind=?"], [kind if kind in {"upscale", "preview"} else "upscale"]
     if status in STATUS_FILTERS:
         where.append("status=?")
         params.append(status)
-    clause = " AND ".join(where)
+    clause = " AND ".join(where) if where else "1=1"
     order = ("CASE status WHEN 'running' THEN 0 WHEN 'queued' THEN 1 ELSE 2 END, "
+             "CASE WHEN status='queued' THEN priority END DESC, "
              "CASE WHEN status='queued' THEN position END ASC, updated_at DESC")
     with db.connect() as conn:
         total = conn.execute(f"SELECT COUNT(*) AS n FROM jobs WHERE {clause}", params).fetchone()["n"]
@@ -324,6 +328,8 @@ def api_jobs():
                             [*params, limit, (page - 1) * limit]).fetchall()
         counts = {row["status"]: row["n"] for row in conn.execute(
             "SELECT status,COUNT(*) AS n FROM jobs WHERE kind='upscale' GROUP BY status").fetchall()}
+        preview_counts = {row["status"]: row["n"] for row in conn.execute(
+            "SELECT status,COUNT(*) AS n FROM jobs WHERE kind='preview' GROUP BY status").fetchall()}
     jobs = []
     for row in rows:
         item = dict(row)
@@ -335,7 +341,8 @@ def api_jobs():
         item["render"] = snapshot.get("render", "ai")
         item["replace_original"] = bool(snapshot.get("replace_original"))
         jobs.append(item)
-    return jsonify({"jobs": jobs, "counts": counts, "total": total, "page": page, "limit": limit,
+    return jsonify({"jobs": jobs, "counts": counts, "preview_counts": preview_counts,
+                    "total": total, "page": page, "limit": limit,
                     "paused": db.is_paused(), "deferred": worker.defer_reason(), "active_job_id": runner.get_active()})
 
 
