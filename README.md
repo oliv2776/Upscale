@@ -34,7 +34,7 @@ Le projet cible notamment les NAS sous Ubuntu équipés d'un GPU AMD compatible 
 - Profils par dossier (ex. Animation → AnimeVideo v3, Films → Plus 1080p HEVC).
 - Aperçu multi-modèles avec comparateur à curseur.
 - **Tableau de bord** : tâche en cours, progression, temps restant, GPU, disque, prochaines tâches et derniers résultats, avec une **miniature extraite de la vidéo**.
-- File d'attente : réordonner (glisser-déposer dans « À suivre », boutons dans la file), relancer, supprimer, filtrer, paginer ; progression et temps restant.
+- File d'attente : réordonner par glisser-déposer (tableau de bord et file, tâches en attente) ou avec les boutons, relancer, supprimer, filtrer, paginer ; progression et temps restant.
 - **Dossier parent** : sélectionne un dossier et tous ses sous-dossiers sont analysés ; les dossiers source imbriqués sont fusionnés et la destination peut être un sous-dossier de la source (elle est exclue du scan).
 - Dossier surveillé, plage horaire (ex. 22 h – 7 h), notifications ntfy / Gotify / webhook, actualisation Jellyfin / Plex, suffixe de nom de fichier.
 - Statistiques GPU en direct (charge, température, VRAM, puissance).
@@ -145,7 +145,7 @@ Au premier traitement, Docker peut télécharger l'image Video2X (plusieurs Go).
 2. **Aperçu** : choisis une vidéo, un instant de départ et quelques modèles, puis **Générer l'aperçu**. Les aperçus passent devant la file (même en pause), et restent visibles dans la file et sur le tableau de bord avec un badge **Aperçu**. Compare ensuite deux variantes avec le curseur ; l'original agrandi sans IA sert de référence. Les **aperçus récents** sont listés sous le comparateur : **Supprimer** efface l'aperçu et ses fichiers.
 3. **Profils par dossier** (facultatif) : par exemple /data/videos/Animation → AnimeVideo v3. Un fichier utilise le profil du dossier le plus précis qui le contient ; les champs « Global » reprennent les réglages généraux.
 4. **Analyser les vidéos** compte les fichiers éligibles ; **Lancer le traitement** les met en file. Un dossier parent suffit : les sous-dossiers sont inclus (option **Inclure tous les sous-dossiers**). Si des sous-dossiers sont déjà listés, choisir le parent les fusionne ; la destination peut être un sous-dossier de la source, elle est ignorée par l'analyse.
-5. **File de traitement** : suis la progression par segment, réordonne (⤒ ↑ ↓), relance, supprime ou consulte les journaux. Pour une vidéo terminée, **Remplacer l'original** déplace sa sortie du dossier de destination à la place de l'original (ou **Remplacer les originaux** pour toutes les tâches terminées) ; l'original va dans la corbeille selon `trash_days`.
+5. **File de traitement** : suis la progression par segment, réordonne les tâches **en attente** par glisser-déposer (ou ⤒ ↑ ↓), relance, supprime ou consulte les journaux. Pour une vidéo terminée, **Remplacer l'original** déplace sa sortie du dossier de destination à la place de l'original (ou **Remplacer les originaux** pour toutes les tâches terminées) ; l'original va dans la corbeille selon `trash_days`.
 
 Les sorties reprennent l'arborescence du dossier source en .mkv, avec le suffixe éventuel (Film (2001).avi → Film (2001) - 720p IA.mkv). Si deux sources du même dossier ne diffèrent que par l'extension (film.avi et film.mp4), les sorties deviennent film.avi.mkv et film.mp4.mkv. Les vidéos déjà présentes à destination ou déjà traitées (même chemin, taille et date) sont ignorées.
 

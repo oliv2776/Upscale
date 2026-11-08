@@ -444,6 +444,28 @@ def restore(job_id: str) -> None:
     db.log_line(job_id, f"[{db.now()}] Original restauré : {original}")
 
 
+def move_relative(job_id: str, target_id: str, where: str) -> None:
+    """Place une tâche en attente avant/après une autre (glisser-déposer de la file)."""
+    if where not in {"before", "after"}:
+        raise ValueError("Déplacement invalide")
+    with db.connect() as conn:
+        queued = conn.execute("SELECT id FROM jobs WHERE status='queued' AND kind='upscale' "
+                              "ORDER BY position ASC").fetchall()
+        ids = [row["id"] for row in queued]
+        if job_id not in ids:
+            raise ValueError("Seules les tâches en attente peuvent être déplacées")
+        if target_id not in ids:
+            raise ValueError("La tâche cible n'est plus en attente")
+        if job_id == target_id:
+            return
+        ids.remove(job_id)
+        index = ids.index(target_id) + (1 if where == "after" else 0)
+        ids.insert(index, job_id)
+        for position, queued_id in enumerate(ids):
+            conn.execute("UPDATE jobs SET position=?,updated_at=? WHERE id=?",
+                         (float(position), db.now(), queued_id))
+
+
 def move_to(job_id: str, index: int) -> None:
     """Place une tâche en attente à l'index donné (glisser-déposer)."""
     with db.connect() as conn:

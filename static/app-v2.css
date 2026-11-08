@@ -311,3 +311,7 @@ td{border-bottom-color:#f1ebe1}
 #preview .field.grow{min-width:0}
 .chip.preview-chip{background:#eef0fb;border-color:#dfe3fb;color:#4b5bd6;margin-right:6px;
   font-size:9px;letter-spacing:.05em;vertical-align:middle}
+#jobsBody tr[draggable="true"]{cursor:grab}
+#jobsBody tr.dragging{opacity:.45}
+#jobsBody tr.drop-before td{border-top:2px solid var(--accent)}
+#jobsBody tr.drop-after td{border-bottom:2px solid var(--accent)}

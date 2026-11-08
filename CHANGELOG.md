@@ -3,6 +3,16 @@
 Toutes les évolutions notables sont consignées ici. Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet utilise le [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [2.16.0] — 2026-11-08
+
+### Ajouté
+
+- **Glisser-déposer dans la file de traitement** : les tâches en attente (upscales) peuvent être
+  déplacées avant ou après une autre tâche, y compris entre les pages. Les tâches en cours, terminées,
+  échouées ou annulées et les aperçus ne sont pas déplaçables.
+- L'API `POST /api/jobs/<id>/move` accepte maintenant `{"to":"before"|"after","id":"<tâche cible>"}`,
+  ce qui évite de calculer un index global.
+
 ## [2.15.1] — 2026-11-08
 
 ### Corrigé

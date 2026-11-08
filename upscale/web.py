@@ -435,7 +435,12 @@ def api_move(job_id: str):
     try:
         payload = json_body()
         where = str(payload.get("to", ""))
-        if where == "index":
+        if where in {"before", "after"}:
+            target = str(payload.get("id", ""))
+            if not valid_job_id(target):
+                return error("Tâche cible invalide")
+            worker.move_relative(job_id, target, where)
+        elif where == "index":
             try:
                 index = int(payload.get("index"))
             except (TypeError, ValueError):

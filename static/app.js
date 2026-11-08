@@ -382,6 +382,7 @@ function jobActions(job) {
   return parts.join("");
 }
 async function refreshJobs() {
+  if (state.queueDrag) return;
   try {
     const query = "?limit=" + state.limit + "&page=" + state.page + "&kind=all" +
       (state.filter ? "&status=" + state.filter : "");
@@ -393,7 +394,8 @@ async function refreshJobs() {
     $("queuedHint").textContent = data.deferred ? data.deferred : "Vidéos dans la file";
     const previewActive = (previews.queued || 0) + (previews.running || 0);
     $("queueInfo").textContent = (data.deferred ? "⏸ " + data.deferred + " — les aperçus restent possibles." : "Suivez les tâches et consultez les journaux en cas de problème.")
-      + (previewActive ? " · " + previewActive + " aperçu(s) dans la file." : "");
+      + (previewActive ? " · " + previewActive + " aperçu(s) dans la file." : "")
+      + " Glisse une tâche en attente pour réordonner.";
     $("pauseBtn").classList.toggle("hidden", data.paused); $("resumeBtn").classList.toggle("hidden", !data.paused);
     state.total = data.total;
     const pages = Math.max(1, Math.ceil(data.total / state.limit));
@@ -412,7 +414,9 @@ async function refreshJobs() {
       const trash = job.trash_path ? '<br><small class="muted" title="' + escapeHtml(job.trash_path) + '">original dans la corbeille</small>' : "";
       const warning = job.warning ? '<br><small class="warn" title="' + escapeHtml(job.warning) + '">⚠ ' + escapeHtml(job.warning.slice(0, 120)) + "</small>" : "";
       const err = job.error ? '<br><small title="' + escapeHtml(job.error) + '">' + escapeHtml(job.error.slice(0, 120)) + "</small>" : "";
-      return '<tr><td title="' + escapeHtml(job.source) + '">' + previewTag + escapeHtml(name) + '<br><small class="muted">' + (job.width || "—") + " × " + (job.height || "—") + "</small></td>" +
+      const drag = job.kind === "upscale" && job.status === "queued"
+        ? ' draggable="true" data-queue-id="' + job.id + '"' : "";
+      return '<tr' + drag + '><td title="' + escapeHtml(job.source) + '">' + previewTag + escapeHtml(name) + '<br><small class="muted">' + (job.width || "—") + " × " + (job.height || "—") + "</small></td>" +
         "<td><small>" + escapeHtml(conf) + "</small>" + profile + "</td>" +
         '<td><span class="status ' + escapeHtml(job.status) + '">' + escapeHtml(labels[job.status] || job.status) + "</span></td>" +
         "<td>" + escapeHtml(job.stage || "—") + progressHtml(job) + trash + warning + err + "</td>" +
@@ -813,6 +817,54 @@ function showView(name, updateHash = true) {
   window.scrollTo({ top: 0, behavior: "auto" });
   setTimeout(() => window.scrollTo({ top: 0, behavior: "auto" }), 60);
 }
+let queueDragId = null;
+function setupQueueDrag() {
+  const body = $("jobsBody");
+  if (!body) return;
+  body.addEventListener("dragstart", event => {
+    const row = event.target.closest("tr[data-queue-id]");
+    if (!row) return;
+    queueDragId = row.dataset.queueId;
+    state.queueDrag = true;
+    row.classList.add("dragging");
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", queueDragId);
+  });
+  body.addEventListener("dragend", () => {
+    queueDragId = null;
+    state.queueDrag = false;
+    body.querySelectorAll(".dragging,.drop-before,.drop-after").forEach(el =>
+      el.classList.remove("dragging", "drop-before", "drop-after"));
+    refreshJobs();
+  });
+  body.addEventListener("dragover", event => {
+    const row = event.target.closest("tr[data-queue-id]");
+    if (!row || !queueDragId || row.dataset.queueId === queueDragId) return;
+    event.preventDefault();
+    const rect = row.getBoundingClientRect();
+    const before = event.clientY < rect.top + rect.height / 2;
+    body.querySelectorAll(".drop-before,.drop-after").forEach(el =>
+      el.classList.remove("drop-before", "drop-after"));
+    row.classList.add(before ? "drop-before" : "drop-after");
+  });
+  body.addEventListener("drop", async event => {
+    const row = event.target.closest("tr[data-queue-id]");
+    if (!row || !queueDragId) return;
+    event.preventDefault();
+    const rect = row.getBoundingClientRect();
+    const before = event.clientY < rect.top + rect.height / 2;
+    const moved = queueDragId, target = row.dataset.queueId;
+    queueDragId = null;
+    state.queueDrag = false;
+    if (moved === target) { refreshJobs(); return; }
+    try {
+      await post("/api/jobs/" + moved + "/move", { to: before ? "before" : "after", id: target });
+      toast("Ordre de la file mis à jour");
+      await refreshJobs();
+    } catch (error) { toast(error.message); await refreshJobs(); }
+  });
+}
+
 let draggedJobId = null;
 function setupDashboardDrag() {
   const list = $("dashNext");
@@ -1009,6 +1061,7 @@ $("videoLeft").addEventListener("seeked", () => { $("videoRight").currentTime = 
 (async function init() {
   setupNav();
   setupDashboardDrag();
+  setupQueueDrag();
   try {
     const data = await api("/api/config"); state.models = data.models; fillModelSelects(); applySettings(data.settings); renderDisks(data.disks || []); applyAuthState(data.auth);
     reloadModels().catch(e => console.warn(e));

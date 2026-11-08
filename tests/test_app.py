@@ -386,6 +386,22 @@ def test_move_to_index(env):
     assert client.post("/api/jobs/aaaaaaaaaaa1/move", json={"to": "index", "index": "x"}).status_code == 400
 
 
+def test_move_relative_before_and_after(env):
+    for index, job_id in enumerate(["aaaaaaaaaaa1", "aaaaaaaaaaa2", "aaaaaaaaaaa3"]):
+        insert_job(job_id, position=float(index))
+    client = app.test_client()
+    assert client.post("/api/jobs/aaaaaaaaaaa3/move",
+                       json={"to": "before", "id": "aaaaaaaaaaa1"}).status_code == 200
+    assert [job["id"] for job in client.get("/api/jobs?status=queued").get_json()["jobs"]] == \
+        ["aaaaaaaaaaa3", "aaaaaaaaaaa1", "aaaaaaaaaaa2"]
+    assert client.post("/api/jobs/aaaaaaaaaaa3/move",
+                       json={"to": "after", "id": "aaaaaaaaaaa2"}).status_code == 200
+    assert [job["id"] for job in client.get("/api/jobs?status=queued").get_json()["jobs"]] == \
+        ["aaaaaaaaaaa1", "aaaaaaaaaaa2", "aaaaaaaaaaa3"]
+    assert client.post("/api/jobs/aaaaaaaaaaa1/move",
+                       json={"to": "before", "id": "ffffffffffff"}).status_code == 400
+
+
 def test_previews_jump_the_queue_and_ignore_pause(env):
     insert_job("aaaaaaaaaaa1", position=1.0)
     insert_job("bbbbbbbbbbb1", position=2.0, kind="preview", priority=100)
