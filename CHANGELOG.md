@@ -3,6 +3,16 @@
 Toutes les évolutions notables sont consignées ici. Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet utilise le [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [2.14.0] — 2026-11-08
+
+### Modifié
+
+- **Analyse beaucoup plus rapide** : les ffprobe manquants sont lancés en parallèle
+  (`UPSCALE_SCAN_WORKERS`, 4 par défaut) au lieu d'un par un.
+- Les fichiers déjà connus, déjà produits, ou dont la sortie existe ne sont plus sondés du tout ;
+  le cache de dimensions est préchargé en une requête.
+- La progression affiche la phase « Lecture des métadonnées » avec son avancement, au lieu de rester à 100 %.
+
 ## [2.13.0] — 2026-11-08
 
 ### Ajouté

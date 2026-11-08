@@ -86,6 +86,11 @@ PUID = _int_or_none(_env("PUID"))
 PGID = _int_or_none(_env("PGID"))
 
 LOG_RETENTION_DAYS = int(_env("UPSCALE_LOG_RETENTION_DAYS", "90"))
+# Nombre de ffprobe simultanés pendant l'analyse d'une grande bibliothèque.
+try:
+    SCAN_WORKERS = max(1, min(int(_env("UPSCALE_SCAN_WORKERS", "4")), 16))
+except ValueError:
+    SCAN_WORKERS = 4
 PREVIEW_KEEP = int(_env("UPSCALE_PREVIEW_KEEP", "10"))
 SYSFS_DRM = Path(_env("UPSCALE_SYSFS_DRM", "/sys/class/drm"))
 

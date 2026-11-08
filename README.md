@@ -290,6 +290,7 @@ N'expose pas le port 11434 sur Internet.
 | UPSCALE_ALLOW_PRIVATE_MODEL_URLS | 0 | Autorise les liens de modèles vers des adresses privées (miroir interne) |
 | UPSCALE_CONVERTER_DROP_PRIVILEGES | 1 | Exécute la conversion des modèles en « nobody » (setpriv) quand le conteneur est root |
 | UPSCALE_UPDATE_CHECK | 1 | Vérifie les nouvelles releases GitHub dans **Système** (0 pour un NAS hors ligne) |
+| UPSCALE_SCAN_WORKERS | 4 | Nombre de ffprobe simultanés pendant l'analyse d'une grande bibliothèque (1 à 16) |
 | UPSCALE_MIN_FREE_GB | 5 | Espace libre minimal conservé |
 | UPSCALE_SEGMENT_SECONDS | 180 | Durée des segments |
 | UPSCALE_LOG_RETENTION_DAYS | 90 | Conservation des journaux des tâches terminées |

@@ -321,7 +321,10 @@ function showScanResult(text, isError = false) {
 }
 function describeScan(s) {
   if (s.error) return s.error;
-  if (s.running) return "Analyse en cours… " + (s.total ? s.checked + " / " + s.total + " fichier(s) vidéo examiné(s)" : "recherche des fichiers");
+  if (s.running) {
+    const phase = s.phase ? " · " + s.phase + (s.probe_total ? " " + s.probe_done + " / " + s.probe_total : "") : "";
+    return "Analyse en cours… " + (s.total ? s.checked + " / " + s.total + " fichier(s) vidéo examiné(s)" : "recherche des fichiers") + phase;
+  }
   let text = (s.origin === "watch" ? "Analyse automatique : " : "") + s.found + " vidéo(s) éligible(s) sur " + s.checked + " fichier(s) vidéo.";
   if (s.already_known) text += " " + s.already_known + " déjà en file ou traitée(s).";
   if (s.too_recent) text += " " + s.too_recent + " en cours de copie, ignorée(s) pour l'instant.";

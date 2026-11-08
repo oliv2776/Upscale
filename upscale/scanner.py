@@ -9,10 +9,11 @@ import time
 import uuid
 from collections import Counter
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
-from . import db, media
+from . import config, db, media
 from . import settings as settings_mod
 
 scan_state: dict[str, Any] = {"running": False}
@@ -101,7 +102,8 @@ def source_labels(sources: list[Path]) -> dict[Path, str]:
 
 
 def scan_files(settings: dict[str, Any], progress: Callable[[int, int], None] | None = None,
-               min_age_seconds: float = 0) -> dict[str, Any]:
+               min_age_seconds: float = 0,
+               on_probe: Callable[[int, int], None] | None = None) -> dict[str, Any]:
     sources, destination_root = settings_mod.validate_folders(settings)
     labels = source_labels(sources)
     candidates = [(source, path) for source in sources
@@ -110,6 +112,7 @@ def scan_files(settings: dict[str, Any], progress: Callable[[int, int], None] | 
     stems = Counter((p.parent, p.stem.lower()) for _, p in candidates)
     suffix = settings.get("output_suffix", "")
     replace = bool(settings.get("replace_original"))
+    max_input = int(settings["max_input_height"])
     files: list[dict[str, Any]] = []
     already_known = too_recent = 0
     with db.connect() as conn:
@@ -123,6 +126,10 @@ def scan_files(settings: dict[str, Any], progress: Callable[[int, int], None] | 
         # Fichiers produits par Upscale : à ne jamais retraiter (indispensable en mode remplacement).
         produced = {destination for status, destination, _ in known.values() if status == "completed"}
         intent = (settings.get("destination"), suffix, replace)
+        # Cache des dimensions : évite un ffprobe par fichier à chaque analyse.
+        cache = {row["path"]: (row["size"], row["mtime_ns"], row["width"], row["height"])
+                 for row in conn.execute("SELECT path,size,mtime_ns,width,height FROM probe_cache")}
+        pending: list[dict[str, Any]] = []
         for index, (source_root, path) in enumerate(candidates, 1):
             if progress and (index % 10 == 0 or index == len(candidates)):
                 progress(index, len(candidates))
@@ -132,12 +139,6 @@ def scan_files(settings: dict[str, Any], progress: Callable[[int, int], None] | 
                 stat = path.stat()
                 if min_age_seconds and time.time() - stat.st_mtime < min_age_seconds:
                     too_recent += 1  # fichier probablement en cours de copie
-                    continue
-                dims = cached_dimensions(conn, path, stat)
-                if not dims:
-                    continue
-                width, height = dims
-                if height > int(settings["max_input_height"]) or height < 120:
                     continue
                 rel = path.relative_to(source_root)
                 ambiguous = stems[(path.parent, path.stem.lower())] > 1
@@ -162,14 +163,49 @@ def scan_files(settings: dict[str, Any], progress: Callable[[int, int], None] | 
                         or (previous_intent == intent and previous and Path(previous).exists()))):
                     already_known += 1
                     continue
-                files.append({
-                    "source": str(path), "relative": rel.as_posix(), "destination": str(output),
-                    "width": width, "height": height, "size": stat.st_size, "mtime_ns": stat.st_mtime_ns,
-                })
+                item = {"source": str(path), "relative": rel.as_posix(), "destination": str(output),
+                        "size": stat.st_size, "mtime_ns": stat.st_mtime_ns, "path": path}
+                cached = cache.get(str(path))
+                if cached and cached[0] == stat.st_size and cached[1] == stat.st_mtime_ns:
+                    item["dims"] = (cached[2], cached[3]) if cached[2] else None
+                pending.append(item)
             except (OSError, ValueError):
                 continue
-            if index % 50 == 0:
-                conn.commit()
+
+        # Les ffprobe manquants sont lancés en parallèle : c'est la partie lente d'une première analyse.
+        missing = [item for item in pending if "dims" not in item]
+        if missing:
+            workers = max(1, min(config.SCAN_WORKERS, len(missing)))
+            if on_probe:
+                on_probe(0, len(missing))
+            done = 0
+            with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="upscale-probe") as pool:
+                futures = {pool.submit(media.probe_dimensions, item["path"]): item for item in missing}
+                for future in as_completed(futures):
+                    item = futures[future]
+                    try:
+                        dims = future.result()
+                    except Exception:  # noqa: BLE001 - un fichier illisible ne doit pas arrêter l'analyse
+                        dims = None
+                    item["dims"] = dims
+                    conn.execute("""INSERT OR REPLACE INTO probe_cache(path,size,mtime_ns,width,height,updated_at)
+                                    VALUES(?,?,?,?,?,?)""",
+                                 (item["source"], item["size"], item["mtime_ns"],
+                                  dims[0] if dims else None, dims[1] if dims else None, db.now()))
+                    done += 1
+                    if on_probe:
+                        on_probe(done, len(missing))
+
+        for item in pending:
+            dims = item.get("dims")
+            if not dims:
+                continue
+            width, height = dims
+            if height > max_input or height < 120:
+                continue
+            files.append({"source": item["source"], "relative": item["relative"],
+                          "destination": item["destination"], "width": width, "height": height,
+                          "size": item["size"], "mtime_ns": item["mtime_ns"]})
     return {"files": files, "already_known": already_known, "too_recent": too_recent, "checked": len(candidates)}
 
 
@@ -225,8 +261,12 @@ def _run_scan(settings: dict[str, Any], enqueue_files: bool, min_age_seconds: fl
         with _lock:
             scan_state.update(checked=done, total=total)
 
+    def probe(done: int, total: int) -> None:
+        with _lock:
+            scan_state.update(phase="Lecture des métadonnées", probe_done=done, probe_total=total)
+
     try:
-        result = scan_files(settings, progress, min_age_seconds)
+        result = scan_files(settings, progress, min_age_seconds, probe)
         update: dict[str, Any] = {
             "found": len(result["files"]), "already_known": result["already_known"],
             "too_recent": result["too_recent"], "checked": result["checked"], "total": result["checked"],
@@ -236,7 +276,7 @@ def _run_scan(settings: dict[str, Any], enqueue_files: bool, min_age_seconds: fl
         if enqueue_files:
             update.update(enqueue(result["files"], settings))
         with _lock:
-            scan_state.update(update, running=False, finished_at=db.now())
+            scan_state.update(update, running=False, phase=None, finished_at=db.now())
     except Exception as exc:  # noqa: BLE001
         with _lock:
             scan_state.update(running=False, error=str(exc), finished_at=db.now())
@@ -249,7 +289,7 @@ def start_scan(settings: dict[str, Any], enqueue_files: bool, *, min_age_seconds
             return False
         scan_state.clear()
         scan_state.update(running=True, enqueue=enqueue_files, checked=0, total=0, origin=origin,
-                          started_at=db.now(), error=None)
+                          started_at=db.now(), error=None, phase=None, probe_done=0, probe_total=0)
     threading.Thread(target=_run_scan, args=(settings, enqueue_files, min_age_seconds), daemon=True).start()
     return True
 
