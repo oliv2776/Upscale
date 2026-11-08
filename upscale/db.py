@@ -46,6 +46,7 @@ def init_db() -> None:
     migrate_legacy_files()
     config.log_dir().mkdir(parents=True, exist_ok=True)
     config.preview_dir().mkdir(parents=True, exist_ok=True)
+    config.thumbnail_dir().mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(config.db_path(), timeout=30)
     try:
         conn.execute("PRAGMA journal_mode=WAL")

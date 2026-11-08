@@ -6,6 +6,12 @@ Le projet cible notamment les NAS sous Ubuntu équipés d'un GPU AMD compatible 
 
 > La qualité dépend surtout du modèle et de la source. Utilise **Aperçu** pour comparer les modèles sur un extrait avant de lancer toute ta bibliothèque.
 
+## Aperçu
+
+![Tableau de bord d'Upscale](docs/ui-2.13-dashboard.png)
+
+*Capture de démonstration : la miniature de la tâche en cours est extraite de la vidéo elle-même.*
+
 ## Fonctionnalités
 
 **Qualité**
@@ -26,7 +32,7 @@ Le projet cible notamment les NAS sous Ubuntu équipés d'un GPU AMD compatible 
 **Organisation**
 - Profils par dossier (ex. Animation → AnimeVideo v3, Films → Plus 1080p HEVC).
 - Aperçu multi-modèles avec comparateur à curseur.
-- **Tableau de bord** : tâche en cours, progression, temps restant, GPU, disque, prochaines tâches et derniers résultats.
+- **Tableau de bord** : tâche en cours, progression, temps restant, GPU, disque, prochaines tâches et derniers résultats, avec une **miniature extraite de la vidéo**.
 - File d'attente : réordonner (glisser-déposer dans « À suivre », boutons dans la file), relancer, supprimer, filtrer, paginer ; progression et temps restant.
 - **Dossier parent** : sélectionne un dossier et tous ses sous-dossiers sont analysés ; les dossiers source imbriqués sont fusionnés et la destination peut être un sous-dossier de la source (elle est exclue du scan).
 - Dossier surveillé, plage horaire (ex. 22 h – 7 h), notifications ntfy / Gotify / webhook, actualisation Jellyfin / Plex, suffixe de nom de fichier.

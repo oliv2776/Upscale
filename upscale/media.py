@@ -72,6 +72,14 @@ def parse_ratio(raw: Any, default: float = 0.0) -> float:
         return default
 
 
+def probe_duration(path: Path) -> float:
+    try:
+        data = ffprobe_json(path, "-show_entries", "format=duration", timeout=30)
+    except (ProbeError, OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
+        return 0.0
+    return parse_ratio(data.get("format", {}).get("duration"))
+
+
 def probe_source(path: Path) -> dict[str, Any]:
     data = ffprobe_json(path, "-show_entries",
                         "stream=index,codec_type,codec_name,width,height,sample_aspect_ratio,field_order,"

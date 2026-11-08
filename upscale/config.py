@@ -106,6 +106,10 @@ def preview_dir() -> Path:
     return STATE_DIR / "previews"
 
 
+def thumbnail_dir() -> Path:
+    return STATE_DIR / "thumbnails"
+
+
 def converter_dir() -> Path:
     return STATE_DIR / "convertisseur"
 

@@ -3,7 +3,7 @@
 > Objectif : passer d'une **page de présentation** à une **console d'exploitation** lisible en un coup d'œil,
 > utilisable au quotidien sur un NAS, en desktop comme sur mobile.
 >
-> **Statut (2.11)** : l'itération 1 est implémentée (vues, rail de statut, tableau de bord, carte tâche
+> **Statut (2.13)** : thème chaleureux et miniatures vidéo ajoutés ; l'itération 1 est implémentée (vues, rail de statut, tableau de bord, carte tâche
 > active, barre d'action fixe) ainsi que la suppression des aperçus. Les itérations 2 à 4 restent à faire.
 >
 > Maquette interactive : [`ui-mockup.html`](ui-mockup.html) (ouvrir dans un navigateur).

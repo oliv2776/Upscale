@@ -212,7 +212,8 @@ def purge_trash(moment: float | None = None) -> int:
 def maintenance() -> dict[str, int]:
     """Supprime les vieux journaux, le cache ffprobe obsolète, les anciens aperçus et la corbeille expirée ;
     corrige les propriétaires."""
-    removed = {"logs": 0, "probe_cache": 0, "previews": 0, "owners": fix_ownership(), "trash": purge_trash()}
+    removed = {"logs": 0, "probe_cache": 0, "previews": 0, "thumbnails": 0,
+               "owners": fix_ownership(), "trash": purge_trash()}
     cutoff = (datetime.now(UTC) - timedelta(days=config.LOG_RETENTION_DAYS)).isoformat()
     with db.connect() as conn:
         jobs = {row["id"]: row for row in conn.execute("SELECT id,status,updated_at FROM jobs")}
@@ -234,6 +235,11 @@ def maintenance() -> dict[str, int]:
             conn.execute("DELETE FROM jobs WHERE id=?", (row["id"],))
             removed["previews"] += 1
         known_previews = {row["id"] for row in conn.execute("SELECT id FROM jobs WHERE kind='preview'")}
+        known_jobs = {row["id"] for row in conn.execute("SELECT id FROM jobs")}
+    for path in config.thumbnail_dir().glob("*.jpg"):
+        if path.stem not in known_jobs:
+            path.unlink(missing_ok=True)
+            removed["thumbnails"] += 1
     for folder in config.preview_dir().glob("*"):
         if folder.is_dir() and folder.name not in known_previews:
             pipeline.remove_tree(folder)

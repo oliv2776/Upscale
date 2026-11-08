@@ -397,6 +397,7 @@ def test_watch_tick(env, monkeypatch):
 def test_maintenance(env, monkeypatch):
     monkeypatch.setattr(config, "PREVIEW_KEEP", 1)
     (config.log_dir() / "ffffffffffff.log").write_text("orphelin")
+    (config.thumbnail_dir() / "orphelin.jpg").write_bytes(b"x")
     with db.connect() as conn:
         conn.execute("INSERT INTO probe_cache VALUES('/nexiste/pas.mkv',1,1,10,10,?)", (db.now(),))
     for index in range(3):
@@ -405,7 +406,8 @@ def test_maintenance(env, monkeypatch):
         (config.preview_dir() / job_id).mkdir(parents=True)
         db.set_job(job_id, updated_at=f"2026-01-0{index + 1}T00:00:00+00:00")
     result = worker.maintenance()
-    assert result == {"logs": 1, "probe_cache": 1, "previews": 2, "owners": 0, "trash": 0}
+    assert result == {"logs": 1, "probe_cache": 1, "previews": 2, "thumbnails": 1,
+                      "owners": 0, "trash": 0}
     assert sorted(p.name for p in config.preview_dir().iterdir()) == ["ccccccccccc2"]
 
 
@@ -1061,6 +1063,29 @@ def test_verify_output_reports_problems(env):
 
 
 @needs_ffmpeg
+@needs_ffmpeg
+def test_job_thumbnail_is_extracted_from_the_video(env):
+    source = env / "videos" / "film.mkv"
+    make_video(source, width=320, height=240)
+    job_id = "cccccccccccc"
+    with db.connect() as conn:
+        conn.execute("""INSERT INTO jobs(id,source,destination,source_size,source_mtime_ns,status,stage,
+                        created_at,updated_at,kind) VALUES(?,?,?,1,1,'queued','En attente',?,?,'upscale')""",
+                     (job_id, str(source), str(env / "out" / "film.mkv"), db.now(), db.now()))
+    client = app.test_client()
+    response = client.get(f"/api/jobs/{job_id}/thumbnail")
+    assert response.status_code == 200
+    assert response.mimetype == "image/jpeg" and len(response.data) > 1000
+    thumb = config.thumbnail_dir() / f"{job_id}.jpg"
+    assert thumb.exists()
+    mtime = thumb.stat().st_mtime_ns
+    assert client.get(f"/api/jobs/{job_id}/thumbnail").status_code == 200
+    assert thumb.stat().st_mtime_ns == mtime
+    assert client.get("/api/jobs/dddddddddddd/thumbnail").status_code == 404
+    db.set_job(job_id, source=str(env / "videos" / "absent.mkv"))
+    assert client.get(f"/api/jobs/{job_id}/thumbnail").status_code == 404
+
+
 def test_preview_delete_removes_files(env):
     job_id = "eeeeeeeeeeee"
     folder = config.preview_dir() / job_id

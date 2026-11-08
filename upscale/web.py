@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from flask import Flask, Response, jsonify, request, send_from_directory
+from flask import Flask, Response, jsonify, request, send_file, send_from_directory
 
 from . import config, converter, db, gpu, media, models, notify, ollama, runner, scanner, updates, worker
 from . import settings as settings_mod
@@ -464,6 +464,43 @@ def api_preview():
         return jsonify({"ok": True, "id": job_id}), 202
     except (ValueError, OSError) as exc:
         return error(str(exc))
+
+
+@app.get("/api/jobs/<job_id>/thumbnail")
+def api_job_thumbnail(job_id: str):
+    """Première image utile de la vidéo source (miniature du tableau de bord)."""
+    if not valid_job_id(job_id):
+        return error("Tâche introuvable", 404)
+    job = db.get_job(job_id)
+    if not job:
+        return error("Tâche introuvable", 404)
+    source = Path(job["source"])
+    try:
+        source_stat = source.stat()
+    except OSError:
+        return error("Vidéo source introuvable", 404)
+    folder = config.thumbnail_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / f"{job_id}.jpg"
+    try:
+        fresh = target.exists() and target.stat().st_mtime >= source_stat.st_mtime
+    except OSError:
+        fresh = False
+    if not fresh:
+        temp = folder / f".{job_id}.{uuid.uuid4().hex[:8]}.jpg"
+        try:
+            seconds = media.probe_duration(source)
+            at = min(max(seconds * 0.2, 0.0), 120.0) if seconds > 0 else 5.0
+            result = subprocess.run(media.frame_extract_command(source, temp, at),
+                                    capture_output=True, timeout=30)
+            if result.returncode != 0 or not temp.exists() or temp.stat().st_size == 0:
+                temp.unlink(missing_ok=True)
+                return error("Aucune image extraite", 404)
+            temp.replace(target)
+        except (OSError, subprocess.TimeoutExpired):
+            temp.unlink(missing_ok=True)
+            return error("Extraction impossible", 404)
+    return send_file(target, mimetype="image/jpeg", conditional=True, max_age=3600)
 
 
 @app.get("/api/previews")

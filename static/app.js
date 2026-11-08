@@ -430,6 +430,18 @@ function renderSystem() {
   $("dashTemp").textContent = gpu && gpu.temperature_c != null ? Math.round(gpu.temperature_c) + " °C" : "—";
   renderDiskRail();
 }
+function thumbHtml(id, className) {
+  return '<div class="' + className + '"><span class="thumb-fallback"><svg><use href="#i-film"/></svg></span>' +
+    '<img data-thumb loading="lazy" src="/api/jobs/' + id + '/thumbnail" alt=""></div>';
+}
+function attachThumbFallbacks() {
+  document.querySelectorAll("img[data-thumb]").forEach(img => {
+    if (img.dataset.bound) return;
+    img.dataset.bound = "1";
+    if (img.complete && img.naturalWidth === 0) { img.remove(); return; }
+    img.addEventListener("error", () => img.remove(), { once: true });
+  });
+}
 function renderDashboard(data) {
   const jobs = data.jobs || [], counts = data.counts || {};
   state.paused = !!data.paused;
@@ -457,7 +469,7 @@ function renderDashboard(data) {
     $("dashJobState").textContent = running.segments_total ? "Segment " + (running.segments_done || 0) + "/" + running.segments_total : "En cours";
     $("scanHero").classList.add("hidden");
     $("dashJobBody").innerHTML =
-      '<div class="job-top"><div class="job-thumb"></div><div style="min-width:0;flex:1">' +
+      '<div class="job-top">' + thumbHtml(running.id, "job-thumb") + '<div style="min-width:0;flex:1">' +
       '<p class="job-title">' + escapeHtml(compactName(running.source)) + '</p><div class="job-sub">' +
       (running.output_height ? '<span class="chip red">' + escapeHtml((running.height || "?")) + 'p → ' + running.output_height + 'p</span>' : "") +
       '<span class="chip">' + escapeHtml(model) + '</span>' +
@@ -484,7 +496,7 @@ function renderDashboard(data) {
   const queued = jobs.filter(job => job.status === "queued").slice(0, 3);
   $("dashNext").innerHTML = queued.length ? queued.map((job, index) =>
     '<div class="row" draggable="true" data-queue-id="' + job.id + '" data-queue-index="' + index + '">' +
-    '<span class="idx">' + (index + 1) + '</span><div class="info"><b>' + escapeHtml(compactName(job.source)) +
+    thumbHtml(job.id, "thumb-small") + '<span class="idx">' + (index + 1) + '</span><div class="info"><b>' + escapeHtml(compactName(job.source)) +
     '</b><small>' + escapeHtml((job.height || "?")) + 'p → ' + (job.output_height || "?") + 'p · ' + escapeHtml(modelLabel(job.model)) +
     '</small></div><span class="chip">' + (job.output_height || "—") + 'p</span></div>').join("")
     : '<div class="empty">Aucune tâche en attente.</div>';
@@ -492,12 +504,14 @@ function renderDashboard(data) {
   const recent = jobs.filter(job => ["completed", "failed", "cancelled"].includes(job.status)).slice(0, 3);
   $("dashRecent").innerHTML = recent.length ? recent.map(job => {
     const ok = job.status === "completed";
-    return '<div class="row"><svg class="' + (ok ? "ok-ic" : "err-ic") + '"><use href="#' + (ok ? "i-check" : "i-alert") + '"/></svg>' +
+    return '<div class="row">' + thumbHtml(job.id, "thumb-small") +
+      '<svg class="' + (ok ? "ok-ic" : "err-ic") + '"><use href="#' + (ok ? "i-check" : "i-alert") + '"/></svg>' +
       '<div class="info"><b>' + escapeHtml(compactName(job.source)) + '</b><small>' + escapeHtml((job.output_height || "?")) +
       'p · ' + escapeHtml(modelLabel(job.model)) + (job.warning ? " · ⚠" : "") + '</small></div>' +
       '<span class="chip ' + (ok ? "green" : "amber") + '">' + (ok ? "Terminé" : job.status === "failed" ? "Erreur" : "Annulé") + '</span>' +
       '<button class="btn" data-dash="logs" data-id="' + job.id + '">Logs</button></div>';
   }).join("") : '<div class="empty">Aucun résultat pour le moment.</div>';
+  attachThumbFallbacks();
 }
 async function refreshDashboard() {
   try {

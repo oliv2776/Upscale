@@ -3,6 +3,20 @@
 Toutes les évolutions notables sont consignées ici. Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet utilise le [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [2.13.0] — 2026-11-08
+
+### Ajouté
+
+- **Miniatures extraites de la vidéo source** (`GET /api/jobs/<id>/thumbnail`) : affichées dans la tâche
+  en cours, « À suivre » et « Derniers résultats », avec repli visuel si la vidéo n'est plus accessible.
+- **Thème visuel chaleureux** : barre latérale claire, fond crème, cartes arrondies, icônes de statistiques,
+  boutons et champs plus doux, bandeau mode réseau local allégé.
+
+### Modifié
+
+- Les miniatures sont mises en cache dans le volume d'état et nettoyées par la maintenance quand la tâche
+  n'existe plus.
+
 ## [2.12.0] — 2026-11-08
 
 ### Ajouté
