@@ -101,8 +101,36 @@ function applySettings(s) {
   select.value = s.ollama_model || "";
 }
 function applyAuthState(auth) {
-  const warning = $("authWarning");
-  if (warning) warning.classList.toggle("hidden", !(auth && !auth.password_set && !auth.anonymous_allowed));
+  if (!auth) return;
+  const blocked = !auth.password_set && !auth.anonymous_allowed;
+  $("authWarning")?.classList.toggle("hidden", !blocked);
+  const state = $("lanModeState"), toggle = $("lanModeToggle");
+  if (!state || !toggle) return;
+  if (auth.password_set) {
+    state.textContent = "Mot de passe requis";
+    toggle.classList.add("hidden");
+  } else if (auth.env_forced) {
+    state.textContent = "Accès sans mot de passe forcé par .env";
+    toggle.classList.add("hidden");
+  } else {
+    state.textContent = auth.anonymous_allowed ? "Actions autorisées sans mot de passe" : "Lecture seule (aucun mot de passe)";
+    toggle.textContent = auth.anonymous_allowed ? "Repasser en lecture seule" : "Autoriser sans mot de passe";
+    toggle.dataset.enabled = auth.anonymous_allowed ? "1" : "0";
+    toggle.classList.remove("hidden");
+  }
+}
+async function setLanMode(enabled) {
+  const question = enabled
+    ? "Autoriser toutes les actions sans mot de passe ? À réserver à un réseau local de confiance."
+    : "Repasser en lecture seule ? Les actions seront bloquées jusqu'à réactivation.";
+  if (!confirm(question)) return;
+  try {
+    await post("/api/auth/lan-mode", { enabled });
+    const data = await api("/api/config");
+    applyAuthState(data.auth);
+    toast(enabled ? "Mode réseau local activé" : "Interface repassée en lecture seule");
+    if (enabled) refreshJobs();
+  } catch (error) { toast(error.message); }
 }
 async function saveSettings(quiet = false) {
   const result = await post("/api/config", settingsPayload());
@@ -616,6 +644,8 @@ document.addEventListener("click", async event => {
   if (filter) { state.filter = filter.dataset.filter; state.page = 1; document.querySelectorAll("#filters button").forEach(b => b.classList.toggle("active", b === filter)); refreshJobs(); }
 });
 $("importModel").addEventListener("click", importModel);
+$("enableLanMode").addEventListener("click", () => setLanMode(true));
+$("lanModeToggle").addEventListener("click", () => setLanMode($("lanModeToggle").dataset.enabled !== "1"));
 $("installModel").addEventListener("click", () => installModel());
 $("installSource").addEventListener("keydown", e => { if (e.key === "Enter") installModel(); });
 $("addSource").addEventListener("click", () => { $("sourcesList").insertAdjacentHTML("beforeend", sourceRow("")); openPicker([...document.querySelectorAll("#sourcesList .s-path")].pop(), "dir"); });

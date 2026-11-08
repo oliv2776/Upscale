@@ -75,7 +75,7 @@ L'historique, les réglages et les tâches en attente sont conservés (migration
 
 > **Ne lance jamais `docker compose down -v`** : l'option `-v` supprime le volume `uscale-state` (file, réglages, historique, modèles installés).
 
-> **2.8 — sécurité** : sans UPSCALE_PASSWORD, l'interface passe en **lecture seule** (les actions sont refusées). Définis un mot de passe, ou UPSCALE_ALLOW_ANONYMOUS=1 pour conserver l'ancien comportement sur un réseau de confiance. install.sh génère désormais un mot de passe et l'affiche à la fin de l'installation.
+> **2.9 — mode réseau local** : sans UPSCALE_PASSWORD, l'interface est en **lecture seule par défaut**. Le bandeau (ou **Système → Accès**) permet d'autoriser les actions sans mot de passe en un clic, mémorisé en base et réversible. `UPSCALE_ALLOW_ANONYMOUS=1` force ce mode ; un mot de passe reste prioritaire. install.sh génère un mot de passe et l'affiche à la fin de l'installation.
 
 > **Ancien nom « Uscale »** : le projet s'appelle désormais Upscale. Les anciennes variables USCALE_* de ton .env restent lues (les nouvelles UPSCALE_* sont prioritaires), la base et le volume de données sont repris tels quels, et les conteneurs ou dossiers de travail d'une tâche interrompue sous l'ancien nom sont récupérés. Rien à faire ; tu peux renommer les variables à ton rythme.
 
@@ -275,7 +275,7 @@ N'expose pas le port 11434 sur Internet.
 | VIDEO2X_GPU | (vide) | Index du GPU Vulkan (voir **Tester le GPU**) |
 | VAAPI_DEVICE | /dev/dri/renderD128 | Périphérique pour l'encodage matériel |
 | UPSCALE_USER / UPSCALE_PASSWORD | admin / (généré par install.sh) | Authentification de l'interface (HTTP Basic) |
-| UPSCALE_ALLOW_ANONYMOUS | 0 | Autorise les actions sans mot de passe (réseau de confiance uniquement, déconseillé) |
+| UPSCALE_ALLOW_ANONYMOUS | 0 | Force l'accès sans mot de passe ; à 0, l'interface est en lecture seule par défaut et le mode réseau local s'active depuis l'interface |
 | UPSCALE_TRUSTED_HOSTS | (vide) | Noms publics autorisés (reverse proxy, protection CSRF) ; le proxy doit conserver `Host` |
 | UPSCALE_ALLOW_PRIVATE_MODEL_URLS | 0 | Autorise les liens de modèles vers des adresses privées (miroir interne) |
 | UPSCALE_CONVERTER_DROP_PRIVILEGES | 1 | Exécute la conversion des modèles en « nobody » (setpriv) quand le conteneur est root |
@@ -357,7 +357,7 @@ docker volume rm upscale_uscale-state
 
 **Le socket Docker est extrêmement privilégié** : un processus qui le contrôle peut obtenir les droits administrateur du NAS (voir le mode sans socket ci-dessus).
 
-Définis UPSCALE_PASSWORD (authentification HTTP Basic). **Sans mot de passe, l'interface est en lecture seule** : les actions (POST) sont refusées avec un message explicite. `UPSCALE_ALLOW_ANONYMOUS=1` rétablit l'ancien comportement, à réserver à un réseau de confiance. Les échecs d'authentification sont limités (429 après 15 tentatives en 5 minutes).
+Définis UPSCALE_PASSWORD (authentification HTTP Basic). **Sans mot de passe, l'interface est en lecture seule par défaut** ; le **mode réseau local** s'active en un clic dans le bandeau ou dans **Système → Accès** (choix mémorisé en base, réversible), ou via `UPSCALE_ALLOW_ANONYMOUS=1`. Un mot de passe reste prioritaire. Les échecs d'authentification sont limités (429 après 15 tentatives en 5 minutes).
 
 Les actions de l'API exigent un corps JSON et une origine identique à l'hôte de la requête ; cet hôte doit être une adresse IP, `localhost` ou figurer dans UPSCALE_TRUSTED_HOSTS (protection CSRF, y compris contre un DNS rebinding). Derrière un reverse proxy, conserve l'en-tête `Host` : `X-Forwarded-Host` n'est plus utilisé. Le serveur ajoute aussi les en-têtes de sécurité (CSP, `X-Frame-Options`, `nosniff`, `Referrer-Policy`).
 
@@ -388,6 +388,7 @@ gardent leur propre licence (certaines interdisent l'usage commercial).
 
 ## Documentation et projets utilisés
 
+- [Proposition d'interface 3.0](docs/UI-PROPOSAL.md) et [maquette interactive](docs/ui-mockup.html)
 - [Video2X — documentation](https://docs.video2x.org/)
 - [Video2X — dépôt GitHub](https://github.com/k4yt3x/video2x)
 - [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN)

@@ -3,6 +3,22 @@
 Toutes les évolutions notables sont consignées ici. Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet utilise le [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [2.9.0] — 2026-11-08
+
+### Ajouté
+
+- **Mode réseau local** : sans mot de passe, l'interface est en lecture seule par défaut ; un bandeau
+  (et **Système → Accès**) permet d'autoriser les actions en un clic, mémorisé en base et réversible.
+  `UPSCALE_ALLOW_ANONYMOUS=1` force le mode ; `UPSCALE_PASSWORD` reste prioritaire.
+- Proposition d'interface 3.0 (`docs/UI-PROPOSAL.md`) avec maquette interactive et captures
+  (`docs/ui-mockup.html`, `docs/ui-dashboard.png`, `docs/ui-queue.png`, `docs/ui-preview.png`).
+- Release : le corps de la GitHub Release reprend la section courante du CHANGELOG.
+
+### Modifié
+
+- Le message de lecture seule renvoie vers le mode réseau local au lieu de demander un redémarrage.
+- Documentation : mode sans mot de passe, captures et lien vers la proposition d'interface.
+
 ## [2.8.0] — 2026-11-08
 
 Version de sécurité : durcissement de l'interface, des téléchargements et de la distribution.

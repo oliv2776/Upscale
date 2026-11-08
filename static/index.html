@@ -21,9 +21,12 @@
   </aside>
   <main>
     <div id="authWarning" class="auth-warning hidden" role="alert">
-      <b>Aucun mot de passe configuré.</b> L'interface est en lecture seule : définis
-      <code>UPSCALE_PASSWORD</code> dans <code>.env</code> (ou <code>UPSCALE_ALLOW_ANONYMOUS=1</code> sur un
-      réseau de confiance), puis redémarre le conteneur.
+      <div>
+        <b>Mode réseau local</b>
+        <p>Ce serveur n'a pas de mot de passe : les actions sont bloquées par défaut. Si ce NAS n'est accessible
+        que sur ton réseau, tu peux les autoriser sans mot de passe.</p>
+      </div>
+      <button class="primary small" id="enableLanMode">Autoriser sur mon réseau</button>
     </div>
     <header class="topbar"><div><div class="eyebrow">ESPACE PERSONNEL / NAS</div><h1>Video upscaling</h1></div><div class="top-actions"><span id="connection" class="connection"><i></i> Connexion…</span><button class="icon-btn" id="refreshBtn" title="Actualiser">↻</button></div></header>
     <section class="hero" id="dashboard">
@@ -168,6 +171,7 @@
     <section class="panel health-panel" id="system">
       <div class="section-head"><div><div class="eyebrow">SYSTÈME</div><h3>État du serveur</h3></div><button class="secondary small" id="healthBtn">Tester le GPU</button></div>
       <div class="health-grid"><div><span class="health-label">Docker / mode</span><strong id="dockerState">Vérification…</strong></div><div><span class="health-label">GPU Vulkan</span><strong id="gpuState">Non vérifié</strong></div><div><span class="health-label">Video2X</span><strong id="imageState">—</strong></div><div><span class="health-label">Moteur</span><strong id="engineName">Video2X</strong></div></div>
+      <div class="ollama-actions"><span id="lanModeState" class="ollama-status"></span><button class="secondary small hidden" id="lanModeToggle">Activer sans mot de passe</button></div>
       <div class="gpu-live" id="gpuLive"></div>
       <pre id="healthDetails" class="health-details hidden"></pre>
     </section>

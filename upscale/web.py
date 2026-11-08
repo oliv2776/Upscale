@@ -26,6 +26,8 @@ app.config["MAX_CONTENT_LENGTH"] = 2100 * 1024**2  # import de modèles personna
 UPLOAD_PATHS = {"/api/models"}
 PREVIEW_FILE_RE = re.compile(r"[a-z0-9-]+\.(mp4|json)")
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+# Réglage « réseau local » : autorise les actions sans mot de passe, mémorisé en base (réversible).
+LAN_MODE_PATH = "/api/auth/lan-mode"
 # Anti-bruteforce de l'authentification Basic : échecs par IP sur une fenêtre glissante.
 AUTH_MAX_FAILURES = 15
 AUTH_FAILURE_WINDOW = 300.0
@@ -49,6 +51,36 @@ def _auth_failed(ip: str) -> None:
 def _auth_ok(ip: str) -> None:
     with _auth_lock:
         _auth_failures.pop(ip, None)
+
+
+_lan_lock = threading.Lock()
+_lan_cache: dict[str, Any] = {"value": None, "at": 0.0}
+
+
+def _lan_mode() -> bool:
+    """Accès sans mot de passe : forcé par .env, ou choisi depuis l'interface (base)."""
+    if config.ALLOW_ANONYMOUS:
+        return True
+    now = time.monotonic()
+    with _lan_lock:
+        cached = _lan_cache["value"]
+        if cached is not None and now - float(_lan_cache["at"]) < 2.0:
+            return bool(cached)
+    value = db.get_state("lan_mode") == "1"
+    with _lan_lock:
+        _lan_cache.update(value=value, at=now)
+    return value
+
+
+def _set_lan_mode(value: bool) -> None:
+    db.set_state("lan_mode", "1" if value else "0")
+    with _lan_lock:
+        _lan_cache.update(value=value, at=time.monotonic())
+
+
+def _auth_state() -> dict[str, Any]:
+    return {"password_set": bool(config.AUTH_PASSWORD), "anonymous_allowed": _lan_mode(),
+            "env_forced": bool(config.ALLOW_ANONYMOUS)}
 
 
 def _trusted_origin(origin: str) -> bool:
@@ -96,9 +128,10 @@ def guard_request() -> Response | tuple[Response, int] | None:
             _auth_failed(client)
             return Response("Authentification requise", 401, {"WWW-Authenticate": 'Basic realm="Upscale"'})
         _auth_ok(client)
-    elif not config.ALLOW_ANONYMOUS and request.method not in SAFE_METHODS:
-        return error("Aucun mot de passe configuré : définis UPSCALE_PASSWORD dans .env "
-                     "(ou UPSCALE_ALLOW_ANONYMOUS=1 pour un réseau de confiance), puis redémarre.", 403)
+    elif (not _lan_mode() and request.method not in SAFE_METHODS
+          and request.path != LAN_MODE_PATH):
+        return error("Aucun mot de passe configuré : active le mode réseau local dans l'interface "
+                     "(ou définis UPSCALE_PASSWORD / UPSCALE_ALLOW_ANONYMOUS=1 dans .env).", 403)
     if request.method not in SAFE_METHODS:
         # Un JSON explicite (ou l'en-tête d'import) force un preflight CORS : un site tiers ne peut pas
         # piloter l'API.
@@ -149,6 +182,24 @@ def api_ping():
     return jsonify({"ok": True, "version": config.VERSION})
 
 
+@app.post(LAN_MODE_PATH)
+def api_lan_mode():
+    """Active ou désactive les actions sans mot de passe (choix explicite, mémorisé en base)."""
+    try:
+        payload = json_body()
+    except ValueError as exc:
+        return error(str(exc))
+    if config.AUTH_PASSWORD:
+        return error("Un mot de passe est configuré : le mode sans mot de passe est désactivé.", 409)
+    if config.ALLOW_ANONYMOUS:
+        return error("UPSCALE_ALLOW_ANONYMOUS=1 est défini dans .env : l'accès est déjà autorisé.", 409)
+    enabled = payload.get("enabled", True)
+    if not isinstance(enabled, bool):
+        return error("Valeur booléenne attendue")
+    _set_lan_mode(enabled)
+    return jsonify({"ok": True, "auth": _auth_state()})
+
+
 @app.get("/api/config")
 def api_config():
     return jsonify({
@@ -157,7 +208,7 @@ def api_config():
         "runner": config.RUNNER,
         "version": config.VERSION, "segment_seconds": config.SEGMENT_SECONDS,
         "models": settings_mod.available_models(),
-        "auth": {"password_set": bool(config.AUTH_PASSWORD), "anonymous_allowed": config.ALLOW_ANONYMOUS},
+        "auth": _auth_state(),
     })
 
 

@@ -20,7 +20,25 @@ jobs:
           test "v${version}" = "${GITHUB_REF_NAME}" || {
             echo "VERSION (${version}) ne correspond pas au tag ${GITHUB_REF_NAME}"; exit 1;
           }
+      - name: Extraire les notes du CHANGELOG
+        run: |
+          version="$(cat VERSION)"
+          python3 - "$version" <<'PY'
+          import pathlib, sys
+          version = sys.argv[1]
+          out, inside = [], False
+          for line in pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8").splitlines():
+              if line.startswith(f"## [{version}]"):
+                  inside = True
+                  continue
+              if inside and line.startswith("## ["):
+                  break
+              if inside:
+                  out.append(line)
+          pathlib.Path("release-notes.md").write_text("\n".join(out).strip() + "\n", encoding="utf-8")
+          PY
+          test -s release-notes.md
       - name: Créer la release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          body_path: release-notes.md

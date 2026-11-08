@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Upscale 3.0 — maquette d'interface</title>
+<style>
+  @font-face{font-family:Manrope;font-style:normal;font-display:swap;font-weight:200 800;
+    src:url("../static/fonts/manrope-latin-wght-normal.woff2") format("woff2")}
+  :root{
+    --bg:#f4f5f8;--surface:#fff;--surface-2:#fafbfc;--ink:#141821;--muted:#5f6675;--line:#e6e9ef;
+    --brand:#c81e2b;--brand-2:#a51622;--brand-soft:#fdecee;--ok:#0f766e;--ok-soft:#e7f4f1;
+    --warn:#b45309;--warn-soft:#fff4e5;--info:#1d4ed8;--info-soft:#eef2ff;
+    --radius:14px;--shadow:0 1px 2px rgba(16,24,40,.05),0 10px 28px rgba(16,24,40,.06);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--bg);color:var(--ink);font:14px/1.45 Manrope,system-ui,-apple-system,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  button{font:inherit;cursor:pointer}
+  .app{display:grid;grid-template-columns:248px minmax(0,1fr);min-height:100vh}
+
+  /* ---------- barre latérale ---------- */
+  .sidebar{position:sticky;top:0;height:100vh;background:#141118;color:#fff;padding:24px 16px;
+    display:flex;flex-direction:column;gap:26px}
+  .brand{display:flex;align-items:center;gap:11px;padding:0 6px}
+  .logo{width:34px;height:34px;border-radius:10px;background:linear-gradient(145deg,#e33b48,#a51622);
+    display:grid;place-items:center;font-weight:800;font-size:17px;box-shadow:0 6px 16px rgba(200,30,43,.35)}
+  .brand b{display:block;font-size:17px;letter-spacing:-.01em}
+  .brand small{display:block;color:#9b94a3;font-size:9px;letter-spacing:.16em;margin-top:2px}
+  .nav{display:flex;flex-direction:column;gap:3px}
+  .nav button{display:flex;align-items:center;gap:11px;width:100%;padding:10px 12px;border:0;border-radius:9px;
+    background:transparent;color:#c9c3d0;font-size:13px;text-align:left}
+  .nav button svg{width:17px;height:17px;flex:0 0 auto;opacity:.8}
+  .nav button:hover{background:#1e1a22;color:#fff}
+  .nav button.active{background:#251f29;color:#fff;box-shadow:inset 3px 0 0 var(--brand)}
+  .nav .badge{margin-left:auto;background:#2b242f;color:#d8d2de;border-radius:999px;padding:1px 7px;font-size:10px}
+  .nav button.active .badge{background:var(--brand);color:#fff}
+  .nav .sep{margin:14px 12px 6px;color:#6f6877;font-size:9px;letter-spacing:.16em}
+  .side-foot{margin-top:auto;border-top:1px solid #251f29;padding:14px 8px 0;color:#a49dab;font-size:11px}
+  .side-foot .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#22c55e;margin-right:7px}
+  .side-foot small{display:block;color:#6f6877;margin-top:4px}
+
+  /* ---------- zone principale ---------- */
+  main{min-width:0;padding:26px 34px 54px}
+  .topbar{display:flex;align-items:flex-end;justify-content:space-between;gap:20px}
+  .crumb{margin:0 0 5px;color:var(--muted);font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+  .topbar h1{margin:0;font-size:27px;letter-spacing:-.025em;line-height:1.1;white-space:nowrap}
+  .crumb{white-space:nowrap}
+  .top-actions{display:flex;align-items:center;gap:9px}
+  .icon-btn{width:38px;height:38px;border:1px solid var(--line);background:var(--surface);border-radius:10px;
+    display:grid;place-items:center;color:#4b5262}
+  .icon-btn svg{width:17px;height:17px}
+  .ghost{display:inline-flex;align-items:center;gap:7px;height:38px;padding:0 13px;border:1px solid var(--line);
+    background:var(--surface);border-radius:10px;color:#3d4453;font-size:12.5px}
+  .ghost svg{width:15px;height:15px}
+  .primary{display:inline-flex;align-items:center;gap:7px;height:38px;padding:0 15px;border:0;border-radius:10px;
+    background:var(--brand);color:#fff;font-size:12.5px;font-weight:650;box-shadow:0 6px 16px rgba(200,30,43,.22)}
+  .primary:hover{background:var(--brand-2)}
+  .primary.small{height:32px;padding:0 12px;font-size:12px}
+  .primary svg{width:15px;height:15px}
+
+  .rail{display:flex;align-items:center;gap:0;background:var(--surface);border:1px solid var(--line);
+    border-radius:12px;padding:8px 12px;margin:16px 0 18px;box-shadow:var(--shadow);overflow:hidden}
+  .rail .item{display:flex;align-items:center;gap:8px;padding:0 16px;border-right:1px solid var(--line);
+    white-space:nowrap;font-size:12px;color:var(--muted)}
+  .rail .item:first-child{padding-left:2px}
+  .rail .item b{color:var(--ink);font-size:13px}
+  .rail .item svg{width:15px;height:15px;color:#8a90a0}
+  .rail .spacer{margin-left:auto}
+  .rail .pause{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface-2);
+    border-radius:8px;padding:5px 10px;font-size:11.5px;color:#3d4453;white-space:nowrap}
+  .rail .pause svg{width:13px;height:13px}
+  .primary,.ghost{white-space:nowrap}
+  .dot{width:7px;height:7px;border-radius:50%;background:#22c55e;display:inline-block}
+  .dot.red{background:var(--brand)}
+  .dot.amber{background:#f59e0b}
+
+  /* ---------- vues ---------- */
+  .view{display:none}
+  .view.active{display:block}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}
+  .stat{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:15px 17px;
+    box-shadow:var(--shadow)}
+  .stat .k{display:flex;align-items:center;justify-content:space-between;color:var(--muted);font-size:11px;
+    letter-spacing:.07em;text-transform:uppercase}
+  .stat .k svg{width:15px;height:15px;color:#9aa0ae}
+  .stat strong{display:block;font-size:26px;letter-spacing:-.03em;margin-top:7px}
+  .stat small{display:block;color:var(--muted);font-size:11.5px;margin-top:1px}
+  .stat .delta{color:var(--ok);font-weight:650}
+
+  .dash{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(280px,.85fr);gap:16px;align-items:start}
+  .col{display:flex;flex-direction:column;gap:16px;min-width:0}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);
+    overflow:hidden}
+  .card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 18px;
+    border-bottom:1px solid var(--line)}
+  .card-head h2{margin:0;font-size:13.5px;letter-spacing:-.01em}
+  .card-head .hint{color:var(--muted);font-size:11.5px}
+  .link{border:0;background:none;color:var(--brand);font-size:11.5px;font-weight:650;padding:0}
+
+  /* tâche active */
+  .job{padding:18px}
+  .job-top{display:flex;gap:16px;align-items:flex-start}
+  .thumb{width:104px;height:74px;border-radius:11px;flex:0 0 auto;position:relative;overflow:hidden;
+    background:linear-gradient(180deg,#0b2036,#174b63 40%,#e79a63 41%,#3a2230 70%,#120d1a);
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}
+  .thumb::before{content:"";position:absolute;left:-10%;right:-10%;top:36%;height:48%;
+    background:linear-gradient(145deg,#0d1a29,#20364a 55%,#0a1320);
+    clip-path:polygon(0 100%,0 58%,17% 25%,33% 62%,48% 30%,65% 68%,82% 34%,100% 60%,100% 100%)}
+  .thumb::after{content:"";position:absolute;left:8px;bottom:6px;color:#fff;font-size:8px;letter-spacing:.12em;
+    content:"SAMPLE";opacity:.7}
+  .job-title{margin:1px 0 0;font-size:19px;letter-spacing:-.02em;line-height:1.25}
+  .job-sub{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .chip{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;font-size:10.5px;
+    background:var(--surface-2);border:1px solid var(--line);color:#4b5262;white-space:nowrap}
+  .chip.red{background:var(--brand-soft);border-color:#f6c8cd;color:var(--brand-2)}
+  .chip.green{background:var(--ok-soft);border-color:#c8e6df;color:var(--ok)}
+  .chip.amber{background:var(--warn-soft);border-color:#f3d9ae;color:var(--warn)}
+  .chip.blue{background:var(--info-soft);border-color:#d5def8;color:var(--info)}
+  .status{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);white-space:nowrap}
+  .status i{width:7px;height:7px;border-radius:50%;background:#9aa0ae;display:inline-block}
+  .status.run i{background:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
+  .status.ok i{background:var(--ok)}
+  .status.warn i{background:#f59e0b}
+  .status.err i{background:#dc2626}
+  .job-meta{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:16px;
+    padding-top:14px;border-top:1px solid var(--line)}
+  .job-meta span{display:block;color:var(--muted);font-size:10px;letter-spacing:.07em;text-transform:uppercase}
+  .job-meta b{display:block;font-size:13.5px;margin-top:3px;letter-spacing:-.01em}
+  .bigbar{position:relative;height:10px;border-radius:999px;background:#eef0f4;margin:16px 0 7px;overflow:hidden}
+  .bigbar i{display:block;height:100%;width:63%;border-radius:999px;
+    background:linear-gradient(90deg,#e33b48,#b51623);box-shadow:0 0 12px rgba(200,30,43,.35)}
+  .barline{display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted)}
+  .barline b{color:var(--ink);font-size:13px}
+  .job-actions{display:flex;gap:8px;margin-top:15px}
+  .btn{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 12px;border-radius:9px;
+    border:1px solid var(--line);background:var(--surface);color:#3d4453;font-size:12px}
+  .btn svg{width:14px;height:14px}
+  .btn.danger{color:var(--brand);border-color:#f3c8cd;background:#fff8f8}
+  .btn:hover{background:var(--surface-2)}
+
+  /* listes */
+  .list{padding:6px 0}
+  .row{display:flex;align-items:center;gap:11px;padding:10px 18px}
+  .row + .row{border-top:1px solid #f0f2f6}
+  .drag{color:#b8bdc8;display:grid;place-items:center;width:14px}
+  .drag svg{width:13px;height:13px}
+  .row .idx{width:18px;color:#9aa0ae;font-size:11px;text-align:right}
+  .row .info{min-width:0;flex:1}
+  .row .info b{display:block;font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .info small{color:var(--muted);font-size:11px}
+  .row .time{color:var(--muted);font-size:11px;white-space:nowrap}
+  .row .mini{height:5px;width:76px;background:#eef0f4;border-radius:99px;overflow:hidden}
+  .row .mini i{display:block;height:100%;background:var(--brand);border-radius:99px}
+  .row .ok-ic{color:var(--ok);width:17px;height:17px}
+  .row .err-ic{color:var(--brand);width:17px;height:17px}
+
+  .sys{padding:16px 18px;display:flex;flex-direction:column;gap:14px}
+  .sys .line{display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--muted)}
+  .sys .line b{color:var(--ink);font-size:12.5px}
+  .meter{height:6px;border-radius:99px;background:#eef0f4;overflow:hidden}
+  .meter i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#1f9d8b,#0f766e)}
+  .meter.disk i{background:linear-gradient(90deg,#e33b48,#a51622);width:56%}
+  .gpu-bars{display:flex;align-items:flex-end;gap:3px;height:38px}
+  .gpu-bars i{flex:1;background:#dfe3ea;border-radius:3px 3px 0 0}
+  .gpu-bars i.hot{background:linear-gradient(180deg,#e33b48,#a51622)}
+
+  /* ---------- file ---------- */
+  .toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+  .search{display:flex;align-items:center;gap:7px;height:36px;padding:0 11px;border:1px solid var(--line);
+    border-radius:9px;background:var(--surface);min-width:250px;color:#8a90a0}
+  .search input{border:0;outline:0;background:transparent;font:inherit;font-size:12.5px;color:var(--ink);width:100%}
+  .search svg{width:15px;height:15px}
+  .filters{display:flex;gap:6px;flex-wrap:wrap}
+  .filter{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 11px;
+    font-size:11.5px;color:#4b5262}
+  .filter b{color:#8a90a0;font-weight:650;margin-left:4px}
+  .filter.active{background:#171a24;border-color:#171a24;color:#fff}
+  .filter.active b{color:#c9c3d0}
+  .toolbar .spacer{margin-left:auto}
+  .switch{display:inline-flex;align-items:center;gap:7px;font-size:11.5px;color:var(--muted)}
+  .switch i{width:30px;height:17px;border-radius:99px;background:var(--ok);position:relative}
+  .switch i::after{content:"";position:absolute;right:2px;top:2px;width:13px;height:13px;border-radius:50%;background:#fff}
+  table{width:100%;border-collapse:collapse}
+  th{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:#8a90a0;text-align:left;
+    padding:10px 12px;border-bottom:1px solid var(--line);background:var(--surface-2)}
+  td{padding:11px 12px;border-bottom:1px solid #f0f2f6;vertical-align:middle;font-size:12px}
+  tbody tr:hover{background:#fcfcfd}
+  .filecell{display:flex;align-items:center;gap:10px;min-width:230px}
+  .filecell .fic{width:30px;height:30px;border-radius:8px;background:var(--brand-soft);color:var(--brand);
+    display:grid;place-items:center;flex:0 0 auto}
+  .filecell .fic svg{width:14px;height:14px}
+  .filecell b{display:block;font-size:12.5px;font-weight:600;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .filecell small{color:var(--muted);font-size:10.5px}
+  .prog{display:flex;align-items:center;gap:8px;min-width:130px}
+  .prog .track{height:6px;flex:1;background:#eef0f4;border-radius:99px;overflow:hidden}
+  .prog .track i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#e33b48,#b51623)}
+  .prog.done .track i{background:var(--ok)}
+  .prog span{font-size:10.5px;color:var(--muted);white-space:nowrap}
+  .t-actions{display:flex;gap:4px;justify-content:flex-end}
+  .t-actions button{border:0;background:transparent;color:#8a90a0;padding:4px;border-radius:6px}
+  .t-actions button:hover{background:#f0f2f6;color:var(--ink)}
+  .t-actions svg{width:15px;height:15px}
+  .pager{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;color:var(--muted);font-size:11.5px}
+
+  /* ---------- aperçu ---------- */
+  .preview-head{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:14px}
+  .preview-head p{margin:0;color:var(--muted);font-size:12px;max-width:620px}
+  .formrow{display:grid;grid-template-columns:minmax(0,1.6fr) 120px 110px auto;gap:10px;align-items:end;
+    background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;
+    box-shadow:var(--shadow);margin-bottom:14px}
+  .field label{display:block;color:#8a90a0;font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px}
+  .field input,.field select{width:100%;height:34px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2);
+    padding:0 10px;font:inherit;font-size:12px;color:var(--ink);outline:0}
+  .field input:focus,.field select:focus{border-color:#e7a2aa;background:#fff}
+  .compare-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);
+    padding:14px}
+  .compare{position:relative;aspect-ratio:16/8.2;border-radius:11px;overflow:hidden;background:#0b0d12;--pos:56%}
+  .scene{position:absolute;inset:0;background:
+    radial-gradient(90px 90px at 72% 24%,#ffe3ad 0 54%,rgba(255,227,173,0) 55%),
+    linear-gradient(180deg,#081a2d 0%,#174b63 38%,#e79a63 39%,#c96b46 55%,#3a2230 56%,#120d1a 100%)}
+  .scene::before{content:"";position:absolute;left:-10%;right:-10%;top:34%;height:44%;
+    background:linear-gradient(150deg,#0b1726,#223a4e 52%,#0a1420);
+    clip-path:polygon(0 100%,0 60%,16% 27%,32% 63%,47% 30%,64% 68%,81% 33%,100% 58%,100% 100%)}
+  .scene::after{content:"";position:absolute;left:0;right:0;bottom:0;height:34%;
+    background:linear-gradient(180deg,#1b1120,#08060c);
+    clip-path:polygon(0 62%,12% 40%,24% 70%,38% 36%,52% 72%,70% 44%,86% 68%,100% 48%,100% 100%,0 100%)}
+  .grain{position:absolute;inset:0;opacity:.22;background-image:radial-gradient(rgba(255,255,255,.35) .6px,transparent .7px);
+    background-size:3px 3px;mix-blend-mode:overlay}
+  .layer{position:absolute;inset:0}
+  .layer.left{filter:blur(1.5px) saturate(.82) brightness(.92)}
+  .layer.right{clip-path:inset(0 0 0 var(--pos));filter:contrast(1.06) saturate(1.12)}
+  .compare .tagl,.compare .tagr{position:absolute;top:12px;padding:5px 9px;border-radius:7px;font-size:10px;
+    letter-spacing:.06em;text-transform:uppercase;background:rgba(8,10,16,.55);color:#fff;backdrop-filter:blur(6px)}
+  .compare .tagl{left:12px}.compare .tagr{right:12px}
+  .handle{position:absolute;top:0;bottom:0;left:var(--pos);width:2px;background:rgba(255,255,255,.9);
+    box-shadow:0 0 0 1px rgba(0,0,0,.15)}
+  .handle::after{content:"⇆";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+    width:34px;height:34px;border-radius:50%;background:#fff;color:#171a24;display:grid;place-items:center;
+    font-size:15px;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+  .range{display:flex;align-items:center;gap:12px;margin-top:12px}
+  .range input{flex:1;accent-color:var(--brand)}
+  .variants{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}
+  .vchip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 11px;font-size:11px;color:#4b5262}
+  .vchip.active{background:#171a24;color:#fff;border-color:#171a24}
+  .preview-meta{display:flex;gap:18px;flex-wrap:wrap;margin-top:12px;color:var(--muted);font-size:11.5px}
+  .preview-meta b{color:var(--ink);font-weight:600}
+
+  @media(max-width:1100px){
+    .app{grid-template-columns:210px minmax(0,1fr)}
+    .dash{grid-template-columns:1fr}
+    .stats{grid-template-columns:repeat(2,1fr)}
+    .formrow{grid-template-columns:1fr 1fr}
+  }
+  @media(max-width:760px){
+    .app{grid-template-columns:1fr}
+    .sidebar{position:relative;height:auto;flex-direction:row;align-items:center;padding:12px}
+    .nav{flex-direction:row;overflow:auto}.nav .badge,.side-foot,.nav .sep{display:none}
+    main{padding:18px 14px 40px}.topbar h1{font-size:22px}.job-meta{grid-template-columns:repeat(2,1fr)}
+    .stats{grid-template-columns:1fr 1fr}.formrow{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-grid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+  <symbol id="i-lib" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2h8.5A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></symbol>
+  <symbol id="i-queue" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r=".8" fill="currentColor"/><circle cx="3.5" cy="12" r=".8" fill="currentColor"/><circle cx="3.5" cy="18" r=".8" fill="currentColor"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2.5 12S6 5.8 12 5.8 21.5 12 21.5 12 18 18.2 12 18.2 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.6"/></symbol>
+  <symbol id="i-cube" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2.8 21 7.4v9.2L12 21.2 3 16.6V7.4z"/><path d="M3 7.4 12 12l9-4.6M12 12v9.2"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></symbol>
+  <symbol id="i-activity" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12h4l2.5-6 4 12L16 12h5"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.4-4.4"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 5v14M16 5v14"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 5.5 19 12 8 18.5z"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></symbol>
+  <symbol id="i-drag" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m4.5 12.5 5 5 10-11"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 22 20H2z"/><path d="M12 9v5M12 17.2v.2"/></symbol>
+  <symbol id="i-film" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2h8.5A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></symbol>
+  <symbol id="i-gpu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="7" width="16" height="10" rx="2"/><path d="M8 7V4M16 7V4M8 20v-3M16 20v-3M4 12H2M22 12h-2"/></symbol>
+  <symbol id="i-disk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+</svg>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand"><span class="logo">U</span><div><b>Upscale</b><small>LOCAL VIDEO LAB</small></div></div>
+    <nav class="nav">
+      <button class="nav-item active" data-target="dashboard"><svg><use href="#i-grid"/></svg>Tableau de bord</button>
+      <button class="nav-item" data-target="library"><svg><use href="#i-lib"/></svg>Bibliothèque</button>
+      <button class="nav-item" data-target="queue"><svg><use href="#i-queue"/></svg>File<span class="badge">12</span></button>
+      <button class="nav-item" data-target="preview"><svg><use href="#i-eye"/></svg>Aperçu</button>
+      <button class="nav-item" data-target="models"><svg><use href="#i-cube"/></svg>Modèles</button>
+      <div class="sep">CONFIGURATION</div>
+      <button class="nav-item" data-target="settings"><svg><use href="#i-sliders"/></svg>Réglages</button>
+      <button class="nav-item" data-target="system"><svg><use href="#i-activity"/></svg>Système</button>
+    </nav>
+    <div class="side-foot"><span class="dot"></span>Serveur local<small>v2.9.0 · Video2X 6.4</small></div>
+  </aside>
+
+  <main>
+    <header class="topbar">
+      <div><p class="crumb">NAS · 2 bibliothèques · 1 284 vidéos</p><h1 id="pageTitle">Tableau de bord</h1></div>
+      <div class="top-actions">
+        <button class="icon-btn" aria-label="Rechercher"><svg><use href="#i-search"/></svg></button>
+        <button class="ghost"><svg><use href="#i-folder"/></svg>Parcourir</button>
+        <button class="primary"><svg><use href="#i-plus"/></svg>Ajouter des vidéos</button>
+      </div>
+    </header>
+
+    <div class="rail">
+      <div class="item"><svg><use href="#i-queue"/></svg><b>12</b> en attente</div>
+      <div class="item"><span class="dot red"></span><b>1</b> en cours</div>
+      <div class="item"><svg><use href="#i-gpu"/></svg><b>62 %</b> · 58 °C</div>
+      <div class="item"><svg><use href="#i-disk"/></svg><b>1,8 To</b> libres</div>
+      <div class="spacer"></div>
+      <button class="pause"><svg><use href="#i-pause"/></svg>Pause</button>
+    </div>
+
+    <!-- ================= TABLEAU DE BORD ================= -->
+    <section class="view active" data-view="dashboard">
+      <div class="stats">
+        <article class="stat"><div class="k">File d'attente<svg><use href="#i-queue"/></svg></div><strong>12</strong><small><span class="delta">+3</span> ajoutées aujourd'hui</small></article>
+        <article class="stat"><div class="k">Tâche en cours<svg><use href="#i-play"/></svg></div><strong>1</strong><small>Dune (2021) · 63 %</small></article>
+        <article class="stat"><div class="k">GPU<svg><use href="#i-gpu"/></svg></div><strong>62 %</strong><small>58 °C · VRAM 4,2 / 8 Go</small></article>
+        <article class="stat"><div class="k">Espace disque<svg><use href="#i-disk"/></svg></div><strong>1,8 To</strong><small>sur 4,0 To · 45 % utilisés</small></article>
+      </div>
+
+      <div class="dash">
+        <div class="col">
+          <article class="card">
+            <div class="card-head"><h2>Tâche en cours</h2><span class="status run"><i></i>segment 18 / 42</span></div>
+            <div class="job">
+              <div class="job-top">
+                <div class="thumb"></div>
+                <div style="min-width:0;flex:1">
+                  <p class="job-title">Dune (2021) — 480p.mkv</p>
+                  <div class="job-sub">
+                    <span class="chip red">480p → 1080p</span>
+                    <span class="chip">Real-ESRGAN Plus ×2</span>
+                    <span class="chip">HEVC 10 bits</span>
+                    <span class="chip">Peau normale</span>
+                  </div>
+                </div>
+                <button class="icon-btn" aria-label="Plus d'actions"><svg><use href="#i-more"/></svg></button>
+              </div>
+              <div class="bigbar"><i></i></div>
+              <div class="barline"><span><b>63 %</b> · reste ~1 h 12</span><span>8,4 Go estimés · 1,4× temps réel</span></div>
+              <div class="job-meta">
+                <div><span>Vitesse</span><b>1,4×</b></div>
+                <div><span>Segment</span><b>18 / 42</b></div>
+                <div><span>Modèle</span><b>Plus ×2</b></div>
+                <div><span>Encodeur</span><b>HEVC · CRF 18</b></div>
+              </div>
+              <div class="job-actions">
+                <button class="btn"><svg><use href="#i-pause"/></svg>Pause</button>
+                <button class="btn"><svg><use href="#i-queue"/></svg>Voir les logs</button>
+                <button class="btn"><svg><use href="#i-external"/></svg>Ouvrir le dossier</button>
+              </div>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card-head"><h2>Derniers résultats</h2><button class="link">Tout voir</button></div>
+            <div class="list">
+              <div class="row"><svg class="ok-ic"><use href="#i-check"/></svg><div class="info"><b>Blade Runner 2049 — 720p.mkv</b><small>720p · HEVC · il y a 2 h</small></div><span class="chip green">Terminé</span><button class="icon-btn" aria-label="Comparer"><svg><use href="#i-eye"/></svg></button></div>
+              <div class="row"><svg class="err-ic"><use href="#i-alert"/></svg><div class="info"><b>Interstellar — 480p.mkv</b><small>Vérification : 1 piste audio manquante</small></div><span class="chip amber">À vérifier</span><button class="icon-btn" aria-label="Voir les logs"><svg><use href="#i-queue"/></svg></button></div>
+              <div class="row"><svg class="ok-ic"><use href="#i-check"/></svg><div class="info"><b>Le Fabuleux Destin — 360p.mkv</b><small>720p · H.264 · il y a 5 h</small></div><span class="chip green">Terminé</span><button class="icon-btn" aria-label="Comparer"><svg><use href="#i-eye"/></svg></button></div>
+            </div>
+          </article>
+        </div>
+
+        <div class="col">
+          <article class="card">
+            <div class="card-head"><h2>À suivre</h2><span class="hint">glisser pour réordonner</span></div>
+            <div class="list">
+              <div class="row"><span class="drag"><svg><use href="#i-drag"/></svg></span><span class="idx">1</span><div class="info"><b>Alien — 480p.mkv</b><small>1080p · Plus ×2</small></div><span class="chip">480p → 1080p</span></div>
+              <div class="row"><span class="drag"><svg><use href="#i-drag"/></svg></span><span class="idx">2</span><div class="info"><b>Series S01E04.mkv</b><small>720p · AnimeVideo ×2</small></div><span class="chip">360p → 720p</span></div>
+              <div class="row"><span class="drag"><svg><use href="#i-drag"/></svg></span><span class="idx">3</span><div class="info"><b>Les Demoiselles — 240p.avi</b><small>720p · Plus Anime ×2</small></div><span class="chip">240p → 720p</span></div>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card-head"><h2>Système</h2><span class="status ok"><i></i>stable</span></div>
+            <div class="sys">
+              <div>
+                <div class="line"><span>GPU · Radeon RX 5500 XT</span><b>62 %</b></div>
+                <div class="meter" style="margin-top:7px"><i style="width:62%"></i></div>
+              </div>
+              <div class="gpu-bars" aria-hidden="true">
+                <i style="height:31%"></i><i style="height:46%"></i><i style="height:38%"></i><i style="height:57%"></i><i style="height:49%"></i><i style="height:66%"></i><i style="height:58%"></i><i class="hot" style="height:62%"></i><i style="height:47%"></i><i style="height:53%"></i><i style="height:40%"></i><i class="hot" style="height:60%"></i>
+              </div>
+              <div>
+                <div class="line"><span>Disque de destination</span><b>2,2 To / 4,0 To</b></div>
+                <div class="meter disk" style="margin-top:7px"><i></i></div>
+              </div>
+              <div class="line"><span>VRAM</span><b>4,2 / 8 Go</b></div>
+              <div class="line"><span>Température</span><b>58 °C</b></div>
+              <div class="line"><span>File</span><b>12 en attente</b></div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= FILE ================= -->
+    <section class="view" data-view="queue">
+      <div class="toolbar">
+        <div class="search"><svg><use href="#i-search"/></svg><input placeholder="Rechercher un fichier…" aria-label="Rechercher"></div>
+        <div class="filters">
+          <button class="filter active">Toutes <b>38</b></button>
+          <button class="filter">En attente <b>11</b></button>
+          <button class="filter">En cours <b>1</b></button>
+          <button class="filter">Terminées <b>24</b></button>
+          <button class="filter">Erreurs <b>2</b></button>
+        </div>
+        <div class="spacer"></div>
+        <span class="switch"><i></i>Actualisation auto</span>
+        <button class="ghost"><svg><use href="#i-pause"/></svg>Tout mettre en pause</button>
+      </div>
+
+      <div class="card">
+        <table>
+          <thead><tr><th style="width:34px"></th><th>Fichier</th><th>Modèle</th><th>État</th><th>Progression</th><th></th></tr></thead>
+          <tbody>
+            <tr>
+              <td><span class="drag"><svg><use href="#i-drag"/></svg></span></td>
+              <td><div class="filecell"><span class="fic"><svg><use href="#i-film"/></svg></span><div><b>Dune (2021) — 480p.mkv</b><small>480p → 1080p · 1,2 Go</small></div></div></td>
+              <td><span class="chip red">Plus ×2</span></td>
+              <td><span class="status run"><i></i>En cours</span></td>
+              <td><div class="prog"><div class="track"><i style="width:63%"></i></div><span>63 % · 1 h 12</span></div></td>
+              <td><div class="t-actions"><button aria-label="Pause"><svg><use href="#i-pause"/></svg></button><button aria-label="Plus"><svg><use href="#i-more"/></svg></button></div></td>
+            </tr>
+            <tr>
+              <td><span class="drag"><svg><use href="#i-drag"/></svg></span></td>
+              <td><div class="filecell"><span class="fic"><svg><use href="#i-film"/></svg></span><div><b>Alien — 480p.mkv</b><small>480p → 1080p · 1,1 Go</small></div></div></td>
+              <td><span class="chip">Plus ×2</span></td>
+              <td><span class="status"><i></i>En attente</span></td>
+              <td><div class="prog"><div class="track"><i style="width:0%"></i></div><span>—</span></div></td>
+              <td><div class="t-actions"><button aria-label="Monter"><svg><use href="#i-drag"/></svg></button><button aria-label="Plus"><svg><use href="#i-more"/></svg></button></div></td>
+            </tr>
+            <tr>
+              <td><span class="drag"><svg><use href="#i-drag"/></svg></span></td>
+              <td><div class="filecell"><span class="fic"><svg><use href="#i-film"/></svg></span><div><b>Series S01E04.mkv</b><small>360p → 720p · 620 Mo</small></div></div></td>
+              <td><span class="chip">AnimeVideo ×2</span></td>
+              <td><span class="status"><i></i>En attente</span></td>
+              <td><div class="prog"><div class="track"><i style="width:0%"></i></div><span>—</span></div></td>
+              <td><div class="t-actions"><button aria-label="Monter"><svg><use href="#i-drag"/></svg></button><button aria-label="Plus"><svg><use href="#i-more"/></svg></button></div></td>
+            </tr>
+            <tr>
+              <td><span class="drag"><svg><use href="#i-drag"/></svg></span></td>
+              <td><div class="filecell"><span class="fic"><svg><use href="#i-film"/></svg></span><div><b>Blade Runner 2049 — 720p.mkv</b><small>720p → 1080p · 3,4 Go</small></div></div></td>
+              <td><span class="chip green">Terminé</span></td>
+              <td><span class="status ok"><i></i>Terminé</span></td>
+              <td><div class="prog done"><div class="track"><i style="width:100%"></i></div><span>100 % · 2 h 44</span></div></td>
+              <td><div class="t-actions"><button aria-label="Comparer"><svg><use href="#i-eye"/></svg></button><button aria-label="Plus"><svg><use href="#i-more"/></svg></button></div></td>
+            </tr>
+            <tr>
+              <td><span class="drag"><svg><use href="#i-drag"/></svg></span></td>
+              <td><div class="filecell"><span class="fic"><svg><use href="#i-film"/></svg></span><div><b>Interstellar — 480p.mkv</b><small>480p → 1080p · 1,0 Go</small></div></div></td>
+              <td><span class="chip">Plus ×2</span></td>
+              <td><span class="status err"><i></i>Erreur</span></td>
+              <td><div class="prog"><div class="track"><i style="width:41%"></i></div><span>Vérification</span></div></td>
+              <td><div class="t-actions"><button aria-label="Relancer"><svg><use href="#i-play"/></svg></button><button aria-label="Plus"><svg><use href="#i-more"/></svg></button></div></td>
+            </tr>
+            <tr>
+              <td><span class="drag"><svg><use href="#i-drag"/></svg></span></td>
+              <td><div class="filecell"><span class="fic"><svg><use href="#i-film"/></svg></span><div><b>Le Fabuleux Destin — 360p.mkv</b><small>360p → 720p · 780 Mo</small></div></div></td>
+              <td><span class="chip green">Terminé</span></td>
+              <td><span class="status ok"><i></i>Terminé</span></td>
+              <td><div class="prog done"><div class="track"><i style="width:100%"></i></div><span>100 % · 1 h 06</span></div></td>
+              <td><div class="t-actions"><button aria-label="Comparer"><svg><use href="#i-eye"/></svg></button><button aria-label="Plus"><svg><use href="#i-more"/></svg></button></div></td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="pager"><span>Page 1 / 2 · 38 tâches</span><span>← Précédent · Suivant →</span></div>
+      </div>
+    </section>
+
+    <!-- ================= APERÇU ================= -->
+    <section class="view" data-view="preview">
+      <div class="preview-head">
+        <div><p>Traite un extrait avec ta configuration exacte, puis compare avec les modèles cochés.</p></div>
+        <span class="chip green">Aperçu prêt</span>
+      </div>
+      <div class="formrow">
+        <div class="field"><label>Vidéo</label><input value="/data/videos/Dune (2021) — 480p.mkv"></div>
+        <div class="field"><label>Début</label><input value="01:12:30"></div>
+        <div class="field"><label>Durée</label><select><option>10 s</option><option>5 s</option><option>20 s</option></select></div>
+        <button class="primary">Générer l'aperçu</button>
+      </div>
+      <div class="compare-card">
+        <div class="compare" id="compare">
+          <div class="layer left"><div class="scene"></div><div class="grain"></div></div>
+          <div class="layer right"><div class="scene"></div><div class="grain"></div></div>
+          <span class="tagl">Original 480p · Lanczos</span>
+          <span class="tagr">Real-ESRGAN Plus ×2 · Peau normale</span>
+          <div class="handle"></div>
+        </div>
+        <div class="range"><input id="pos" type="range" min="0" max="100" value="56" aria-label="Position du comparateur"><span class="chip">⇆ Glisser</span></div>
+        <div class="variants">
+          <button class="vchip active">Votre configuration</button>
+          <button class="vchip">Plus ×2</button>
+          <button class="vchip">Plus ×2 · Peau normale</button>
+          <button class="vchip">AnimeVideo ×2</button>
+        </div>
+        <div class="preview-meta"><span><b>10 s</b> extraites</span><span><b>1920 × 1080</b> · HEVC 10 bits</span><span><b>CRF 18</b></span><span><b>0,8 Go</b> estimés</span></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+  const titles = {dashboard:"Tableau de bord", library:"Bibliothèque", queue:"File de traitement",
+                  preview:"Aperçu avant/après", models:"Modèles IA", settings:"Réglages", system:"Système"};
+  const views = [...document.querySelectorAll("[data-view]")];
+  const navs = [...document.querySelectorAll(".nav-item")];
+  function show(name){
+    if (!titles[name]) name = "dashboard";
+    views.forEach(v => v.classList.toggle("active", v.dataset.view === name));
+    navs.forEach(n => n.classList.toggle("active", n.dataset.target === name));
+    document.getElementById("pageTitle").textContent = titles[name];
+    if (location.hash.slice(1) !== name) history.replaceState(null, "", "#" + name);
+    window.scrollTo(0, 0);
+  }
+  navs.forEach(n => n.addEventListener("click", () => show(n.dataset.target)));
+  window.addEventListener("hashchange", () => show(location.hash.slice(1)));
+  show(location.hash.slice(1) || "dashboard");
+
+  const compare = document.getElementById("compare");
+  document.getElementById("pos").addEventListener("input", e => compare.style.setProperty("--pos", e.target.value + "%"));
+</script>
+</body>
+</html>

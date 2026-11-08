@@ -423,7 +423,35 @@ def test_config_reports_auth_state(env, monkeypatch):
     monkeypatch.setattr(config, "AUTH_PASSWORD", "")
     monkeypatch.setattr(config, "ALLOW_ANONYMOUS", False)
     data = app.test_client().get("/api/config").get_json()
-    assert data["auth"] == {"password_set": False, "anonymous_allowed": False}
+    assert data["auth"] == {"password_set": False, "anonymous_allowed": False, "env_forced": False}
+
+
+def test_lan_mode_can_be_enabled_from_ui(env, monkeypatch):
+    monkeypatch.setattr(config, "ALLOW_ANONYMOUS", False)
+    web_module._lan_cache.update(value=None, at=0.0)
+    client = app.test_client()
+    assert client.post("/api/pause", json={}).status_code == 403
+    # Le réglage est protégé par la même vérification d'origine que le reste de l'API.
+    assert client.post("/api/auth/lan-mode", json={"enabled": True},
+                       headers={"Origin": "http://evil.example"}).status_code == 403
+    response = client.post("/api/auth/lan-mode", json={"enabled": True})
+    assert response.status_code == 200
+    assert response.get_json()["auth"]["anonymous_allowed"] is True
+    assert client.post("/api/pause", json={}).status_code == 200
+    assert db.get_state("lan_mode") == "1"
+    assert client.post("/api/auth/lan-mode", json={"enabled": False}).status_code == 200
+    assert client.post("/api/pause", json={}).status_code == 403
+
+
+def test_lan_mode_is_disabled_by_password_or_env(env, monkeypatch):
+    monkeypatch.setattr(config, "ALLOW_ANONYMOUS", True)
+    assert app.test_client().post("/api/auth/lan-mode", json={"enabled": False}).status_code == 409
+    monkeypatch.setattr(config, "ALLOW_ANONYMOUS", False)
+    monkeypatch.setattr(config, "AUTH_PASSWORD", "secret")
+    token = base64.b64encode(b"admin:secret").decode()
+    response = app.test_client().post("/api/auth/lan-mode", json={"enabled": True},
+                                      headers={"Authorization": f"Basic {token}"})
+    assert response.status_code == 409
 
 
 def test_security_headers(env):

@@ -201,6 +201,6 @@ elif [[ "$(is_paused)" == "1" ]]; then
 fi
 if [[ -z "$(env_value UPSCALE_PASSWORD '')" && "$(env_value UPSCALE_ALLOW_ANONYMOUS 0)" != "1" ]]; then
   echo
-  echo "Note 2.8 : sans mot de passe, l'interface est en lecture seule (le traitement continue)."
-  echo "Définis UPSCALE_PASSWORD dans .env (ou UPSCALE_ALLOW_ANONYMOUS=1) pour reprendre la main."
+  echo "Note : sans mot de passe, l'interface est en lecture seule par défaut (le traitement continue)."
+  echo "Active le mode réseau local depuis le bandeau ou Système → Accès, ou définis UPSCALE_PASSWORD."
 fi

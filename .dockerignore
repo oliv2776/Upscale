@@ -13,3 +13,4 @@ ci-data
 *.log
 *.sqlite3
 backups
+docs

@@ -49,6 +49,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(worker, "ensure_worker", lambda: None)
     from upscale import web as web_module
     web_module._auth_failures.clear()
+    web_module._lan_cache.update(value=None, at=0.0)
     scanner.scan_state.clear()
     scanner.scan_state["running"] = False
     gpu.gpu_state.clear()
