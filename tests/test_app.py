@@ -1008,6 +1008,23 @@ def test_verify_output_reports_problems(env):
 
 
 @needs_ffmpeg
+def test_preview_delete_removes_files(env):
+    job_id = "eeeeeeeeeeee"
+    folder = config.preview_dir() / job_id
+    folder.mkdir(parents=True)
+    (folder / "manifest.json").write_text("{}", encoding="utf-8")
+    (folder / "apercu.mp4").write_bytes(b"x")
+    with db.connect() as conn:
+        conn.execute("""INSERT INTO jobs (id,source,destination,source_size,source_mtime_ns,status,stage,
+                                          created_at,updated_at,kind)
+                        VALUES(?,?,?,0,0,'completed','Prêt','2026-01-01','2026-01-01','preview')""",
+                     (job_id, str(env / "videos" / "film.mkv"), str(folder)))
+    response = app.test_client().post(f"/api/jobs/{job_id}/delete", json={})
+    assert response.status_code == 200
+    assert not folder.exists()
+    assert db.get_job(job_id) is None
+
+
 def test_preview_generates_variants(env, fake_docker):
     source = make_video(env / "videos" / "film.mp4", seconds=3)
     client = app.test_client()

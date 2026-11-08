@@ -2,23 +2,48 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Upscale — AI Video Upscaler</title><link rel="stylesheet" href="/static/app.css">
+  <title>Upscale — AI Video Upscaler</title>
+  <link rel="stylesheet" href="/static/app.css"><link rel="stylesheet" href="/static/app-v2.css">
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-grid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+  <symbol id="i-lib" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2h8.5A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></symbol>
+  <symbol id="i-queue" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r=".8" fill="currentColor"/><circle cx="3.5" cy="12" r=".8" fill="currentColor"/><circle cx="3.5" cy="18" r=".8" fill="currentColor"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2.5 12S6 5.8 12 5.8 21.5 12 21.5 12 18 18.2 12 18.2 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.6"/></symbol>
+  <symbol id="i-cube" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2.8 21 7.4v9.2L12 21.2 3 16.6V7.4z"/><path d="M3 7.4 12 12l9-4.6M12 12v9.2"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-activity" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12h4l2.5-6 4 12L16 12h5"/></symbol>
+  <symbol id="i-film" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2h8.5A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></symbol>
+  <symbol id="i-gpu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="7" width="16" height="10" rx="2"/><path d="M8 7V4M16 7V4M8 20v-3M16 20v-3M4 12H2M22 12h-2"/></symbol>
+  <symbol id="i-disk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 5.5 19 12 8 18.5z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 5v14M16 5v14"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m4.5 12.5 5 5 10-11"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 22 20H2z"/><path d="M12 9v5M12 17.2v.2"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5"/></symbol>
+</svg>
+
 <div class="shell">
   <aside class="sidebar">
     <div class="brand"><span class="brand-mark">U</span><span>Upscale</span><small>LOCAL VIDEO LAB</small></div>
     <nav>
-      <a class="active" href="#dashboard">◫ <span>Vue d'ensemble</span></a>
-      <a href="#settings">⚙ <span>Configuration</span></a>
-      <a href="#models">◇ <span>Modèles IA</span></a>
-      <a href="#preview">◐ <span>Aperçu</span></a>
-      <a href="#automation">⏱ <span>Automatisation</span></a>
-      <a href="#queue">▤ <span>File de traitement</span></a>
-      <a href="#system">⌁ <span>Système</span></a>
+      <a class="active" href="#dashboard" data-view="dashboard"><svg><use href="#i-grid"/></svg><span>Tableau de bord</span></a>
+      <a href="#library" data-view="library"><svg><use href="#i-lib"/></svg><span>Bibliothèque</span></a>
+      <a href="#queue" data-view="queue"><svg><use href="#i-queue"/></svg><span>File</span><span class="nav-badge" id="navQueueBadge">0</span></a>
+      <a href="#preview" data-view="preview"><svg><use href="#i-eye"/></svg><span>Aperçu</span></a>
+      <a href="#models" data-view="models"><svg><use href="#i-cube"/></svg><span>Modèles</span></a>
+      <div class="nav-sep">CONFIGURATION</div>
+      <a href="#settings" data-view="settings"><svg><use href="#i-sliders"/></svg><span>Réglages</span></a>
+      <a href="#automation" data-view="automation"><svg><use href="#i-clock"/></svg><span>Automatisation</span></a>
+      <a href="#system" data-view="system"><svg><use href="#i-activity"/></svg><span>Système</span></a>
     </nav>
     <div class="side-bottom"><span class="pulse"></span><span>Traitement local</span><small id="sideVersion">Vulkan · Video2X</small></div>
   </aside>
+
   <main>
     <div id="authWarning" class="auth-warning hidden" role="alert">
       <div>
@@ -28,20 +53,68 @@
       </div>
       <button class="primary small" id="enableLanMode">Autoriser sur mon réseau</button>
     </div>
-    <header class="topbar"><div><div class="eyebrow">ESPACE PERSONNEL / NAS</div><h1>Video upscaling</h1></div><div class="top-actions"><span id="connection" class="connection"><i></i> Connexion…</span><button class="icon-btn" id="refreshBtn" title="Actualiser">↻</button></div></header>
-    <section class="hero" id="dashboard">
-      <div><div class="eyebrow light">AI-POWERED RESTORATION</div><h2>Donnez une nouvelle<br>dimension à vos vidéos.</h2><p>Parcourez votre bibliothèque, comparez les modèles sur un extrait, puis laissez votre GPU faire le travail.</p><button class="primary" id="scanHero">Analyser ma bibliothèque <span>→</span></button></div>
-      <div class="hero-art"><div class="orb orb-one"></div><div class="orb orb-two"></div><div class="frame frame-back"></div><div class="frame frame-front"><div class="frame-grid"></div><b>4×</b><small>AI UPSCALE</small></div><div class="hero-caption">240p <span>→</span> 720p</div></div>
-    </section>
-    <section class="stats">
-      <article class="stat"><span class="stat-label">En attente</span><strong id="queuedCount">0</strong><small id="queuedHint">Vidéos dans la file</small></article>
-      <article class="stat"><span class="stat-label">En cours</span><strong id="runningCount">0</strong><small>Traitement actif</small></article>
-      <article class="stat"><span class="stat-label">Terminées</span><strong id="completedCount">0</strong><small>Vidéos converties</small></article>
-      <article class="stat"><span class="stat-label">En erreur</span><strong id="failedCount">0</strong><small>À vérifier</small></article>
+
+    <header class="topbar">
+      <div><div class="eyebrow">ESPACE PERSONNEL / NAS</div><h1 id="pageTitle">Tableau de bord</h1></div>
+      <div class="top-actions">
+        <span id="connection" class="connection"><i></i> Connexion…</span>
+        <button class="icon-btn" id="refreshBtn" title="Actualiser" aria-label="Actualiser">↻</button>
+        <button class="secondary small" id="browseBtn">Parcourir</button>
+        <button class="primary small" id="addVideos">+ Ajouter des vidéos</button>
+      </div>
+    </header>
+
+    <div class="rail" id="statusRail">
+      <div class="rail-item"><svg><use href="#i-queue"/></svg><b id="railQueued">0</b>&nbsp;en attente</div>
+      <div class="rail-item"><span class="dot" id="railRunningDot"></span><b id="railRunning">0</b>&nbsp;en cours</div>
+      <div class="rail-item"><svg><use href="#i-gpu"/></svg><span id="railGpu">GPU —</span></div>
+      <div class="rail-item"><svg><use href="#i-disk"/></svg><span id="railDisk">Disque —</span></div>
+      <div class="rail-spacer"></div>
+      <span id="railDeferred" class="rail-note"></span>
+      <button class="secondary small" id="railPause" data-paused="0">Pause</button>
+    </div>
+
+    <section class="view active" id="dashboard" data-view="dashboard">
+      <div class="stats">
+        <article class="stat"><div class="stat-label">File d'attente</div><strong id="queuedCount">0</strong><small id="queuedHint">Vidéos dans la file</small></article>
+        <article class="stat"><div class="stat-label">En cours</div><strong id="runningCount">0</strong><small>Traitement actif</small></article>
+        <article class="stat"><div class="stat-label">Terminées</div><strong id="completedCount">0</strong><small>Vidéos converties</small></article>
+        <article class="stat"><div class="stat-label">En erreur</div><strong id="failedCount">0</strong><small>À vérifier</small></article>
+      </div>
+
+      <div class="dash-grid">
+        <div class="dash-col">
+          <article class="card" id="activeJobCard">
+            <div class="card-head"><h2>Tâche en cours</h2><span class="status" id="dashJobState">—</span>
+              <button class="primary small dash-scan" id="scanHero">Analyser ma bibliothèque</button></div>
+            <div id="dashJobBody" class="job-body"><div class="empty">Aucun traitement en cours.</div></div>
+          </article>
+          <article class="card">
+            <div class="card-head"><h2>Derniers résultats</h2><button class="link" id="dashSeeQueue">Tout voir</button></div>
+            <div id="dashRecent" class="list"><div class="empty">Aucun résultat pour le moment.</div></div>
+          </article>
+        </div>
+        <div class="dash-col">
+          <article class="card">
+            <div class="card-head"><h2>À suivre</h2><span class="hint">glisser pour réordonner</span></div>
+            <div id="dashNext" class="list"><div class="empty">Aucune tâche en attente.</div></div>
+          </article>
+          <article class="card">
+            <div class="card-head"><h2>Système</h2><span class="status" id="dashServerState">—</span></div>
+            <div class="system-list">
+              <div class="sys-line"><span>GPU</span><b id="dashGpu">—</b></div>
+              <div class="sys-line"><span>VRAM</span><b id="dashVram">—</b></div>
+              <div class="sys-line"><span>Disque</span><b id="dashDisk">—</b></div>
+              <div class="sys-line"><span>Température</span><b id="dashTemp">—</b></div>
+              <div class="sys-line"><span>Docker</span><b id="dashDocker">—</b></div>
+            </div>
+          </article>
+        </div>
+      </div>
     </section>
 
-    <section class="panel" id="settings">
-      <div class="section-head"><div><div class="eyebrow">01 / SOURCE & DESTINATION</div><h3>Bibliothèque vidéo</h3><p>Choisissez les dossiers à analyser. Les originaux restent intacts, sauf si vous activez leur remplacement.</p></div><span class="tag">SCAN RÉCURSIF</span></div>
+    <section class="view panel no-title" id="library" data-view="library">
+      <div class="section-head"><div><div class="eyebrow">01 / SOURCE &amp; DESTINATION</div><h2>Bibliothèque vidéo</h2><p>Choisissez les dossiers à analyser. Les originaux restent intacts, sauf si vous activez leur remplacement.</p></div><span class="tag">SCAN RÉCURSIF</span></div>
       <div class="path-grid">
         <div class="field"><label>DOSSIERS SOURCE</label><div id="sourcesList" class="sources-list"></div><button class="secondary small" id="addSource">+ Ajouter un dossier source</button><small>Un ou plusieurs dossiers, sur un ou plusieurs disques. Avec plusieurs dossiers, chacun a son sous-dossier dans la destination.</small></div>
         <div class="field"><label>DOSSIER DE DESTINATION</label><div class="path-control"><input id="destination" value="/data/videos_upscaled"><button data-picker="destination" class="browse">Parcourir</button></div><small>Arborescence conservée, sortie MKV.</small></div>
@@ -55,8 +128,10 @@
         <div class="field"><label>REMPLACER LES FICHIERS D'ORIGINE</label><div class="toggle-row"><span>La nouvelle version prend la place de l'original, dans son dossier</span><label class="switch"><input id="replaceOriginal" type="checkbox"><span></span></label></div><small>film.avi → film.mkv au même endroit. Le dossier de destination n'est alors plus utilisé. Si la vérification automatique relève un problème, l'original est conservé et la nouvelle version est posée à côté.</small></div>
         <div class="field"><label>ORIGINAUX REMPLACÉS</label><select id="trashDays"><option value="7">Gardés 7 jours dans la corbeille</option><option value="30" selected>Gardés 30 jours dans la corbeille</option><option value="90">Gardés 90 jours dans la corbeille</option><option value="0">Supprimés immédiatement</option></select><small>Corbeille : dossier .upscale-corbeille dans le dossier source. « Restaurer l'original » est possible depuis la file tant qu'il y est.</small></div>
       </div>
+    </section>
 
-      <div class="section-head compact"><div><div class="eyebrow">02 / PARAMÈTRES IA</div><h3>Qualité de traitement</h3></div></div>
+    <section class="view panel" id="settings" data-view="settings">
+      <div class="section-head"><div><div class="eyebrow">02 / PARAMÈTRES IA</div><h2>Qualité de traitement</h2><p>Les réglages sont figés au moment de la mise en file : les modifier n'affecte pas les tâches en attente.</p></div></div>
       <div class="settings-grid">
         <div class="field"><label>RÉSOLUTION SOURCE MAX.</label><select id="maxInput"><option value="240">Jusqu'à 240p</option><option value="360">Jusqu'à 360p</option><option value="480" selected>Jusqu'à 480p</option><option value="720">Jusqu'à 720p</option></select></div>
         <div class="field"><label>RÉSOLUTION DE SORTIE</label><select id="outputHeight"><option value="480">480p</option><option value="720" selected>720p</option><option value="1080">1080p</option><option value="1440">1440p</option><option value="2160">2160p</option></select></div>
@@ -69,45 +144,26 @@
         <div class="field render-custom hidden"><label>GRAIN AJOUTÉ</label><select id="grain"><option value="off">Aucun</option><option value="light">Léger</option><option value="medium">Moyen</option></select><small>Masque le lissage ; augmente un peu la taille du fichier.</small></div>
       </div>
 
-      <div class="section-head compact"><div><div class="eyebrow">03 / ENCODAGE</div><h3>Fichier final</h3></div></div>
+      <div class="section-head compact"><div><div class="eyebrow">03 / ENCODAGE</div><h2>Fichier final</h2></div></div>
       <div class="settings-grid">
         <div class="field"><label>ENCODEUR</label><select id="codec" class="codec-select"><option value="hevc">HEVC 10 bits · recommandé, ~40 % plus léger</option><option value="h264">H.264 · compatibilité maximale</option><option value="av1">AV1 10 bits · le plus léger, plus lent</option><option value="h264_vaapi">H.264 matériel (VAAPI, GPU AMD)</option><option value="hevc_vaapi">HEVC matériel (VAAPI, GPU AMD)</option></select><small>Le matériel est bien plus rapide mais moins efficace à qualité égale.</small></div>
         <div class="field"><label>QUALITÉ VIDÉO (CRF)</label><div class="range-line"><input id="crf" type="range" min="12" max="30" value="16"><b id="crfValue">16</b></div><small>Plus bas = meilleure qualité. Converti automatiquement pour HEVC, AV1 et VAAPI.</small></div>
         <div class="field"><label>VITESSE D'ENCODAGE</label><select id="preset"><option value="fast">Rapide</option><option value="medium">Équilibré</option><option value="slow" selected>Lent · compression plus efficace</option></select></div>
       </div>
 
-      <div class="section-head compact"><div><div class="eyebrow">04 / PROFILS PAR DOSSIER</div><h3>Réglages spécifiques</h3><p>Un fichier utilise le profil du dossier le plus précis qui le contient. Les réglages sont figés au moment de la mise en file.</p></div><button class="secondary small" id="addProfile">+ Ajouter un profil</button></div>
+      <div class="section-head compact"><div><div class="eyebrow">04 / PROFILS PAR DOSSIER</div><h2>Réglages spécifiques</h2><p>Un fichier utilise le profil du dossier le plus précis qui le contient.</p></div><button class="secondary small" id="addProfile">+ Ajouter un profil</button></div>
       <div class="table-wrap"><table class="profiles"><thead><tr><th>DOSSIER</th><th>MODÈLE</th><th>SORTIE</th><th>DÉBRUITAGE</th><th>RENDU</th><th>ENCODEUR</th><th></th></tr></thead><tbody id="profilesBody"></tbody></table></div>
-
-      <div class="actions"><button class="secondary" id="saveSettings">Enregistrer</button><button class="secondary" id="scanBtn">⌕ Analyser les vidéos</button><button class="primary" id="queueBtn">Lancer le traitement <span>→</span></button></div>
-      <div id="scanResult" class="scan-result hidden"></div>
     </section>
 
-    <section class="panel" id="models">
-      <div class="section-head"><div><div class="eyebrow">05 / MODÈLES IA</div><h3>Modèles personnalisés</h3><p>Installe des modèles de la communauté depuis <a href="https://openmodeldb.info" target="_blank" rel="noopener">OpenModelDB</a> en collant simplement leur lien : Upscale les télécharge, les convertit pour ta carte graphique et vérifie qu'ils fonctionnent.</p></div><span class="tag" id="engineBadge">MOTEUR NCNN</span></div>
-      <div class="table-wrap"><table class="profiles"><thead><tr><th>NOM</th><th>FACTEUR</th><th>TUILES</th><th>TAILLE</th><th></th></tr></thead><tbody id="modelsBody"></tbody></table></div>
-      <div class="install-box">
-        <div class="field grow"><label>LIEN DU MODÈLE</label><input class="text-input" id="installSource" placeholder="https://openmodeldb.info/models/2x-LiveActionV1-SPAN" spellcheck="false"><small>Page d'un modèle sur openmodeldb.info, ou lien direct vers un fichier .pth, .safetensors, .onnx ou .zip.</small></div>
-        <div class="field"><label>TUILES (VRAM)</label><select id="installTile"><option value="0">Automatique</option><option value="512">512 px</option><option value="256">256 px</option><option value="128">128 px · peu de VRAM</option><option value="64">64 px · très peu de VRAM</option></select></div>
-        <div class="field import-action"><button class="primary small" id="installModel">Installer</button></div>
-      </div>
-      <div class="suggestions" id="modelSuggestions"></div>
-      <div class="installs" id="modelInstalls"></div>
-      <details class="import-details">
-        <summary>Importer un fichier depuis cet ordinateur</summary>
-        <div class="import-box">
-          <div class="field"><label>NOM</label><input class="text-input" id="modelLabel" maxlength="60" placeholder="ex. 2x Peau réaliste"></div>
-          <div class="field"><label>FACTEUR</label><select id="modelScale"><option value="">Automatique (.pth)</option><option value="2">×2</option><option value="3">×3</option><option value="4">×4</option></select></div>
-          <div class="field"><label>TUILES (VRAM)</label><select id="modelTile"><option value="0">Automatique</option><option value="512">512 px</option><option value="256">256 px</option><option value="128">128 px · peu de VRAM</option><option value="64">64 px · très peu de VRAM</option></select></div>
-          <div class="field wide"><label>FICHIER(S)</label><input type="file" id="modelFiles" multiple accept=".pth,.pt,.ckpt,.safetensors,.onnx,.zip,.param,.bin"><small>Un .pth, .safetensors, .onnx ou .zip — ou la paire .param + .bin (ncnn).</small></div>
-          <div class="field import-action"><button class="primary small" id="importModel">Importer</button></div>
-        </div>
-      </details>
-      <p class="ollama-help" id="modelsHelp">Choisis de préférence un modèle ×2 (360p → 720p) : beaucoup plus rapide qu'un ×4. Architectures recommandées : SPAN, Compact, ESRGAN. Les très lourdes (DAT, HAT, ATD...) sont refusées ou trop lentes. La première conversion d'un .pth installe le convertisseur (environ 1 Go, une seule fois). Teste chaque modèle dans l'Aperçu avant de l'utiliser, et respecte sa licence.</p>
+    <section class="view panel no-title" id="queue" data-view="queue">
+      <div class="section-head"><div><div class="eyebrow">05 / MONITORING</div><h2>File de traitement</h2><p id="queueInfo">Suivez les tâches et consultez les journaux en cas de problème.</p></div><div class="queue-actions"><button class="secondary small" id="pauseBtn" title="La vidéo en cours s'arrête à la fin de son segment">Ⅱ Pause</button><button class="secondary small" id="resumeBtn">▶ Reprendre</button><button class="secondary small" id="clearBtn">Vider les terminées</button></div></div>
+      <div class="filters" id="filters"><button data-filter="" class="active">Toutes</button><button data-filter="queued">En attente</button><button data-filter="running">En cours</button><button data-filter="completed">Terminées</button><button data-filter="failed">Erreurs</button><button data-filter="cancelled">Annulées</button></div>
+      <div class="table-wrap"><table><thead><tr><th>FICHIER</th><th>RÉGLAGES</th><th>ÉTAT</th><th>ÉTAPE / PROGRESSION</th><th></th></tr></thead><tbody id="jobsBody"><tr><td colspan="5" class="empty">Aucun traitement pour le moment.</td></tr></tbody></table></div>
+      <div class="pager"><button class="secondary small" id="prevPage">← Précédent</button><span id="pageInfo"></span><button class="secondary small" id="nextPage">Suivant →</button></div>
     </section>
 
-    <section class="panel" id="preview">
-      <div class="section-head"><div><div class="eyebrow">06 / COMPARAISON</div><h3>Aperçu avant/après</h3><p>Traite un court extrait avec votre configuration (exactement comme le fichier final) et les modèles cochés, puis comparez avec le curseur. Les aperçus passent avant la file.</p></div></div>
+    <section class="view panel no-title" id="preview" data-view="preview">
+      <div class="section-head"><div><div class="eyebrow">06 / COMPARAISON</div><h2>Aperçu avant/après</h2><p>Traite un court extrait avec votre configuration (exactement comme le fichier final) et les modèles cochés, puis comparez avec le curseur. Les aperçus passent avant la file.</p></div></div>
       <div class="preview-form">
         <div class="field grow"><label>VIDÉO</label><div class="path-control"><input id="previewSource" placeholder="Choisir un fichier…"><button data-picker="previewSource" data-mode="file" class="browse">Parcourir</button></div></div>
         <div class="field"><label>DÉBUT (MM:SS)</label><input class="text-input" id="previewStart" value="01:00"></div>
@@ -130,10 +186,37 @@
         </div>
         <small class="muted">Glissez sur l'image pour déplacer la séparation. Astuce : mettez la lecture en pause pour comparer image par image.</small>
       </div>
+      <article class="card preview-history">
+        <div class="card-head"><h2>Aperçus récents</h2><span class="hint">supprime les fichiers de l'aperçu</span></div>
+        <div id="previewHistory" class="list"><div class="empty">Aucun aperçu pour le moment.</div></div>
+      </article>
     </section>
 
-    <section class="panel" id="automation">
-      <div class="section-head"><div><div class="eyebrow">07 / AUTOMATISATION</div><h3>Planification et intégrations</h3><p>Surveillance du dossier source, horaires de traitement, notifications et serveur multimédia.</p></div></div>
+    <section class="view panel no-title" id="models" data-view="models">
+      <div class="section-head"><div><div class="eyebrow">07 / MODÈLES IA</div><h2>Modèles personnalisés</h2><p>Installe des modèles de la communauté depuis <a href="https://openmodeldb.info" target="_blank" rel="noopener">OpenModelDB</a> en collant simplement leur lien : Upscale les télécharge, les convertit pour ta carte graphique et vérifie qu'ils fonctionnent.</p></div><span class="tag" id="engineBadge">MOTEUR NCNN</span></div>
+      <div class="table-wrap"><table class="profiles"><thead><tr><th>NOM</th><th>FACTEUR</th><th>TUILES</th><th>TAILLE</th><th></th></tr></thead><tbody id="modelsBody"></tbody></table></div>
+      <div class="install-box">
+        <div class="field grow"><label>LIEN DU MODÈLE</label><input class="text-input" id="installSource" placeholder="https://openmodeldb.info/models/2x-LiveActionV1-SPAN" spellcheck="false"><small>Page d'un modèle sur openmodeldb.info, ou lien direct vers un fichier .pth, .safetensors, .onnx ou .zip.</small></div>
+        <div class="field"><label>TUILES (VRAM)</label><select id="installTile"><option value="0">Automatique</option><option value="512">512 px</option><option value="256">256 px</option><option value="128">128 px · peu de VRAM</option><option value="64">64 px · très peu de VRAM</option></select></div>
+        <div class="field import-action"><button class="primary small" id="installModel">Installer</button></div>
+      </div>
+      <div class="suggestions" id="modelSuggestions"></div>
+      <div class="installs" id="modelInstalls"></div>
+      <details class="import-details">
+        <summary>Importer un fichier depuis cet ordinateur</summary>
+        <div class="import-box">
+          <div class="field"><label>NOM</label><input class="text-input" id="modelLabel" maxlength="60" placeholder="ex. 2x Peau réaliste"></div>
+          <div class="field"><label>FACTEUR</label><select id="modelScale"><option value="">Automatique (.pth)</option><option value="2">×2</option><option value="3">×3</option><option value="4">×4</option></select></div>
+          <div class="field"><label>TUILES (VRAM)</label><select id="modelTile"><option value="0">Automatique</option><option value="512">512 px</option><option value="256">256 px</option><option value="128">128 px · peu de VRAM</option><option value="64">64 px · très peu de VRAM</option></select></div>
+          <div class="field wide"><label>FICHIER(S)</label><input type="file" id="modelFiles" multiple accept=".pth,.pt,.ckpt,.safetensors,.onnx,.zip,.param,.bin"><small>Un .pth, .safetensors, .onnx ou .zip — ou la paire .param + .bin (ncnn).</small></div>
+          <div class="field import-action"><button class="primary small" id="importModel">Importer</button></div>
+        </div>
+      </details>
+      <p class="ollama-help" id="modelsHelp">Choisis de préférence un modèle ×2 (360p → 720p) : beaucoup plus rapide qu'un ×4. Architectures recommandées : SPAN, Compact, ESRGAN. Les très lourdes (DAT, HAT, ATD...) sont refusées ou trop lentes. La première conversion d'un .pth installe le convertisseur (environ 1 Go, une seule fois). Teste chaque modèle dans l'Aperçu avant de l'utiliser, et respecte sa licence.</p>
+    </section>
+
+    <section class="view panel" id="automation" data-view="automation">
+      <div class="section-head"><div><div class="eyebrow">08 / AUTOMATISATION</div><h2>Planification et intégrations</h2><p>Surveillance du dossier source, horaires de traitement, notifications et serveur multimédia.</p></div></div>
       <div class="settings-grid">
         <div class="field"><label>DOSSIER SURVEILLÉ</label><div class="toggle-row"><span>Ajouter les nouvelles vidéos automatiquement</span><label class="switch"><input id="watchEnabled" type="checkbox"><span></span></label></div></div>
         <div class="field"><label>INTERVALLE D'ANALYSE</label><select id="watchInterval"><option value="5">5 min</option><option value="15">15 min</option><option value="30" selected>30 min</option><option value="60">1 h</option><option value="360">6 h</option><option value="1440">24 h</option></select><small>Les fichiers modifiés depuis moins de 2 min sont ignorés (copie en cours).</small></div>
@@ -148,10 +231,8 @@
         <div class="field"><label>ADRESSE ET JETON</label><input class="text-input" id="mediaUrl" placeholder="http://192.168.1.20:8096"><input class="text-input top-gap-s" id="mediaToken" type="password" autocomplete="off" placeholder="Clé API Jellyfin / X-Plex-Token"><small id="mediaTokenHint"></small></div>
       </div>
       <div class="ollama-actions"><span id="automationStatus" class="ollama-status"></span><button class="secondary small" id="testNotify">Tester la notification</button><button class="secondary small" id="testMedia">Tester le serveur</button><button class="primary small" id="saveAutomation">Enregistrer</button></div>
-    </section>
 
-    <section class="panel" id="ollama">
-      <div class="section-head"><div><div class="eyebrow">OPTIONNEL / ASSISTANT IA</div><h3>Connexion Ollama</h3><p>Avec un modèle de vision (llava, qwen2.5vl, gemma3…), le modèle IA « Automatique » choisit entre animation et prise de vue réelle.</p></div><span class="tag" id="ollamaBadge">DÉSACTIVÉ</span></div>
+      <div class="section-head compact"><div><div class="eyebrow">OPTIONNEL / ASSISTANT IA</div><h2>Connexion Ollama</h2><p>Avec un modèle de vision (llava, qwen2.5vl, gemma3…), le modèle IA « Automatique » choisit entre animation et prise de vue réelle.</p></div><span class="tag" id="ollamaBadge">DÉSACTIVÉ</span></div>
       <div class="ollama-grid">
         <div class="field"><label>ACTIVER L'INTÉGRATION</label><div class="toggle-row"><span>Utiliser Ollama (facultatif)</span><label class="switch"><input id="ollamaEnabled" type="checkbox"><span></span></label></div></div>
         <div class="field"><label>ADRESSE DE L'API OLLAMA</label><input class="ollama-input" id="ollamaUrl" value="http://host.docker.internal:11434" placeholder="http://192.168.1.10:11434"><small>Adresse joignable depuis le conteneur Upscale.</small></div>
@@ -161,15 +242,8 @@
       <p class="ollama-help">Si Ollama tourne directement sur le NAS, son API doit être accessible depuis Docker. Sur une installation Linux native, Ollama écoute souvent uniquement sur localhost : configure OLLAMA_HOST=0.0.0.0 puis redémarre Ollama, ou indique une adresse IP/port déjà accessible. Ne publie pas cette API sur Internet.</p>
     </section>
 
-    <section class="panel" id="queue">
-      <div class="section-head"><div><div class="eyebrow">08 / MONITORING</div><h3>File de traitement</h3><p id="queueInfo">Suivez les tâches et consultez les journaux en cas de problème.</p></div><div class="queue-actions"><button class="secondary small" id="pauseBtn" title="La vidéo en cours s'arrête à la fin de son segment">Ⅱ Pause</button><button class="secondary small" id="resumeBtn">▶ Reprendre</button><button class="secondary small" id="clearBtn">Vider les terminées</button></div></div>
-      <div class="filters" id="filters"><button data-filter="" class="active">Toutes</button><button data-filter="queued">En attente</button><button data-filter="running">En cours</button><button data-filter="completed">Terminées</button><button data-filter="failed">Erreurs</button><button data-filter="cancelled">Annulées</button></div>
-      <div class="table-wrap"><table><thead><tr><th>FICHIER</th><th>RÉGLAGES</th><th>ÉTAT</th><th>ÉTAPE / PROGRESSION</th><th></th></tr></thead><tbody id="jobsBody"><tr><td colspan="5" class="empty">Aucun traitement pour le moment.</td></tr></tbody></table></div>
-      <div class="pager"><button class="secondary small" id="prevPage">← Précédent</button><span id="pageInfo"></span><button class="secondary small" id="nextPage">Suivant →</button></div>
-    </section>
-
-    <section class="panel health-panel" id="system">
-      <div class="section-head"><div><div class="eyebrow">SYSTÈME</div><h3>État du serveur</h3></div><button class="secondary small" id="healthBtn">Tester le GPU</button></div>
+    <section class="view panel health-panel no-title" id="system" data-view="system">
+      <div class="section-head"><div><div class="eyebrow">SYSTÈME</div><h2>État du serveur</h2></div><button class="secondary small" id="healthBtn">Tester le GPU</button></div>
       <div class="health-grid"><div><span class="health-label">Docker / mode</span><strong id="dockerState">Vérification…</strong></div><div><span class="health-label">GPU Vulkan</span><strong id="gpuState">Non vérifié</strong></div><div><span class="health-label">Video2X</span><strong id="imageState">—</strong></div><div><span class="health-label">Moteur</span><strong id="engineName">Video2X</strong></div></div>
       <div class="update-box">
         <div class="update-info">
@@ -191,9 +265,19 @@
       <div class="gpu-live" id="gpuLive"></div>
       <pre id="healthDetails" class="health-details hidden"></pre>
     </section>
+
+    <div class="actionbar">
+      <div id="scanResult" class="scan-result hidden"></div>
+      <div class="actionbar-inner">
+        <button class="secondary" id="saveSettings">Enregistrer</button>
+        <button class="secondary" id="scanBtn">⌕ Analyser les vidéos</button>
+        <button class="primary" id="queueBtn">Lancer le traitement <span>→</span></button>
+      </div>
+    </div>
     <footer>UPSCALE <span id="footerVersion"></span> <span>•</span> Traitement local, vos fichiers restent chez vous.</footer>
   </main>
 </div>
+
 <div id="picker" class="modal hidden"><div class="modal-card"><div class="modal-head"><div><div class="eyebrow">EXPLORATEUR DE FICHIERS</div><h3 id="pickerTitle">Choisir un dossier</h3></div><button id="closePicker" class="icon-btn">×</button></div><div id="currentPath" class="current-path">/data</div><div id="directoryList" class="directory-list"></div><div class="modal-actions"><button id="selectFolder" class="primary">Utiliser ce dossier</button></div></div></div>
 <div id="logModal" class="modal hidden"><div class="modal-card log-card"><div class="modal-head"><div><div class="eyebrow">JOURNAL DU TRAITEMENT</div><h3 id="logTitle">Logs</h3></div><button id="closeLogs" class="icon-btn">×</button></div><pre id="logContent" class="log-content"></pre></div></div>
 <div id="toast" class="toast"></div>

@@ -1,5 +1,5 @@
 const $ = (id) => document.getElementById(id);
-const state = { models: {}, filter: "", page: 1, limit: 25, total: 0, previews: [], currentPreview: null };
+const state = { models: {}, filter: "", page: 1, limit: 25, total: 0, previews: [], currentPreview: null, disks: [], gpu: null, paused: false };
 let picker = { input: null, mode: "dir", path: "" };
 let toastTimer, scanPolling = null, gpuPolling = null;
 
@@ -408,6 +408,103 @@ async function refreshJobs() {
     }).join("");
   } catch (error) { console.warn(error); }
 }
+function compactName(path) {
+  return String(path || "").split("/").pop();
+}
+function renderDiskRail() {
+  const disk = (state.disks || [])[0];
+  if (!disk || disk.free == null) {
+    $("railDisk").textContent = "Disque —"; $("dashDisk").textContent = "—"; return;
+  }
+  const free = (disk.free / 1073741824).toFixed(1).replace(".", ",");
+  const total = (disk.total / 1073741824).toFixed(0);
+  $("railDisk").textContent = "Disque " + free + " Go libres";
+  $("dashDisk").textContent = free + " / " + total + " Go";
+}
+function renderSystem() {
+  const gpu = state.gpu;
+  $("railGpu").textContent = gpu && gpu.busy_percent != null ? "GPU " + gpu.busy_percent + " %" : "GPU —";
+  $("dashGpu").textContent = gpu && gpu.busy_percent != null ? gpu.busy_percent + " %" : "—";
+  $("dashVram").textContent = gpu && gpu.vram_total ? (gpu.vram_used / 1073741824).toFixed(1) + " / " + (gpu.vram_total / 1073741824).toFixed(1) + " Go" : "—";
+  $("dashTemp").textContent = gpu && gpu.temperature_c != null ? Math.round(gpu.temperature_c) + " °C" : "—";
+  renderDiskRail();
+}
+function renderDashboard(data) {
+  const jobs = data.jobs || [], counts = data.counts || {};
+  state.paused = !!data.paused;
+  $("railQueued").textContent = counts.queued || 0;
+  $("railRunning").textContent = counts.running || 0;
+  $("railRunningDot").classList.toggle("on", (counts.running || 0) > 0);
+  $("navQueueBadge").textContent = (counts.queued || 0) + (counts.running || 0);
+  $("railDeferred").textContent = data.deferred ? "⏸ " + data.deferred : "";
+  const railPause = $("railPause");
+  railPause.textContent = data.paused ? "Reprendre" : "Pause";
+  railPause.dataset.paused = data.paused ? "1" : "0";
+  $("queuedCount").textContent = counts.queued || 0;
+  $("runningCount").textContent = counts.running || 0;
+  $("completedCount").textContent = counts.completed || 0;
+  $("failedCount").textContent = counts.failed || 0;
+
+  const running = jobs.find(job => job.status === "running");
+  if (running) {
+    const pct = Math.max(0, Math.min(100, Math.round((running.progress || 0) * 1000) / 10));
+    const eta = running.eta_seconds != null ? " · reste ~" + formatDuration(running.eta_seconds) : "";
+    const seg = running.segments_total ? " · segment " + (running.segments_done || 0) + "/" + running.segments_total : "";
+    const model = modelLabel(running.model), codec = codecLabels[running.codec] || running.codec || "";
+    const render = renderLabels[running.render] || "";
+    $("dashJobState").className = "status running";
+    $("dashJobState").textContent = running.segments_total ? "Segment " + (running.segments_done || 0) + "/" + running.segments_total : "En cours";
+    $("scanHero").classList.add("hidden");
+    $("dashJobBody").innerHTML =
+      '<div class="job-top"><div class="job-thumb"></div><div style="min-width:0;flex:1">' +
+      '<p class="job-title">' + escapeHtml(compactName(running.source)) + '</p><div class="job-sub">' +
+      (running.output_height ? '<span class="chip red">' + escapeHtml((running.height || "?")) + 'p → ' + running.output_height + 'p</span>' : "") +
+      '<span class="chip">' + escapeHtml(model) + '</span>' +
+      (codec ? '<span class="chip">' + escapeHtml(codec) + '</span>' : "") +
+      (render ? '<span class="chip">' + escapeHtml(render) + '</span>' : "") +
+      '</div></div></div>' +
+      '<div class="bar"><i style="width:' + pct + '%"></i></div>' +
+      '<div class="bar-meta"><span><b>' + pct + ' %</b>' + seg + eta + '</span><span>' + escapeHtml(running.stage || "") + '</span></div>' +
+      '<div class="job-meta"><div><span>Modèle</span><b>' + escapeHtml(model) + '</b></div>' +
+      '<div><span>Segment</span><b>' + (running.segments_done || 0) + " / " + (running.segments_total || "?") + '</b></div>' +
+      '<div><span>Encodeur</span><b>' + escapeHtml(codec || "—") + '</b></div>' +
+      '<div><span>Rendu</span><b>' + escapeHtml(render || "—") + '</b></div></div>' +
+      '<div class="job-actions"><button class="btn" data-dash="' + (data.paused ? "resume" : "pause") + '">' +
+      (data.paused ? "Reprendre" : "Pause") + '</button>' +
+      '<button class="btn" data-dash="logs" data-id="' + running.id + '">Voir les logs</button>' +
+      '<button class="btn danger" data-dash="cancel" data-id="' + running.id + '">Arrêter</button></div>';
+  } else {
+    $("dashJobState").className = "status";
+    $("dashJobState").textContent = "Inactif";
+    $("scanHero").classList.remove("hidden");
+    $("dashJobBody").innerHTML = '<div class="empty">Aucun traitement en cours. Analyse la bibliothèque ou lance un aperçu depuis la barre d\'actions.</div>';
+  }
+
+  const queued = jobs.filter(job => job.status === "queued").slice(0, 3);
+  $("dashNext").innerHTML = queued.length ? queued.map((job, index) =>
+    '<div class="row"><span class="idx">' + (index + 1) + '</span><div class="info"><b>' + escapeHtml(compactName(job.source)) +
+    '</b><small>' + escapeHtml((job.height || "?")) + 'p → ' + (job.output_height || "?") + 'p · ' + escapeHtml(modelLabel(job.model)) +
+    '</small></div><span class="chip">' + (job.output_height || "—") + 'p</span></div>').join("")
+    : '<div class="empty">Aucune tâche en attente.</div>';
+
+  const recent = jobs.filter(job => ["completed", "failed", "cancelled"].includes(job.status)).slice(0, 3);
+  $("dashRecent").innerHTML = recent.length ? recent.map(job => {
+    const ok = job.status === "completed";
+    return '<div class="row"><svg class="' + (ok ? "ok-ic" : "err-ic") + '"><use href="#' + (ok ? "i-check" : "i-alert") + '"/></svg>' +
+      '<div class="info"><b>' + escapeHtml(compactName(job.source)) + '</b><small>' + escapeHtml((job.output_height || "?")) +
+      'p · ' + escapeHtml(modelLabel(job.model)) + (job.warning ? " · ⚠" : "") + '</small></div>' +
+      '<span class="chip ' + (ok ? "green" : "amber") + '">' + (ok ? "Terminé" : job.status === "failed" ? "Erreur" : "Annulé") + '</span>' +
+      '<button class="btn" data-dash="logs" data-id="' + job.id + '">Logs</button></div>';
+  }).join("") : '<div class="empty">Aucun résultat pour le moment.</div>';
+}
+async function refreshDashboard() {
+  try {
+    const data = await api("/api/jobs?limit=30");
+    renderDashboard(data);
+    renderSystem();
+  } catch (error) { console.warn(error); }
+}
+
 async function loadLogs(id) {
   const data = await api("/api/logs/" + encodeURIComponent(id)); $("logTitle").textContent = "Journal · " + id;
   $("logContent").textContent = data.log || "Aucun journal disponible."; $("logModal").classList.remove("hidden");
@@ -426,11 +523,51 @@ async function startPreview() {
     toast("Aperçu lancé"); refreshPreviews();
   } catch (error) { toast(error.message); $("previewStatus").textContent = error.message; $("previewStatus").className = "ollama-status error"; }
 }
+function previewLabel(preview) {
+  return (preview.manifest && preview.manifest.name) || compactName(preview.source || "");
+}
+function renderPreviewHistory() {
+  const box = $("previewHistory");
+  if (!box) return;
+  if (!state.previews.length) {
+    box.innerHTML = '<div class="empty">Aucun aperçu pour le moment.</div>';
+    return;
+  }
+  const labels = { queued: "En attente", running: "En cours", completed: "Prêt", failed: "Échec", cancelled: "Annulé" };
+  box.innerHTML = state.previews.map(preview => {
+    const when = preview.updated_at ? new Date(preview.updated_at).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" }) : "";
+    const variants = preview.manifest && preview.manifest.variants ? preview.manifest.variants.length : 0;
+    const running = preview.status === "running";
+    return '<div class="history-item"><div class="info"><b>' + escapeHtml(previewLabel(preview)) + '</b><small>' +
+      escapeHtml(when) + ' · ' + escapeHtml(labels[preview.status] || preview.status) +
+      (variants ? ' · ' + variants + ' variante(s)' : '') + '</small></div>' +
+      '<button class="btn ' + (running ? "" : "danger") + '" data-delete-preview="' + preview.id + '"' +
+      (running ? " disabled" : "") + '>Supprimer</button></div>';
+  }).join("");
+}
+async function deletePreview(id) {
+  if (!confirm("Supprimer cet aperçu et ses fichiers ?")) return;
+  try {
+    await post("/api/jobs/" + id + "/delete");
+    if (state.currentPreview === id) {
+      state.currentPreview = null;
+      $("compareBox").classList.add("hidden");
+    }
+    toast("Aperçu supprimé");
+    await refreshPreviews();
+  } catch (error) { toast(error.message); }
+}
+
 async function refreshPreviews() {
   try {
     const data = await api("/api/previews"); state.previews = data.previews;
+    renderPreviewHistory();
     const current = state.previews.find(p => p.id === state.currentPreview) || state.previews[0];
-    if (!current) return;
+    if (!current) {
+      $("compareBox").classList.add("hidden");
+      $("previewPick").innerHTML = "";
+      return;
+    }
     if (["queued", "running"].includes(current.status)) {
       $("previewStatus").textContent = (current.stage || "En attente") + (current.progress ? " · " + Math.round(current.progress * 100) + " %" : "");
       $("previewStatus").className = "ollama-status";
@@ -547,6 +684,9 @@ async function checkHealth() {
     $("imageState").textContent = data.image_present == null ? "—" : (data.image_present ? (local ? "Installé" : "Image présente") : (local ? "Binaire introuvable" : "À télécharger (automatique)"));
     $("engineName").textContent = String(data.image).split("/").pop().replace(":", " ");
     $("footerVersion").textContent = "v" + data.version; $("sideVersion").textContent = "v" + data.version + " · Video2X";
+    $("dashDocker").textContent = local ? "Mode local" : (data.docker_ok ? "Connecté" : "Indisponible");
+    $("dashServerState").textContent = data.docker_ok ? "stable" : "hors ligne";
+    $("dashServerState").className = "status " + (data.docker_ok ? "completed" : "failed");
     renderGpu(data.gpu);
     if (data.error) { $("healthDetails").textContent = data.error; $("healthDetails").classList.remove("hidden"); }
     $("connection").classList.toggle("online", data.docker_ok);
@@ -554,12 +694,16 @@ async function checkHealth() {
     return data;
   } catch (error) {
     $("dockerState").textContent = "Erreur"; $("gpuState").textContent = "Inconnu";
+    $("dashDocker").textContent = "Hors ligne"; $("dashServerState").textContent = "hors ligne";
+    $("dashServerState").className = "status failed";
     $("connection").classList.remove("online"); $("connection").innerHTML = "<i></i> Hors ligne";
   }
 }
 async function refreshGpuStats() {
   try {
     const { cards } = await api("/api/gpu/stats");
+    state.gpu = (cards && cards[0]) || null;
+    renderSystem();
     $("gpuLive").innerHTML = cards.map(c => {
       const items = [];
       if (c.busy_percent != null) items.push("<b>" + c.busy_percent + " %</b> charge");
@@ -596,6 +740,8 @@ function diskSpace(disk) {
   return (disk.free / 1073741824).toFixed(0) + " Go libres sur " + (disk.total / 1073741824).toFixed(0) + " Go";
 }
 function renderDisks(disks) {
+  state.disks = disks || [];
+  renderDiskRail();
   $("disksHint").innerHTML = "<b>Disques accessibles :</b> " + disks.map(d => '<span class="disk-chip" title="' + escapeHtml(d.path) + '">🖴 ' + escapeHtml(d.name) + (d.total ? " · " + escapeHtml(diskSpace(d)) : "") + "</span>").join("") +
     '<small>Un disque manque ? Sur le NAS : <code>sudo bash bibliotheques.sh ajouter /chemin/du/disque</code></small>';
 }
@@ -621,23 +767,44 @@ function openPicker(input, mode) {
   $("picker").classList.remove("hidden");
   browse(input.value || (mode === "file" ? firstSource() : ""));
 }
+const VIEW_TITLES = { dashboard: "Tableau de bord", library: "Bibliothèque", queue: "File de traitement",
+  preview: "Aperçu avant/après", models: "Modèles IA", settings: "Réglages",
+  automation: "Automatisation", system: "Système" };
+
+function showView(name, updateHash = true) {
+  if (!VIEW_TITLES[name]) name = "dashboard";
+  document.querySelectorAll(".view").forEach(view => view.classList.toggle("active", view.dataset.view === name));
+  document.querySelectorAll(".sidebar nav a[data-view]").forEach(link => link.classList.toggle("active", link.dataset.view === name));
+  $("pageTitle").textContent = VIEW_TITLES[name];
+  document.title = "Upscale — " + VIEW_TITLES[name];
+  if (updateHash) history.replaceState(null, "", "#" + name);
+  window.scrollTo({ top: 0, behavior: "auto" });
+  setTimeout(() => window.scrollTo({ top: 0, behavior: "auto" }), 60);
+}
 function setupNav() {
-  const links = [...document.querySelectorAll(".sidebar nav a")];
-  const sections = links.map(a => document.querySelector(a.getAttribute("href"))).filter(Boolean);
-  const activate = id => links.forEach(a => a.classList.toggle("active", a.getAttribute("href") === "#" + id));
-  links.forEach(a => a.addEventListener("click", () => activate(a.getAttribute("href").slice(1))));
-  if (!("IntersectionObserver" in window)) return;
-  const observer = new IntersectionObserver(entries => {
-    const visible = entries.filter(e => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
-    if (visible) activate(visible.target.id);
-  }, { rootMargin: "-20% 0px -55% 0px" });
-  sections.forEach(s => observer.observe(s));
+  document.querySelectorAll(".sidebar nav a[data-view]").forEach(link => {
+    link.addEventListener("click", event => { event.preventDefault(); showView(link.dataset.view); });
+  });
+  window.addEventListener("hashchange", () => showView(location.hash.slice(1), false));
+  const initial = location.hash.slice(1);
+  showView(VIEW_TITLES[initial] ? initial : "dashboard", false);
 }
 
 // ------------------------------------------------------------------ événements
 const jobAction = async (fn, message) => { try { await fn(); if (message) toast(message); refreshJobs(); } catch (e) { toast(e.message); } };
 document.addEventListener("click", async event => {
   const t = event.target;
+  const dash = t.closest("[data-dash]");
+  if (dash) {
+    const action = dash.dataset.dash, id = dash.dataset.id;
+    if (action === "logs") return loadLogs(id).catch(error => toast(error.message));
+    if (action === "scan") return startScan(false);
+    if (action === "cancel") return jobAction(() => post("/api/jobs/" + id + "/cancel"), "Annulation demandée").then(refreshDashboard);
+    if (action === "pause") return jobAction(() => post("/api/pause"), "Pause demandée").then(refreshDashboard);
+    if (action === "resume") return jobAction(() => post("/api/resume"), "Traitement repris").then(refreshDashboard);
+  }
+  const deletePreviewButton = t.closest("[data-delete-preview]");
+  if (deletePreviewButton) return deletePreview(deletePreviewButton.dataset.deletePreview);
   const dir = t.closest("[data-path]"); if (dir) return browse(dir.dataset.path);
   const file = t.closest("[data-file]"); if (file) { picker.input.value = file.dataset.file; $("picker").classList.add("hidden"); return; }
   const pick = t.closest("[data-picker]");
@@ -687,7 +854,15 @@ $("logModal").addEventListener("click", e => { if (e.target.id === "logModal") $
 $("saveSettings").addEventListener("click", () => saveSettings().catch(e => toast(e.message)));
 $("scanBtn").addEventListener("click", () => startScan(false)); $("scanHero").addEventListener("click", () => startScan(false));
 $("queueBtn").addEventListener("click", () => startScan(true));
-$("refreshBtn").addEventListener("click", () => { refreshJobs(); checkHealth(); refreshPreviews(); });
+$("refreshBtn").addEventListener("click", () => { refreshJobs(); refreshDashboard(); checkHealth(); refreshPreviews(); refreshUpdate(); });
+$("addVideos").addEventListener("click", () => { showView("library"); $("addSource").focus(); });
+$("browseBtn").addEventListener("click", () => showView("library"));
+$("dashSeeQueue").addEventListener("click", () => showView("queue"));
+$("railPause").addEventListener("click", () => {
+  const paused = $("railPause").dataset.paused === "1";
+  jobAction(() => post(paused ? "/api/resume" : "/api/pause"), paused ? "Traitement repris" : "Pause demandée")
+    .then(() => refreshDashboard());
+});
 $("healthBtn").addEventListener("click", testGpu);
 $("testOllama").addEventListener("click", testOllama); $("saveOllama").addEventListener("click", saveOllama);
 $("saveAutomation").addEventListener("click", () => saveAutomation().catch(e => toast(e.message)));
@@ -725,7 +900,7 @@ $("videoLeft").addEventListener("seeked", () => { $("videoRight").currentTime = 
     reloadModels().catch(e => console.warn(e));
   } catch (e) { toast(e.message); }
   try { const s = await api("/api/scan"); if (s.running) { showScanResult(describeScan(s)); pollScan(); } } catch (e) { /* rien */ }
-  refreshJobs(); checkHealth(); checkOllama(); refreshPreviews(); refreshGpuStats(); refreshUpdate();
-  setInterval(refreshJobs, 3000); setInterval(refreshPreviews, 4000); setInterval(refreshGpuStats, 5000);
+  refreshJobs(); refreshDashboard(); checkHealth(); checkOllama(); refreshPreviews(); refreshGpuStats(); refreshUpdate();
+  setInterval(refreshJobs, 3000); setInterval(refreshDashboard, 4000); setInterval(refreshPreviews, 4000); setInterval(refreshGpuStats, 5000);
   setInterval(checkHealth, 60000); setInterval(checkOllama, 60000);
 })();

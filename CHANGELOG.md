@@ -3,6 +3,21 @@
 Toutes les évolutions notables sont consignées ici. Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet utilise le [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [2.11.0] — 2026-11-08
+
+### Ajouté
+
+- **Nouvelle interface « console »** : navigation par vues (tableau de bord, bibliothèque, file, aperçu,
+  modèles, réglages, automatisation, système), rail de statut persistant, carte « Tâche en cours » avec
+  progression, segment, ETA et actions, prochaines tâches et derniers résultats, barre d'action fixe.
+- **Suppression des aperçus** depuis l'historique de l'onglet Aperçu : retire l'entrée et ses fichiers
+  (bouton désactivé pendant un aperçu en cours).
+
+### Modifié
+
+- Les réglages sont séparés de la bibliothèque ; la file n'est plus en bas d'une page unique.
+- Mise en page responsive et barre latérale compacte sur mobile.
+
 ## [2.10.0] — 2026-11-08
 
 ### Ajouté

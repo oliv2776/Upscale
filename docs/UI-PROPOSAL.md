@@ -3,6 +3,9 @@
 > Objectif : passer d'une **page de présentation** à une **console d'exploitation** lisible en un coup d'œil,
 > utilisable au quotidien sur un NAS, en desktop comme sur mobile.
 >
+> **Statut (2.11)** : l'itération 1 est implémentée (vues, rail de statut, tableau de bord, carte tâche
+> active, barre d'action fixe) ainsi que la suppression des aperçus. Les itérations 2 à 4 restent à faire.
+>
 > Maquette interactive : [`ui-mockup.html`](ui-mockup.html) (ouvrir dans un navigateur).
 > Captures : [`ui-dashboard.png`](ui-dashboard.png), [`ui-queue.png`](ui-queue.png), [`ui-preview.png`](ui-preview.png).
 

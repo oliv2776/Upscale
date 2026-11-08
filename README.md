@@ -26,6 +26,7 @@ Le projet cible notamment les NAS sous Ubuntu équipés d'un GPU AMD compatible 
 **Organisation**
 - Profils par dossier (ex. Animation → AnimeVideo v3, Films → Plus 1080p HEVC).
 - Aperçu multi-modèles avec comparateur à curseur.
+- **Tableau de bord** : tâche en cours, progression, temps restant, GPU, disque, prochaines tâches et derniers résultats.
 - File d'attente : réordonner, relancer, supprimer, filtrer, paginer ; progression et temps restant.
 - Dossier surveillé, plage horaire (ex. 22 h – 7 h), notifications ntfy / Gotify / webhook, actualisation Jellyfin / Plex, suffixe de nom de fichier.
 - Statistiques GPU en direct (charge, température, VRAM, puissance).
@@ -133,7 +134,7 @@ Au premier traitement, Docker peut télécharger l'image Video2X (plusieurs Go).
 ## Utilisation
 
 1. **Configuration** : choisis un ou plusieurs dossiers source (**+ Ajouter un dossier source**, sur n'importe quel disque) et la destination, la hauteur maximale des sources à traiter (480p pour traiter 240p, 360p et 480p), la résolution de sortie, le modèle, les filtres et l'encodeur. Clique sur **Enregistrer**.
-2. **Aperçu** : choisis une vidéo, un instant de départ et quelques modèles, puis **Générer l'aperçu**. Les aperçus passent devant la file (même en pause). Compare ensuite deux variantes avec le curseur ; l'original agrandi sans IA sert de référence.
+2. **Aperçu** : choisis une vidéo, un instant de départ et quelques modèles, puis **Générer l'aperçu**. Les aperçus passent devant la file (même en pause). Compare ensuite deux variantes avec le curseur ; l'original agrandi sans IA sert de référence. Les **aperçus récents** sont listés sous le comparateur : **Supprimer** efface l'aperçu et ses fichiers.
 3. **Profils par dossier** (facultatif) : par exemple /data/videos/Animation → AnimeVideo v3. Un fichier utilise le profil du dossier le plus précis qui le contient ; les champs « Global » reprennent les réglages généraux.
 4. **Analyser les vidéos** compte les fichiers éligibles ; **Lancer le traitement** les met en file.
 5. **File de traitement** : suis la progression par segment, réordonne (⤒ ↑ ↓), relance, supprime ou consulte les journaux.
