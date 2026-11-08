@@ -154,6 +154,9 @@ def security_headers(response: Response) -> Response:
         "Content-Security-Policy",
         "default-src 'self'; img-src 'self' data:; media-src 'self'; style-src 'self' 'unsafe-inline'; "
         "script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+    # Après une mise à jour d'image, le navigateur doit revalider l'HTML et les assets (sinon ancienne UI en cache).
+    if request.path == "/" or request.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache"
     return response
 
 

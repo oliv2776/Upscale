@@ -486,11 +486,14 @@ def test_update_version_parsing():
 
 
 def test_security_headers(env):
-    response = app.test_client().get("/api/ping")
+    client = app.test_client()
+    response = client.get("/api/ping")
     assert response.headers["X-Content-Type-Options"] == "nosniff"
     assert response.headers["X-Frame-Options"] == "DENY"
     assert response.headers["Referrer-Policy"] == "no-referrer"
     assert "default-src 'self'" in response.headers["Content-Security-Policy"]
+    assert client.get("/").headers["Cache-Control"] == "no-cache"
+    assert client.get("/static/app.js").headers["Cache-Control"] == "no-cache"
 
 
 def test_auth_failures_are_throttled(env, monkeypatch):

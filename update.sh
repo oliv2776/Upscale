@@ -168,7 +168,7 @@ else
 fi
 
 echo "==> Bascule vers la nouvelle image"
-"${COMPOSE[@]}" up -d --no-build
+"${COMPOSE[@]}" up -d --no-build --force-recreate
 
 echo "==> Attente du serveur"
 ready=0
@@ -186,13 +186,22 @@ if [[ "${ready}" != "1" ]]; then
   exit 1
 fi
 
+version="$("${COMPOSE[@]}" exec -T upscale python -c 'from upscale import config; print(config.VERSION)')"
+expected="$(cat "${PROJECT_DIR}/VERSION")"
+if [[ "${version}" != "${expected}" ]]; then
+  echo "ERREUR : le conteneur a démarré en version ${version}, alors que le dépôt est en ${expected}."
+  echo "Le conteneur n'a pas été recréé. Force avec :"
+  echo "  docker compose up -d --build --force-recreate"
+  echo "La file reste/est remise en route sur l'ancienne version en attendant."
+  exit 1
+fi
+
 if [[ "${PAUSED_BY_US}" == "1" ]]; then
   echo "==> Reprise de la file au segment suivant"
   resume_queue
   RESUMED=1
 fi
 
-version="$("${COMPOSE[@]}" exec -T upscale python -c 'from upscale import config; print(config.VERSION)')"
 echo "==> Upscale ${version} est à jour."
 if [[ "${PAUSED_BY_US}" == "1" ]]; then
   echo "    Le traitement interrompu a repris ; les segments déjà encodés sont conservés."

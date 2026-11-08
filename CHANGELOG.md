@@ -3,6 +3,15 @@
 Toutes les évolutions notables sont consignées ici. Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet utilise le [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [2.11.1] — 2026-11-08
+
+### Corrigé
+
+- `update.sh` force la recréation du conteneur (`--force-recreate`) et vérifie que la version démarrée
+  correspond bien à `VERSION` ; sinon il s'arrête avec la commande de secours.
+- L'HTML et les assets statiques sont servis en `Cache-Control: no-cache` : après une mise à jour, le
+  navigateur ne peut plus conserver l'ancienne interface.
+
 ## [2.11.0] — 2026-11-08
 
 ### Ajouté

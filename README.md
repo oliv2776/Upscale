@@ -356,6 +356,7 @@ docker volume rm upscale_uscale-state
 - **Une tâche échoue** : bouton **Logs** dans la file. Corrige la cause puis **Relancer** : les segments déjà encodés sont conservés.
 - **Encodage VAAPI en erreur** : vérifie VAAPI_DEVICE (le renderD* de la Radeon) ; sinon utilise un encodeur logiciel.
 - **Redémarrage pendant un traitement** : le conteneur Video2X orphelin est supprimé au démarrage et la tâche reprend au segment en cours.
+- **L'interface ne change pas après une mise à jour** : vérifie la version en bas de page. Si ce n'est pas la dernière, le conteneur n'a pas été reconstruit : `bash update.sh`, ou `docker compose up -d --build --force-recreate`. Si la version est bonne, force le rafraîchissement du navigateur (Ctrl/Cmd + Shift + R).
 
 ## Sécurité — à lire avant toute exposition réseau
 
