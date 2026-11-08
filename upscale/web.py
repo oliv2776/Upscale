@@ -333,6 +333,7 @@ def api_jobs():
         item["codec"] = snapshot.get("codec")
         item["profile"] = snapshot.get("profile")
         item["render"] = snapshot.get("render", "ai")
+        item["replace_original"] = bool(snapshot.get("replace_original"))
         jobs.append(item)
     return jsonify({"jobs": jobs, "counts": counts, "total": total, "page": page, "limit": limit,
                     "paused": db.is_paused(), "deferred": worker.defer_reason(), "active_job_id": runner.get_active()})
@@ -373,6 +374,27 @@ def api_retry(job_id: str):
         return jsonify({"ok": True})
     except ValueError as exc:
         return error(str(exc))
+
+
+@app.post("/api/jobs/replace-originals")
+def api_replace_all_originals():
+    """Remplace les originaux de toutes les tâches terminées par leur sortie de destination."""
+    return jsonify({"ok": True, **worker.replace_all_from_destination()})
+
+
+@app.post("/api/jobs/<job_id>/replace-original")
+def api_replace_original(job_id: str):
+    if not valid_job_id(job_id):
+        return error("Tâche introuvable", 404)
+    try:
+        target = worker.replace_from_destination(job_id)
+        return jsonify({"ok": True, "destination": str(target)})
+    except LookupError as exc:
+        return error(str(exc), 404)
+    except ValueError as exc:
+        return error(str(exc), 409)
+    except OSError as exc:
+        return error(f"Déplacement impossible : {exc}", 500)
 
 
 @app.post("/api/jobs/<job_id>/delete")

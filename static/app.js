@@ -376,6 +376,8 @@ function jobActions(job) {
   if (["queued", "running"].includes(job.status)) parts.push(b("data-cancel", "Arrêter"));
   if (["failed", "cancelled"].includes(job.status)) parts.push(b("data-retry", "Relancer"));
   if (job.trash_path) parts.push(b("data-restore", "Restaurer l'original"));
+  if (job.status === "completed" && !job.trash_path && !job.replace_original && !job.warning && job.stage !== "Original remplacé")
+    parts.push(b("data-replace-original", "Remplacer l'original"));
   if (job.status !== "running") parts.push(b("data-delete", "Supprimer", "danger"));
   return parts.join("");
 }
@@ -889,6 +891,10 @@ document.addEventListener("click", async event => {
     return;
   }
   if (id("data-restore")) { if (!confirm("Supprimer la version Upscale et remettre le fichier d'origine à sa place ?")) return; return jobAction(() => post("/api/jobs/" + id("data-restore") + "/restore"), "Original restauré"); }
+  if (id("data-replace-original")) {
+    if (!confirm("Déplacer la sortie du dossier de destination à la place de l'original ? L'original part dans la corbeille (ou est supprimé selon trash_days).")) return;
+    return jobAction(() => post("/api/jobs/" + id("data-replace-original") + "/replace-original"), "Original remplacé").then(refreshDashboard);
+  }
   if (id("data-retry")) return jobAction(() => post("/api/jobs/" + id("data-retry") + "/retry"), "Tâche remise en file (reprise au dernier segment)");
   if (id("data-delete")) { if (!confirm("Supprimer cette tâche, son journal et ses fichiers temporaires ?")) return; return jobAction(() => post("/api/jobs/" + id("data-delete") + "/delete"), "Tâche supprimée"); }
   for (const where of ["top", "up", "down"]) if (id("data-move-" + where)) return jobAction(() => post("/api/jobs/" + id("data-move-" + where) + "/move", { to: where }));
@@ -958,6 +964,15 @@ $("testMedia").addEventListener("click", () => testIntegration("/api/media/test"
 $("pauseBtn").addEventListener("click", () => jobAction(() => post("/api/pause"), "La vidéo en cours s'arrêtera à la fin de son segment"));
 $("resumeBtn").addEventListener("click", () => jobAction(() => post("/api/resume"), "Traitement repris"));
 $("clearBtn").addEventListener("click", () => { if (confirm("Supprimer l'historique des tâches terminées ? Les vidéos produites sont conservées.")) jobAction(() => post("/api/jobs/clear", { statuses: ["completed"] }), "Historique vidé"); });
+$("replaceOriginals").addEventListener("click", async () => {
+  if (!confirm("Déplacer les sorties de toutes les vidéos terminées à la place de leurs originaux ? Les originaux partent dans la corbeille (ou sont supprimés selon trash_days).")) return;
+  try {
+    const result = await post("/api/jobs/replace-originals");
+    toast(result.replaced + " original(aux) remplacé(s), " + result.skipped + " ignoré(s)" +
+      (result.failed ? ", " + result.failed + " échec(s)" : ""));
+    refreshJobs(); refreshDashboard();
+  } catch (error) { toast(error.message); }
+});
 $("prevPage").addEventListener("click", () => { state.page = Math.max(1, state.page - 1); refreshJobs(); });
 $("nextPage").addEventListener("click", () => { state.page += 1; refreshJobs(); });
 $("crf").addEventListener("input", () => $("crfValue").textContent = $("crf").value);

@@ -3,6 +3,17 @@
 Toutes les évolutions notables sont consignées ici. Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet utilise le [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [2.15.0] — 2026-11-08
+
+### Ajouté
+
+- **Remplacer un original déjà traité** par sa sortie du dossier de destination :
+  - action **Remplacer l'original** sur chaque tâche terminée dans la file ;
+  - action groupée **Remplacer les originaux** pour toutes les tâches terminées.
+  L'original part dans la corbeille (`trash_days`, restaurable) et la sortie prend sa place dans le
+  dossier source en gardant son nom. Si `trash_days=0`, l'original est supprimé.
+- Les tâches déjà remplacées ne proposent plus l'action ; l'opération est sans effet sur une sortie absente.
+
 ## [2.14.0] — 2026-11-08
 
 ### Modifié

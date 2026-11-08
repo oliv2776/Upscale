@@ -1022,6 +1022,47 @@ def test_replace_original_and_restore(env, fake_docker):
     assert app.test_client().post(f"/api/jobs/{row['id']}/restore", json={}).status_code == 400
 
 
+def test_replace_completed_output_from_destination(env):
+    original = env / "videos" / "film.avi"
+    original.write_bytes(b"original")
+    destination = env / "out" / "film - 720p.mkv"
+    destination.parent.mkdir(parents=True)
+    destination.write_bytes(b"nouvelle version")
+    insert_job("dddddddddd01", status="completed")
+    db.set_job("dddddddddd01", source=str(original), destination=str(destination), stage="Terminé")
+    target = worker.replace_from_destination("dddddddddd01")
+    trash = env / "videos" / ".upscale-corbeille" / "film.avi"
+    assert target == original.parent / destination.name
+    assert not original.exists() and target.read_bytes() == b"nouvelle version"
+    assert trash.read_bytes() == b"original"
+    row = db.get_job("dddddddddd01")
+    assert row["destination"] == str(target) and row["trash_path"] == str(trash)
+    assert app.test_client().post("/api/jobs/dddddddddd01/replace-original", json={}).status_code == 409
+
+    worker.restore("dddddddddd01")
+    assert original.read_bytes() == b"original" and not target.exists() and not trash.exists()
+
+
+def test_replace_originals_bulk_and_immediate_delete(env):
+    st.save_settings({"trash_days": 0})
+    for index in (1, 2):
+        original = env / "videos" / f"film{index}.mkv"
+        original.write_bytes(b"original")
+        destination = env / "out" / f"film{index}.mkv"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"nouvelle")
+        job_id = f"eeeeeeeeee0{index}"
+        insert_job(job_id, status="completed")
+        db.set_job(job_id, source=str(original), destination=str(destination), stage="Terminé")
+    result = app.test_client().post("/api/jobs/replace-originals", json={})
+    assert result.status_code == 200
+    assert result.get_json()["replaced"] == 2
+    for index in (1, 2):
+        assert (env / "videos" / f"film{index}.mkv").read_bytes() == b"nouvelle"
+        assert not (env / "out" / f"film{index}.mkv").exists()
+    assert not any((env / "videos" / ".upscale-corbeille").rglob("*"))
+
+
 @needs_ffmpeg
 def test_replace_in_place_and_immediate_delete(env, fake_docker):
     st.save_settings({"replace_original": True, "trash_days": 0})

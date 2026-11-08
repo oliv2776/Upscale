@@ -334,6 +334,81 @@ def clear(statuses: list[str]) -> int:
     return len(rows)
 
 
+def replace_from_destination(job_id: str) -> Path:
+    """Déplace la sortie du dossier de destination à la place de l'original.
+
+    L'original part dans la corbeille (ou est supprimé si trash_days=0), la sortie prend sa place
+    dans le dossier source en gardant son nom. Restaurable avec worker.restore().
+    """
+    row = db.get_job(job_id)
+    if not row:
+        raise LookupError("Tâche introuvable")
+    if row["kind"] != "upscale" or row["status"] != "completed":
+        raise ValueError("Seule une tâche terminée peut remplacer son original")
+    if row["warning"]:
+        raise ValueError("La sortie a un avertissement de vérification : remplacement refusé")
+    settings = pipeline.job_settings(row)
+    if settings.get("replace_original"):
+        raise ValueError("Cette tâche a été traitée en mode remplacement")
+    source, destination = Path(row["source"]), Path(row["destination"])
+    if not source.is_file():
+        raise ValueError("L'original n'existe plus (déjà remplacé ou supprimé)")
+    if not destination.is_file():
+        raise ValueError("Le fichier de destination n'existe plus")
+    try:
+        if source.resolve() == destination.resolve():
+            raise ValueError("Cette tâche a déjà remplacé son original")
+    except OSError:
+        pass
+    if destination.stat().st_size == 0:
+        raise ValueError("Le fichier de destination est vide")
+    owner = pipeline.output_owner(source, settings, destination)
+    target = source.parent / destination.name
+    same_place = target.resolve() == destination.resolve()
+    if not same_place and target != source and target.exists():
+        target = pipeline.unique_path(target)
+    trash = pipeline.trash_location(source, settings)
+    trash.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(source), str(trash))
+    try:
+        if not same_place:
+            shutil.move(str(destination), str(target))
+    except OSError:
+        if not same_place:
+            target.unlink(missing_ok=True)
+        shutil.move(str(trash), str(source))
+        raise
+    runner.chown(target, owner)
+    days = int(settings.get("trash_days", 30))
+    trash_path = None
+    if days == 0:
+        trash.unlink(missing_ok=True)
+    else:
+        trash_path = str(trash)
+    db.set_job(job_id, destination=str(target), stage="Original remplacé",
+               trash_path=trash_path, trashed_at=db.now() if trash_path else None, warning=None)
+    db.log_line(job_id, f"[{db.now()}] Sortie déplacée à la place de l'original : {target}"
+                        + (f" (original dans {trash})" if trash_path else " (original supprimé)"))
+    return target
+
+
+def replace_all_from_destination() -> dict[str, int]:
+    """Remplace les originaux de toutes les tâches terminées dont la sortie est encore dans la destination."""
+    with db.connect() as conn:
+        rows = conn.execute("SELECT id FROM jobs WHERE kind='upscale' AND status='completed' "
+                            "AND trash_path IS NULL ORDER BY updated_at ASC").fetchall()
+    replaced = skipped = failed = 0
+    for row in rows:
+        try:
+            replace_from_destination(row["id"])
+            replaced += 1
+        except (LookupError, ValueError):
+            skipped += 1
+        except OSError:
+            failed += 1
+    return {"replaced": replaced, "skipped": skipped, "failed": failed}
+
+
 def restore(job_id: str) -> None:
     """Annule un remplacement : supprime la version Upscale et remet l'original à sa place."""
     row = db.get_job(job_id)
