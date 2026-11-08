@@ -132,6 +132,32 @@ async function setLanMode(enabled) {
     if (enabled) refreshJobs();
   } catch (error) { toast(error.message); }
 }
+async function refreshUpdate(force = false) {
+  const version = $("updateVersion"), state = $("updateState"), link = $("updateLink"), help = $("showUpdateHelp");
+  if (!version) return;
+  try {
+    const data = await api("/api/update" + (force ? "?refresh=1" : ""));
+    version.textContent = "v" + data.current;
+    if (data.url) { link.href = data.url; link.classList.toggle("hidden", !data.latest); }
+    if (data.error) {
+      state.textContent = data.error; state.className = "ollama-status error"; help.classList.add("hidden");
+    } else if (data.update_available) {
+      state.textContent = "v" + data.latest + " disponible"; state.className = "ollama-status warn";
+      help.classList.remove("hidden");
+    } else {
+      state.textContent = "À jour"; state.title = data.latest ? "Dernière release : v" + data.latest : "";
+      state.className = "ollama-status ok";
+      help.classList.add("hidden");
+    }
+  } catch (error) {
+    state.textContent = error.message; state.className = "ollama-status error";
+  }
+}
+async function copyUpdateCommand() {
+  const text = document.querySelector("#updateHelp code").textContent;
+  try { await navigator.clipboard.writeText(text); toast("Commande copiée"); }
+  catch (error) { toast("Sélectionne la commande pour la copier"); }
+}
 async function saveSettings(quiet = false) {
   const result = await post("/api/config", settingsPayload());
   applySettings(result.settings);
@@ -645,6 +671,9 @@ document.addEventListener("click", async event => {
 });
 $("importModel").addEventListener("click", importModel);
 $("enableLanMode").addEventListener("click", () => setLanMode(true));
+$("checkUpdate").addEventListener("click", () => { refreshUpdate(true).then(() => toast("Vérification terminée")); });
+$("showUpdateHelp").addEventListener("click", () => $("updateHelp").classList.toggle("hidden"));
+$("copyUpdate").addEventListener("click", () => copyUpdateCommand());
 $("lanModeToggle").addEventListener("click", () => setLanMode($("lanModeToggle").dataset.enabled !== "1"));
 $("installModel").addEventListener("click", () => installModel());
 $("installSource").addEventListener("keydown", e => { if (e.key === "Enter") installModel(); });
@@ -696,7 +725,7 @@ $("videoLeft").addEventListener("seeked", () => { $("videoRight").currentTime = 
     reloadModels().catch(e => console.warn(e));
   } catch (e) { toast(e.message); }
   try { const s = await api("/api/scan"); if (s.running) { showScanResult(describeScan(s)); pollScan(); } } catch (e) { /* rien */ }
-  refreshJobs(); checkHealth(); checkOllama(); refreshPreviews(); refreshGpuStats();
+  refreshJobs(); checkHealth(); checkOllama(); refreshPreviews(); refreshGpuStats(); refreshUpdate();
   setInterval(refreshJobs, 3000); setInterval(refreshPreviews, 4000); setInterval(refreshGpuStats, 5000);
   setInterval(checkHealth, 60000); setInterval(checkOllama, 60000);
 })();

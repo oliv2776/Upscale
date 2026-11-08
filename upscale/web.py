@@ -17,7 +17,7 @@ from urllib.parse import urlsplit
 
 from flask import Flask, Response, jsonify, request, send_from_directory
 
-from . import config, converter, db, gpu, media, models, notify, ollama, runner, scanner, worker
+from . import config, converter, db, gpu, media, models, notify, ollama, runner, scanner, updates, worker
 from . import settings as settings_mod
 
 app = Flask(__name__, static_folder=str(config.STATIC_DIR), static_url_path="/static")
@@ -631,6 +631,12 @@ def api_media_test():
 
 
 # ---------------------------------------------------------------- santé
+
+@app.get("/api/update")
+def api_update():
+    """Dernière version publiée sur GitHub (cache 30 min, `?refresh=1` pour forcer)."""
+    return jsonify(updates.state(force=request.args.get("refresh") == "1"))
+
 
 @app.get("/api/health")
 def api_health():

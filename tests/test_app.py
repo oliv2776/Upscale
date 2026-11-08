@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 from conftest import calls, make_video, needs_ffmpeg
 
-from upscale import config, converter, db, gpu, media, models, net, notify, ollama, pipeline, runner, scanner, worker
+from upscale import config, converter, db, gpu, media, models, net, notify, ollama, pipeline, runner, scanner, updates, worker
 from upscale import settings as st
 from upscale import web as web_module
 from upscale.web import app
@@ -452,6 +452,37 @@ def test_lan_mode_is_disabled_by_password_or_env(env, monkeypatch):
     response = app.test_client().post("/api/auth/lan-mode", json={"enabled": True},
                                       headers={"Authorization": f"Basic {token}"})
     assert response.status_code == 409
+
+
+def test_update_check_reads_github_release(env, http_server, monkeypatch):
+    base, recorder = http_server
+    recorder.responses["/latest"] = (200, json.dumps({
+        "tag_name": "v9.9.9", "html_url": "https://example.test/release", "body": "notes"}).encode())
+    monkeypatch.setattr(updates, "API_URL", f"{base}/latest")
+    updates.reset_cache()
+    data = updates.state(force=True)
+    assert data["latest"] == "9.9.9" and data["update_available"] is True
+    assert data["url"] == "https://example.test/release" and data["notes"] == "notes"
+    assert data["error"] is None
+    assert app.test_client().get("/api/update?refresh=1").get_json()["latest"] == "9.9.9"
+
+
+def test_update_check_reports_404_and_uses_cache(env, http_server, monkeypatch):
+    base, recorder = http_server
+    recorder.responses["/latest"] = (404, b"{}")
+    monkeypatch.setattr(updates, "API_URL", f"{base}/latest")
+    updates.reset_cache()
+    first = updates.state(force=True)
+    assert "Aucune release" in first["error"]
+    recorder.responses["/latest"] = (200, json.dumps({"tag_name": "v9.9.9"}).encode())
+    assert updates.state() == first  # cache de 30 minutes
+    assert updates.state(force=True)["latest"] == "9.9.9"
+
+
+def test_update_version_parsing():
+    assert updates.parse_version("v2.10.0") == (2, 10, 0)
+    assert updates.parse_version("2.9.1") == (2, 9, 1)
+    assert updates.parse_version("dev") is None
 
 
 def test_security_headers(env):

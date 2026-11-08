@@ -64,3 +64,15 @@
 #authWarning p{margin:4px 0 0;opacity:.92}
 #authWarning button{flex:0 0 auto}
 @media(max-width:720px){#authWarning{flex-direction:column;align-items:flex-start}}
+.update-box{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;border-top:1px solid var(--line);margin-top:14px;padding-top:14px}
+.update-info{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+.update-info .health-label{margin:0}
+.update-info strong{font-size:15px}
+.update-info small{font-size:11.5px;color:var(--muted)}
+.update-info .ollama-status{margin:0}
+.update-link{font-size:11.5px;color:var(--accent-ink);font-weight:600}
+.update-actions{display:flex;gap:8px;flex-wrap:wrap}
+.update-help{flex-basis:100%;display:flex;align-items:center;gap:10px;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:11.5px;overflow:auto}
+.update-help code{white-space:nowrap;color:#3f4555}
+.update-help .text-btn{margin-left:auto;white-space:nowrap}
+.ollama-status.warn{color:#b45309}

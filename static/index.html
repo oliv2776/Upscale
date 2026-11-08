@@ -171,6 +171,22 @@
     <section class="panel health-panel" id="system">
       <div class="section-head"><div><div class="eyebrow">SYSTÈME</div><h3>État du serveur</h3></div><button class="secondary small" id="healthBtn">Tester le GPU</button></div>
       <div class="health-grid"><div><span class="health-label">Docker / mode</span><strong id="dockerState">Vérification…</strong></div><div><span class="health-label">GPU Vulkan</span><strong id="gpuState">Non vérifié</strong></div><div><span class="health-label">Video2X</span><strong id="imageState">—</strong></div><div><span class="health-label">Moteur</span><strong id="engineName">Video2X</strong></div></div>
+      <div class="update-box">
+        <div class="update-info">
+          <span class="health-label">Version</span>
+          <strong id="updateVersion">v…</strong>
+          <small id="updateState">Vérification…</small>
+          <a id="updateLink" class="update-link hidden" target="_blank" rel="noopener">Notes de version</a>
+        </div>
+        <div class="update-actions">
+          <button class="secondary small" id="checkUpdate">Vérifier les mises à jour</button>
+          <button class="secondary small hidden" id="showUpdateHelp">Comment mettre à jour ?</button>
+        </div>
+        <div id="updateHelp" class="update-help hidden">
+          <code>cd /chemin/vers/Upscale &amp;&amp; git pull &amp;&amp; bash update.sh</code>
+          <button class="text-btn" id="copyUpdate">Copier</button>
+        </div>
+      </div>
       <div class="ollama-actions"><span id="lanModeState" class="ollama-status"></span><button class="secondary small hidden" id="lanModeToggle">Activer sans mot de passe</button></div>
       <div class="gpu-live" id="gpuLive"></div>
       <pre id="healthDetails" class="health-details hidden"></pre>

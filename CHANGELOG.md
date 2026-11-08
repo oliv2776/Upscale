@@ -3,6 +3,18 @@
 Toutes les évolutions notables sont consignées ici. Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet utilise le [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [2.10.0] — 2026-11-08
+
+### Ajouté
+
+- **Vérification des mises à jour dans l'interface** (Système) : interroge GitHub Releases, affiche la
+  version disponible, le lien vers les notes et la commande `update.sh` à copier. Cache de 30 minutes,
+  désactivable avec `UPSCALE_UPDATE_CHECK=0`.
+
+### Modifié
+
+- Documentation : variable `UPSCALE_UPDATE_CHECK`, procédure de mise à jour.
+
 ## [2.9.0] — 2026-11-08
 
 ### Ajouté

@@ -16,7 +16,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from upscale import config, db, gpu, runner, scanner, settings  # noqa: E402
+from upscale import config, db, gpu, runner, scanner, settings, updates  # noqa: E402
 
 HAS_FFMPEG = shutil.which("ffmpeg") is not None and shutil.which("ffprobe") is not None
 needs_ffmpeg = pytest.mark.skipif(not HAS_FFMPEG, reason="ffmpeg/ffprobe requis")
@@ -50,6 +50,7 @@ def env(tmp_path, monkeypatch):
     from upscale import web as web_module
     web_module._auth_failures.clear()
     web_module._lan_cache.update(value=None, at=0.0)
+    updates.reset_cache()
     scanner.scan_state.clear()
     scanner.scan_state["running"] = False
     gpu.gpu_state.clear()

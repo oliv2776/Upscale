@@ -71,6 +71,8 @@ AUTH_USER = _env("UPSCALE_USER", "admin")
 AUTH_PASSWORD = os.environ.get("UPSCALE_PASSWORD", os.environ.get("USCALE_PASSWORD", ""))
 # Sans mot de passe : lecture seule par défaut ; UPSCALE_ALLOW_ANONYMOUS=1 rétablit l'ancien comportement.
 ALLOW_ANONYMOUS = _env("UPSCALE_ALLOW_ANONYMOUS", "0").lower() in {"1", "true", "yes", "on"}
+# Vérification des mises à jour (GitHub Releases) depuis l'interface ; 0 pour un NAS hors ligne.
+UPDATE_CHECK = _env("UPSCALE_UPDATE_CHECK", "1") != "0"
 TRUSTED_HOSTS = {h.strip() for h in _env("UPSCALE_TRUSTED_HOSTS").split(",") if h.strip()}
 
 MIN_FREE_BYTES = int(float(_env("UPSCALE_MIN_FREE_GB", "5")) * 1024**3)

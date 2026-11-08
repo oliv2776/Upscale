@@ -71,6 +71,8 @@ update.sh construit d'abord la nouvelle image (le traitement continue), met ensu
 
 Sans le script, `docker compose up -d --build` reprend aussi au segment suivant, mais le segment en cours est refait.
 
+**Vérification depuis l'interface** : **Système → Version** interroge GitHub Releases et indique si une version plus récente existe, avec le lien des notes et la commande `update.sh` à copier. La vérification n'est qu'informative : le déclenchement automatique demanderait un service hôte supplémentaire (voir la proposition d'interface).
+
 L'historique, les réglages et les tâches en attente sont conservés (migration automatique de la base).
 
 > **Ne lance jamais `docker compose down -v`** : l'option `-v` supprime le volume `uscale-state` (file, réglages, historique, modèles installés).
@@ -279,6 +281,7 @@ N'expose pas le port 11434 sur Internet.
 | UPSCALE_TRUSTED_HOSTS | (vide) | Noms publics autorisés (reverse proxy, protection CSRF) ; le proxy doit conserver `Host` |
 | UPSCALE_ALLOW_PRIVATE_MODEL_URLS | 0 | Autorise les liens de modèles vers des adresses privées (miroir interne) |
 | UPSCALE_CONVERTER_DROP_PRIVILEGES | 1 | Exécute la conversion des modèles en « nobody » (setpriv) quand le conteneur est root |
+| UPSCALE_UPDATE_CHECK | 1 | Vérifie les nouvelles releases GitHub dans **Système** (0 pour un NAS hors ligne) |
 | UPSCALE_MIN_FREE_GB | 5 | Espace libre minimal conservé |
 | UPSCALE_SEGMENT_SECONDS | 180 | Durée des segments |
 | UPSCALE_LOG_RETENTION_DAYS | 90 | Conservation des journaux des tâches terminées |
