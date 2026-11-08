@@ -15,8 +15,9 @@ from pathlib import Path
 import pytest
 from conftest import calls, make_video, needs_ffmpeg
 
-from upscale import config, converter, db, gpu, media, models, notify, ollama, pipeline, runner, scanner, worker
+from upscale import config, converter, db, gpu, media, models, net, notify, ollama, pipeline, runner, scanner, worker
 from upscale import settings as st
+from upscale import web as web_module
 from upscale.web import app
 
 # ================================================================== réglages
@@ -79,6 +80,15 @@ def test_validation_errors(env):
                     {"output_suffix": "a/b"}, {"interpolate": 4}, {"model": "nope"}, {"notify_url": "ftp://x"}):
         with pytest.raises(ValueError):
             st.save_settings(payload)
+
+
+def test_boolean_validation_is_strict(env):
+    assert st.save_settings({"include_subfolders": "false"})["include_subfolders"] is False
+    assert st.save_settings({"include_subfolders": "true"})["include_subfolders"] is True
+    assert st.save_settings({"replace_original": 0})["replace_original"] is False
+    for bad in ("peut-être", 2, None):
+        with pytest.raises(ValueError):
+            st.save_settings({"replace_original": bad})
 
 
 def test_profiles_longest_match(env):
@@ -163,6 +173,65 @@ def test_progress_parsers():
     parse = runner.ffmpeg_progress_parser(10.0)
     assert parse("out_time_us=5000000") == pytest.approx(0.5)
     assert parse("fps=24") is None
+
+
+def test_cut_pauses_when_segments_accumulate(env, tmp_path, monkeypatch):
+    work = tmp_path / "work"
+    (work / "src").mkdir(parents=True)
+    names = [f"seg_{index:05d}.mkv" for index in range(5)]
+    state = {"done": 0, "pauses": 0, "resumes": 0, "paused": False}
+
+    class FakeCutter:
+        def __init__(self, job_id, command, **kwargs):
+            (work / "segments.list").write_text("\n".join(names) + "\n")
+            self.returncode = 0
+
+        def running(self):
+            return state["done"] < len(names)
+
+        def paused(self):
+            return state["paused"]
+
+        def pause(self):
+            state["pauses"] += 1
+            state["paused"] = True
+
+        def resume(self):
+            state["resumes"] += 1
+            state["paused"] = False
+
+        def finish(self):
+            pass
+
+        def stop(self):
+            pass
+
+    def process(index, name, total, approximate, note=""):
+        state["done"] += 1
+
+    monkeypatch.setattr(pipeline.runner, "RunningProcess", FakeCutter)
+    info = {"duration": 5.0, "width": 320, "height": 240, "sar": 1.0, "fps": 10.0, "video_index": 0}
+    pipeline.cut_segments_while_upscaling("ffffffffffff", tmp_path / "source.mkv", work, info, [], 1, 5,
+                                          tmp_path, process)
+    assert state["done"] == len(names)
+    assert state["pauses"] >= 1 and state["resumes"] >= 1
+
+
+def test_running_process_can_be_paused(env):
+    process = runner.RunningProcess("eeeeeeeeeeee", ["sleep", "30"])
+    try:
+        process.pause()
+        assert process.paused() is True
+        process.resume()
+        assert process.paused() is False
+    finally:
+        process.stop()
+
+
+def test_project_remaining_bytes():
+    expected = int(1_000_000 * 80 * pipeline.SEGMENT_RATE_MARGIN)
+    assert pipeline.project_remaining_bytes(1_000_000, 120, 40) == expected
+    assert pipeline.project_remaining_bytes(0, 120, 120) == 0
 
 
 def test_within_schedule():
@@ -303,13 +372,25 @@ def test_run_process_cancellation(env):
 # ================================================================== sécurité HTTP
 
 
-def test_post_requires_json_and_same_origin(env):
+def test_post_requires_json_and_same_origin(env, monkeypatch):
     client = app.test_client()
     assert client.post("/api/pause", data="{}", content_type="text/plain").status_code == 415
     assert client.post("/api/pause", json={}, headers={"Origin": "http://evil.example"}).status_code == 403
     assert client.post("/api/pause", json={}, headers={"Origin": "http://localhost"}).status_code == 200
-    proxied = {"Origin": "https://upscale.maison.lan", "X-Forwarded-Host": "upscale.maison.lan"}
-    assert client.post("/api/pause", json={}, headers=proxied).status_code == 200
+    # DNS rebinding : Host et Origin identiques, mais nom non autorisé.
+    rebinding = {"Origin": "http://evil.example:27000"}
+    assert client.post("/api/pause", json={}, base_url="http://evil.example:27000",
+                       headers=rebinding).status_code == 403
+    # Accès direct par IP (LAN) : autorisé.
+    assert client.post("/api/pause", json={}, base_url="http://192.168.1.10:27000",
+                       headers={"Origin": "http://192.168.1.10:27000"}).status_code == 200
+    # Reverse proxy : le nom public doit figurer dans UPSCALE_TRUSTED_HOSTS.
+    monkeypatch.setattr(config, "TRUSTED_HOSTS", {"upscale.maison.lan"})
+    proxied = {"Origin": "https://upscale.maison.lan"}
+    assert client.post("/api/pause", json={}, base_url="https://upscale.maison.lan",
+                       headers=proxied).status_code == 200
+    assert client.post("/api/pause", json={}, base_url="https://upscale.maison.lan",
+                       headers={"Origin": "https://evil.example"}).status_code == 403
 
 
 def test_basic_auth(env, monkeypatch):
@@ -325,6 +406,74 @@ def test_bad_ids_rejected(env):
     client = app.test_client()
     assert client.get("/api/logs/..%2f..%2fetc").status_code in {400, 404}
     assert client.get("/api/previews/aaaaaaaaaaaa/..%2fx.mp4").status_code == 404
+
+
+def test_anonymous_mode_blocks_mutations(env, monkeypatch):
+    monkeypatch.setattr(config, "ALLOW_ANONYMOUS", False)
+    client = app.test_client()
+    assert client.get("/api/config").status_code == 200
+    response = client.post("/api/pause", json={})
+    assert response.status_code == 403
+    assert "UPSCALE_PASSWORD" in response.get_json()["error"]
+    monkeypatch.setattr(config, "ALLOW_ANONYMOUS", True)
+    assert client.post("/api/pause", json={}).status_code == 200
+
+
+def test_config_reports_auth_state(env, monkeypatch):
+    monkeypatch.setattr(config, "AUTH_PASSWORD", "")
+    monkeypatch.setattr(config, "ALLOW_ANONYMOUS", False)
+    data = app.test_client().get("/api/config").get_json()
+    assert data["auth"] == {"password_set": False, "anonymous_allowed": False}
+
+
+def test_security_headers(env):
+    response = app.test_client().get("/api/ping")
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["X-Frame-Options"] == "DENY"
+    assert response.headers["Referrer-Policy"] == "no-referrer"
+    assert "default-src 'self'" in response.headers["Content-Security-Policy"]
+
+
+def test_auth_failures_are_throttled(env, monkeypatch):
+    monkeypatch.setattr(config, "AUTH_PASSWORD", "secret")
+    client = app.test_client()
+    for _ in range(web_module.AUTH_MAX_FAILURES):
+        assert client.get("/api/jobs").status_code == 401
+    assert client.get("/api/jobs").status_code == 429
+
+
+def test_cancel_finished_job_is_conflict(env):
+    with db.connect() as conn:
+        conn.execute("""INSERT INTO jobs (id,source,destination,source_size,source_mtime_ns,status,stage,
+                                          created_at,updated_at)
+                        VALUES('bbbbbbbbbbbb','/data/a.mkv','/data/out/a.mkv',1,1,'completed','Terminé',
+                               '2026-01-01','2026-01-01')""")
+    client = app.test_client()
+    assert client.post("/api/jobs/bbbbbbbbbbbb/cancel", json={}).status_code == 409
+    assert client.post("/api/jobs/cccccccccccc/cancel", json={}).status_code == 404
+
+
+def test_restore_failure_keeps_produced_file(env, monkeypatch):
+    videos = env / "videos"
+    produced = videos / "film.mkv"
+    produced.write_bytes(b"upscale")
+    trash = videos / ".upscale-corbeille" / "film.avi"
+    trash.parent.mkdir(parents=True)
+    trash.write_bytes(b"original")
+    original = videos / "film.avi"
+    with db.connect() as conn:
+        conn.execute("""INSERT INTO jobs (id,source,destination,source_size,source_mtime_ns,status,stage,
+                                          created_at,updated_at,trash_path)
+                        VALUES('dddddddddddd',?,?,1,1,'completed','Terminé','2026-01-01','2026-01-01',?)""",
+                     (str(original), str(produced), str(trash)))
+
+    def fail(*args, **kwargs):
+        raise OSError("déplacement impossible")
+
+    monkeypatch.setattr("upscale.worker.shutil.move", fail)
+    with pytest.raises(OSError):
+        worker.restore("dddddddddddd")
+    assert produced.exists() and trash.exists()
 
 
 # ================================================================== bout en bout (faux Video2X)
@@ -959,6 +1108,46 @@ def test_direct_download_urls():
     ranked = converter.ordered_resources([{"platform": "onnx"}, {"platform": "pytorch"}, {"platform": "tensorrt"},
                                           {"platform": "ncnn"}])
     assert [r["platform"] for r in ranked] == ["ncnn", "pytorch", "onnx"]
+
+
+def test_private_model_addresses_are_refused(env, monkeypatch):
+    monkeypatch.setattr(config, "ALLOW_PRIVATE_MODEL_URLS", False)
+    with pytest.raises(net.UnsafeURLError):
+        net.validate_url("http://127.0.0.1/modele.pth")
+    with pytest.raises(net.UnsafeURLError):
+        net.validate_url("http://169.254.169.254/latest/meta-data")
+    with pytest.raises(converter.InstallError):
+        converter.download({}, "http://127.0.0.1:9/modele.pth", env / "telechargement")
+    # Redirection vers une adresse privée : refusée avant d'être suivie.
+    with pytest.raises(net.UnsafeURLError):
+        net._CheckedRedirect(False).redirect_request(None, None, 302, "", {}, "http://10.0.0.1/modele.pth")
+    monkeypatch.setattr(config, "ALLOW_PRIVATE_MODEL_URLS", True)
+    assert net.validate_url("http://127.0.0.1/modele.pth", allow_private=True)
+
+
+def test_drop_privileges_builds_setpriv_command(env, monkeypatch, tmp_path):
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "modele.pth").write_text("x")
+    monkeypatch.setattr(converter, "_nobody", lambda: (65534, 65534))
+    monkeypatch.setattr(converter.shutil, "which", lambda name: "/usr/bin/setpriv")
+    monkeypatch.setattr(converter.os, "chown", lambda *args, **kwargs: None)
+    command = converter.drop_privileges(["python", "-I", "convert.py"], work)
+    assert command == ["/usr/bin/setpriv", "--reuid=65534", "--regid=65534", "--clear-groups", "--",
+                       "python", "-I", "convert.py"]
+
+
+def test_drop_privileges_is_noop_when_not_root(env, monkeypatch):
+    monkeypatch.setattr(converter.os, "geteuid", lambda: 1000, raising=False)
+    command = ["python", "-I", "script.py"]
+    assert converter.drop_privileges(command, env / "work") == command
+
+
+def test_converter_environment_does_not_leak_secrets(env, monkeypatch):
+    monkeypatch.setenv("UPSCALE_PASSWORD", "s3cret")
+    values = converter.converter_env()
+    assert "UPSCALE_PASSWORD" not in values
+    assert values["PYTHONIOENCODING"] == "utf-8"
 
 
 def omdb_entry(base: str, payload: bytes, **extra):

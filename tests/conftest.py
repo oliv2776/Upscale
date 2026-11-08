@@ -34,6 +34,9 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "STATE_DIR", tmp_path / "state")
     monkeypatch.setattr(config, "MIN_FREE_BYTES", 0)
     monkeypatch.setattr(config, "AUTH_PASSWORD", "")
+    monkeypatch.setattr(config, "ALLOW_ANONYMOUS", True)
+    monkeypatch.setattr(config, "ALLOW_PRIVATE_MODEL_URLS", True)
+    monkeypatch.setattr(config, "TRUSTED_HOSTS", set())
     monkeypatch.setattr(config, "RUNNER", "docker")
     monkeypatch.setattr(config, "VIDEO2X_GPU", "")
     monkeypatch.setattr(config, "SEGMENT_SECONDS", 180)
@@ -44,6 +47,8 @@ def env(tmp_path, monkeypatch):
     # Les tests pilotent le worker eux-mêmes : pas de thread de fond qui volerait les tâches.
     from upscale import worker
     monkeypatch.setattr(worker, "ensure_worker", lambda: None)
+    from upscale import web as web_module
+    web_module._auth_failures.clear()
     scanner.scan_state.clear()
     scanner.scan_state["running"] = False
     gpu.gpu_state.clear()
@@ -158,6 +163,17 @@ def fake_docker(tmp_path, monkeypatch):
     ncnn.write_text(FAKE_NCNN.format(python=sys.executable))
     ncnn.chmod(ncnn.stat().st_mode | stat.S_IEXEC)
     monkeypatch.setattr(config, "NCNN_BIN", str(ncnn))
+    # Les scripts factices du convertisseur ont besoin de leur journal : on l'ajoute à l'environnement
+    # minimal (qui, en production, ne transmet aucun secret aux sous-processus).
+    from upscale import converter
+    original_env = converter.converter_env
+
+    def fake_env(home=None):
+        values = original_env(home)
+        values["FAKE_DOCKER_LOG"] = os.environ["FAKE_DOCKER_LOG"]
+        return values
+
+    monkeypatch.setattr(converter, "converter_env", fake_env)
     return log
 
 

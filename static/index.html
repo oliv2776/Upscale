@@ -20,6 +20,11 @@
     <div class="side-bottom"><span class="pulse"></span><span>Traitement local</span><small id="sideVersion">Vulkan · Video2X</small></div>
   </aside>
   <main>
+    <div id="authWarning" class="auth-warning hidden" role="alert">
+      <b>Aucun mot de passe configuré.</b> L'interface est en lecture seule : définis
+      <code>UPSCALE_PASSWORD</code> dans <code>.env</code> (ou <code>UPSCALE_ALLOW_ANONYMOUS=1</code> sur un
+      réseau de confiance), puis redémarre le conteneur.
+    </div>
     <header class="topbar"><div><div class="eyebrow">ESPACE PERSONNEL / NAS</div><h1>Video upscaling</h1></div><div class="top-actions"><span id="connection" class="connection"><i></i> Connexion…</span><button class="icon-btn" id="refreshBtn" title="Actualiser">↻</button></div></header>
     <section class="hero" id="dashboard">
       <div><div class="eyebrow light">AI-POWERED RESTORATION</div><h2>Donnez une nouvelle<br>dimension à vos vidéos.</h2><p>Parcourez votre bibliothèque, comparez les modèles sur un extrait, puis laissez votre GPU faire le travail.</p><button class="primary" id="scanHero">Analyser ma bibliothèque <span>→</span></button></div>

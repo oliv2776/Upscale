@@ -58,3 +58,5 @@
 @media(max-width:1000px){.install-box{grid-template-columns:1fr 1fr}.install-box .grow{grid-column:1/-1}.import-box .field.wide{grid-column:auto}}
 @media(max-width:720px){.install-box{grid-template-columns:1fr}.suggestion{flex-wrap:wrap}.suggestion button{margin-left:0}}
 .section-head p a{color:var(--accent-ink)}
+.auth-warning { background: #7f1d1d; color: #fff; padding: 10px 16px; font-size: 13px; line-height: 1.45; }
+.auth-warning code { background: rgba(255, 255, 255, .16); padding: 1px 5px; border-radius: 3px; }

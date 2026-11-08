@@ -9,6 +9,16 @@ fi
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${PROJECT_DIR}/.env"
+PASSWORD_GENERATED=0
+ENV_PASSWORD=""
+
+random_password() {
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex 12
+  else
+    head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n'
+  fi
+}
 
 env_value() {
   # Lit une valeur dans .env sans l'exécuter (accepte aussi l'ancien préfixe USCALE_).
@@ -104,6 +114,12 @@ if [[ -n "${OWNER_UID}" ]]; then
 fi
 
 if [[ ! -f "${ENV_FILE}" ]]; then
+  if [[ -n "${UPSCALE_PASSWORD:-}" ]]; then
+    ENV_PASSWORD="${UPSCALE_PASSWORD}"
+  else
+    ENV_PASSWORD="$(random_password)"
+    PASSWORD_GENERATED=1
+  fi
   cat > "${ENV_FILE}" <<EOF
 UPSCALE_HOST_DATA=${DATA_DIR}
 UPSCALE_DATA_ROOT=/data
@@ -116,12 +132,14 @@ VAAPI_DEVICE=${VAAPI_DEVICE}
 DEFAULT_SOURCE=/data/videos
 DEFAULT_DESTINATION=/data/videos_upscaled
 UPSCALE_USER=admin
-UPSCALE_PASSWORD=
+UPSCALE_ALLOW_ANONYMOUS=0
 UPSCALE_MIN_FREE_GB=5
 PUID=${OWNER_UID}
 PGID=${OWNER_GID}
 TZ=${HOST_TZ}
 EOF
+  # Écrit hors du heredoc : un mot de passe contenant « $ » ne doit pas être interprété.
+  printf 'UPSCALE_PASSWORD=%s\n' "${ENV_PASSWORD}" >> "${ENV_FILE}"
   chmod 600 "${ENV_FILE}"
 else
   echo "Un fichier .env existe déjà : il est conservé (seules les clés manquantes sont ajoutées)."
@@ -136,6 +154,7 @@ else
   add_missing PGID "${OWNER_GID}"
   add_missing TZ "${HOST_TZ}"
   add_missing VAAPI_DEVICE "${VAAPI_DEVICE}"
+  add_missing UPSCALE_ALLOW_ANONYMOUS 0
 fi
 # .env doit rester lisible par l'utilisateur qui lance « docker compose » sans sudo :
 # il appartient au propriétaire du dossier Upscale (celui qui l'a cloné), en lecture réservée.
@@ -185,6 +204,14 @@ echo "Autre disque : sudo bash ${PROJECT_DIR}/bibliotheques.sh ajouter /chemin/d
 echo
 echo "Logs : cd ${PROJECT_DIR} && docker compose logs -f upscale"
 echo "IMPORTANT : le port ${PORT} doit rester sur le LAN/VPN. Ne l'expose pas sur Internet."
-if [[ -z "$(env_value UPSCALE_PASSWORD '')" ]]; then
-  echo "Conseil : définis UPSCALE_PASSWORD dans ${ENV_FILE} puis relance « docker compose up -d » pour protéger l'interface."
+if [[ "${PASSWORD_GENERATED}" == "1" ]]; then
+  echo "Mot de passe de l'interface : ${ENV_PASSWORD}"
+  echo "  (enregistré dans ${ENV_FILE} ; change-le puis relance « docker compose up -d » si besoin)"
+elif [[ -z "$(env_value UPSCALE_PASSWORD '')" ]]; then
+  if [[ "$(env_value UPSCALE_ALLOW_ANONYMOUS 0)" == "1" ]]; then
+    echo "ATTENTION : interface sans mot de passe (UPSCALE_ALLOW_ANONYMOUS=1). Réservé à un réseau de confiance."
+  else
+    echo "ATTENTION : aucun mot de passe configuré : l'interface est en LECTURE SEULE."
+    echo "Définis UPSCALE_PASSWORD dans ${ENV_FILE} puis relance « docker compose up -d »."
+  fi
 fi

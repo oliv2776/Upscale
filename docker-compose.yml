@@ -24,7 +24,11 @@ services:
       DEFAULT_DESTINATION: "${DEFAULT_DESTINATION:-/data/videos_upscaled}"
       UPSCALE_USER: "${UPSCALE_USER:-${USCALE_USER:-admin}}"
       UPSCALE_PASSWORD: "${UPSCALE_PASSWORD:-${USCALE_PASSWORD:-}}"
+      UPSCALE_ALLOW_ANONYMOUS: "${UPSCALE_ALLOW_ANONYMOUS:-0}"
       UPSCALE_TRUSTED_HOSTS: "${UPSCALE_TRUSTED_HOSTS:-${USCALE_TRUSTED_HOSTS:-}}"
+      UPSCALE_ALLOW_PRIVATE_MODEL_URLS: "${UPSCALE_ALLOW_PRIVATE_MODEL_URLS:-0}"
+      UPSCALE_CONVERTER_DROP_PRIVILEGES: "${UPSCALE_CONVERTER_DROP_PRIVILEGES:-1}"
+      HOME: "/tmp"
       UPSCALE_MIN_FREE_GB: "${UPSCALE_MIN_FREE_GB:-${USCALE_MIN_FREE_GB:-5}}"
       UPSCALE_SEGMENT_SECONDS: "${UPSCALE_SEGMENT_SECONDS:-${USCALE_SEGMENT_SECONDS:-180}}"
       UPSCALE_LOG_RETENTION_DAYS: "${UPSCALE_LOG_RETENTION_DAYS:-${USCALE_LOG_RETENTION_DAYS:-90}}"
@@ -45,6 +49,23 @@ services:
       - "${RENDER_GID:-109}"
     security_opt:
       - no-new-privileges:true
+    # Durcissement : système de fichiers en lecture seule, capacités minimales, /tmp en mémoire.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+    pids_limit: 512
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   uscale-state:

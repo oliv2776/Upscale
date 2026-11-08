@@ -14,23 +14,24 @@ import hashlib
 import json
 import logging
 import math
+import os
 import queue
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import threading
 import time
 import urllib.error
 import urllib.parse
-import urllib.request
 import uuid
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from . import config, models
+from . import config, models, net
 
 log = logging.getLogger("upscale.converter")
 
@@ -290,8 +291,11 @@ def openmodeldb_info(text: str) -> dict[str, Any]:
     model_id = openmodeldb_id(text)
     url = f"{config.OPENMODELDB_DATA.rstrip('/')}/{urllib.parse.quote(model_id)}.json"
     try:
-        with urllib.request.urlopen(request(url), timeout=30) as response:
+        with net.open_url(url, timeout=30, allow_private=config.ALLOW_PRIVATE_MODEL_URLS,
+                          headers={"User-Agent": USER_AGENT}) as response:
             info = json.loads(response.read(2_000_000).decode("utf-8"))
+    except net.UnsafeURLError as exc:
+        raise InstallError(f"Adresse OpenModelDB refusée : {exc}") from None
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
             raise InstallError(f"Modèle « {model_id} » introuvable sur OpenModelDB") from None
@@ -311,10 +315,6 @@ def ordered_resources(resources: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rank = {"ncnn": 0, "pytorch": 1, "onnx": 2}
     usable = [r for r in resources if isinstance(r, dict) and r.get("platform") in rank]
     return sorted(usable, key=lambda r: rank[r["platform"]])
-
-
-def request(url: str) -> urllib.request.Request:
-    return urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
 
 
 def direct_url(url: str) -> str | None:
@@ -361,7 +361,10 @@ def download_first(task: dict[str, Any], candidates: list[tuple[dict[str, Any], 
 
 def download(task: dict[str, Any], url: str, folder: Path, size: Any = None, sha256: Any = None) -> Path:
     try:
-        response = urllib.request.urlopen(request(url), timeout=60)
+        response = net.open_url(url, timeout=60, allow_private=config.ALLOW_PRIVATE_MODEL_URLS,
+                                headers={"User-Agent": USER_AGENT})
+    except net.UnsafeURLError as exc:
+        raise InstallError(f"adresse refusée ({exc})") from None
     except urllib.error.HTTPError as exc:
         raise InstallError(f"erreur HTTP {exc.code}") from None
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
@@ -458,20 +461,79 @@ def _converter_ok(python: Path) -> bool:
         return False
     try:
         return subprocess.run([str(python), "-I", "-c", "import torch, spandrel, pnnx, numpy"],
-                              capture_output=True, timeout=300).returncode == 0
+                              capture_output=True, timeout=300, env=converter_env()).returncode == 0
     except (OSError, subprocess.TimeoutExpired):
         return False
 
 
+def converter_env(home: Path | None = None) -> dict[str, str]:
+    """Environnement minimal des convertisseurs.
+
+    Les fichiers de modèles viennent d'Internet : le sous-processus qui les lit ne doit pas hériter des
+    secrets du conteneur (UPSCALE_PASSWORD, jetons de notification...).
+    """
+    keep = ("PATH", "LANG", "LC_ALL", "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "LD_LIBRARY_PATH")
+    env = {key: os.environ[key] for key in keep if key in os.environ}
+    folder = Path(home or config.STATE_DIR)
+    env.update(HOME=str(folder), TMPDIR=str(folder), PYTHONIOENCODING="utf-8",
+               PYTHONDONTWRITEBYTECODE="1")
+    return env
+
+
+def _nobody() -> tuple[int, int] | None:
+    """UID/GID de « nobody », ou None si on n'est pas root ou si le compte n'existe pas."""
+    if not hasattr(os, "geteuid") or os.geteuid() != 0 or not config.CONVERTER_DROP_PRIVILEGES:
+        return None
+    try:
+        import pwd
+        entry = pwd.getpwnam("nobody")
+    except (ImportError, KeyError):
+        return None
+    return entry.pw_uid, entry.pw_gid
+
+
+def drop_privileges(command: list[str], work: Path) -> list[str]:
+    """Prépare un parseur de modèle non fiable à tourner sans les droits du conteneur.
+
+    Les fichiers de modèles peuvent contenir du code ou exploiter un parseur natif : exécutés en
+    « nobody », ils ne peuvent plus lire le socket Docker ni écrire la base. Sans setpriv, on continue
+    en root (comportement historique) : ``UPSCALE_CONVERTER_DROP_PRIVILEGES=0`` force ce repli.
+    """
+    owner = _nobody()
+    if owner is None:
+        return command
+    setpriv = shutil.which("setpriv")
+    if not setpriv:
+        return command
+    for target in [work, *work.rglob("*")]:
+        try:
+            os.chown(target, owner[0], owner[1], follow_symlinks=False)
+        except OSError:
+            pass
+    return [setpriv, f"--reuid={owner[0]}", f"--regid={owner[1]}", "--clear-groups", "--", *command]
+
+
+def _kill_process(proc: subprocess.Popen) -> None:
+    """Tue le groupe de processus du convertisseur (pnnx/pip lancent des enfants)."""
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except (OSError, ProcessLookupError):
+        try:
+            proc.kill()
+        except OSError:
+            pass
+
+
 def stream(task: dict[str, Any], command: list[str], *, timeout: float, on_line: Callable[[str], None] | None = None,
-           cwd: Path | None = None) -> tuple[int, list[str]]:
+           cwd: Path | None = None, env: dict[str, str] | None = None) -> tuple[int, list[str]]:
     lines: list[str] = []
+    kwargs: dict[str, Any] = {"start_new_session": True} if os.name == "posix" else {}
     try:
         proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                                errors="replace", cwd=cwd)
+                                errors="replace", cwd=cwd, env=converter_env() if env is None else env, **kwargs)
     except OSError as exc:
         raise InstallError(f"Impossible de lancer {Path(command[0]).name} : {exc}") from None
-    timer = threading.Timer(timeout, proc.kill)
+    timer = threading.Timer(timeout, _kill_process, (proc,))
     timer.start()
     try:
         assert proc.stdout is not None
@@ -498,13 +560,14 @@ def ensure_converter(task: dict[str, Any]) -> Path:
                            "dossier d'état)")
     _step(task, "Installation du convertisseur (une seule fois, environ 1 Go à télécharger)")
     shutil.rmtree(folder, ignore_errors=True)
-    code, lines = stream(task, [sys.executable, "-m", "venv", str(folder)], timeout=600)
+    code, lines = stream(task, [sys.executable, "-m", "venv", str(folder)], timeout=600,
+                         env=converter_env(folder.parent))
     if code != 0:
         raise InstallError("Création de l'environnement du convertisseur impossible : " + " ".join(lines[-3:]))
     pip = [str(python), "-m", "pip", "install", "--no-cache-dir", "--disable-pip-version-check", "--progress-bar", "off"]
     show = lambda line: _log(task, line) if line.startswith(("Collecting", "Downloading", "Successfully", "ERROR")) else None  # noqa: E731
     for args in ([*pip, "--index-url", config.TORCH_INDEX, *TORCH_PACKAGES], [*pip, *CONVERTER_PACKAGES]):
-        code, lines = stream(task, args, timeout=3600, on_line=show)
+        code, lines = stream(task, args, timeout=3600, on_line=show, env=converter_env(folder))
         if code != 0:
             shutil.rmtree(folder, ignore_errors=True)
             raise InstallError("Installation du convertisseur impossible (accès Internet ?) : " + " ".join(lines[-3:]))
@@ -533,7 +596,9 @@ def run_converter(task: dict[str, Any], python: Path, model_file: Path, out: Pat
     width, height = TEST_SIZE
     command = [str(python), "-I", str(CONVERT_SCRIPT), str(model_file), str(out), "--ref-in", str(test_raw),
                "--ref-size", f"{width}x{height}", "--ref-out", str(out / "reference.rgb")]
-    code, lines = stream(task, command, timeout=3600, on_line=lambda line: _log(task, line), cwd=out.parent)
+    command = drop_privileges(command, out.parent)
+    code, lines = stream(task, command, timeout=3600, on_line=lambda line: _log(task, line), cwd=out.parent,
+                         env=converter_env(out.parent))
     result: dict[str, Any] = {}
     for line in reversed(lines):
         if line.startswith("{"):
@@ -595,9 +660,9 @@ def verify(task: dict[str, Any], param: Path, binary: Path, scale: int, tile: in
     meta = {"folder": str(folder), "scale": scale, "tile": tile}
     from . import runner  # import local : runner importe models
 
-    command = runner.ncnn_command(png, out, meta)
+    command = drop_privileges(runner.ncnn_command(png, out, meta), folder)
     started = time.monotonic()
-    code, lines = stream(task, command, timeout=600)
+    code, lines = stream(task, command, timeout=600, env=converter_env(folder))
     if code != 0 or not out.exists():
         unknown = [line for line in lines if "not exists or registered" in line or "layer" in line.lower()]
         hint = (" Couche inconnue du moteur : " + unknown[0]) if unknown else ""

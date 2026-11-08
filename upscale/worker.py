@@ -264,6 +264,10 @@ JOB_ID_RE = re.compile(r"[0-9a-f]{12}")
 
 
 def cancel(job_id: str) -> bool:
+    """Annule une tâche en attente ou en cours ; False si elle n'existe pas.
+
+    Lève ValueError si la tâche est déjà terminée : l'API répond alors 409 au lieu d'un « OK » trompeur.
+    """
     with db.connect() as conn:
         updated = conn.execute(
             "UPDATE jobs SET status='cancelled',stage='Annulé',updated_at=? WHERE id=? AND status='queued'",
@@ -274,9 +278,12 @@ def cancel(job_id: str) -> bool:
         return False
     if updated:
         pipeline.cleanup_job_files(row)
-    elif row["status"] == "running":
-        runner.request_cancel(job_id)
-    return True
+        return True
+    if row["status"] == "running":
+        if runner.request_cancel(job_id):
+            return True
+        raise ValueError("La tâche est en cours dans un autre processus : impossible de l'arrêter ici")
+    raise ValueError("Cette tâche est déjà terminée")
 
 
 def retry(job_id: str) -> None:
@@ -296,7 +303,10 @@ def delete(job_id: str) -> None:
     row = db.get_job(job_id)
     if not row:
         raise LookupError("Tâche introuvable")
-    if row["status"] == "running":
+    # Suppression conditionnelle : si le worker réserve la tâche entre-temps, on ne supprime pas ses fichiers.
+    with db.connect() as conn:
+        deleted = conn.execute("DELETE FROM jobs WHERE id=? AND status!='running'", (job_id,)).rowcount
+    if not deleted:
         raise ValueError("Arrête la tâche avant de la supprimer")
     pipeline.cleanup_job_files(row)
     if row["kind"] == "preview":
@@ -329,9 +339,25 @@ def restore(job_id: str) -> None:
     original, produced = Path(row["source"]), Path(row["destination"])
     if original.exists() and original != produced:
         raise ValueError(f"Un fichier occupe déjà l'emplacement de l'original : {original}")
-    produced.unlink(missing_ok=True)
     original.parent.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(trash), str(original))
+    # Déplacement d'abord, suppression ensuite : un échec ne détruit pas la version produite.
+    temp = original.with_name(f".{original.stem}.restore-{job_id}{original.suffix}")
+    temp.unlink(missing_ok=True)
+
+    def rollback() -> None:
+        if temp.exists() and not trash.exists():
+            try:
+                shutil.move(str(temp), str(trash))
+            except OSError:
+                pass
+
+    try:
+        shutil.move(str(trash), str(temp))
+        produced.unlink(missing_ok=True)
+        temp.replace(original)
+    except BaseException:
+        rollback()
+        raise
     db.set_job(job_id, trash_path=None, stage="Original restauré",
                warning="Original restauré, la version Upscale a été supprimée.")
     db.log_line(job_id, f"[{db.now()}] Original restauré : {original}")

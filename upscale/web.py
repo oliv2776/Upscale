@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import hmac
+import ipaddress
 import json
 import logging
 import re
 import shutil
 import subprocess
+import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -22,6 +25,55 @@ app.json.sort_keys = False  # garder l'ordre des modèles
 app.config["MAX_CONTENT_LENGTH"] = 2100 * 1024**2  # import de modèles personnalisés
 UPLOAD_PATHS = {"/api/models"}
 PREVIEW_FILE_RE = re.compile(r"[a-z0-9-]+\.(mp4|json)")
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+# Anti-bruteforce de l'authentification Basic : échecs par IP sur une fenêtre glissante.
+AUTH_MAX_FAILURES = 15
+AUTH_FAILURE_WINDOW = 300.0
+_auth_failures: dict[str, list[float]] = {}
+_auth_lock = threading.Lock()
+
+
+def _auth_blocked(ip: str) -> bool:
+    now = time.monotonic()
+    with _auth_lock:
+        recent = [moment for moment in _auth_failures.get(ip, []) if now - moment < AUTH_FAILURE_WINDOW]
+        _auth_failures[ip] = recent
+        return len(recent) >= AUTH_MAX_FAILURES
+
+
+def _auth_failed(ip: str) -> None:
+    with _auth_lock:
+        _auth_failures.setdefault(ip, []).append(time.monotonic())
+
+
+def _auth_ok(ip: str) -> None:
+    with _auth_lock:
+        _auth_failures.pop(ip, None)
+
+
+def _trusted_origin(origin: str) -> bool:
+    """Origine autorisée : même site que l'hôte de la requête, et nom explicitement de confiance.
+
+    On n'utilise ni ``request.host`` seul (DNS rebinding : l'attaquant contrôle Host et Origin) ni
+    ``X-Forwarded-Host`` (fourni par le client). Derrière un reverse proxy, le nom public doit être
+    listé dans UPSCALE_TRUSTED_HOSTS.
+    """
+    try:
+        parsed = urlsplit(origin)
+    except ValueError:
+        return False
+    if parsed.scheme not in {"http", "https"}:
+        return False
+    if parsed.netloc.lower() != request.host.lower():
+        return False
+    host = (parsed.hostname or "").lower().rstrip(".")
+    if host in config.TRUSTED_HOSTS or host == "localhost":
+        return True
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return True
 
 
 def error(message: str, status: int = 400):
@@ -32,26 +84,44 @@ def error(message: str, status: int = 400):
 def guard_request() -> Response | tuple[Response, int] | None:
     if request.path == "/api/ping":
         return None
+    client = request.remote_addr or "inconnu"
     if config.AUTH_PASSWORD:
+        if _auth_blocked(client):
+            return Response("Trop de tentatives d'authentification", 429, {"Retry-After": "300"})
         auth = request.authorization
         valid = bool(auth and auth.type == "basic"
                      and hmac.compare_digest(str(auth.username or ""), config.AUTH_USER)
                      and hmac.compare_digest(str(auth.password or ""), config.AUTH_PASSWORD))
         if not valid:
+            _auth_failed(client)
             return Response("Authentification requise", 401, {"WWW-Authenticate": 'Basic realm="Upscale"'})
-    if request.method not in {"GET", "HEAD", "OPTIONS"}:
+        _auth_ok(client)
+    elif not config.ALLOW_ANONYMOUS and request.method not in SAFE_METHODS:
+        return error("Aucun mot de passe configuré : définis UPSCALE_PASSWORD dans .env "
+                     "(ou UPSCALE_ALLOW_ANONYMOUS=1 pour un réseau de confiance), puis redémarre.", 403)
+    if request.method not in SAFE_METHODS:
         # Un JSON explicite (ou l'en-tête d'import) force un preflight CORS : un site tiers ne peut pas
         # piloter l'API.
         upload = request.path in UPLOAD_PATHS and request.headers.get("X-Upscale-Upload") == "1"
         if not request.is_json and not upload:
             return error("Content-Type application/json requis", 415)
         origin = request.headers.get("Origin")
-        if origin:
-            allowed = {request.host, *config.TRUSTED_HOSTS}
-            allowed.update(h.strip() for h in request.headers.get("X-Forwarded-Host", "").split(",") if h.strip())
-            if urlsplit(origin).netloc not in allowed:
-                return error("Origine refusée", 403)
+        if origin and not _trusted_origin(origin):
+            return error("Origine refusée", 403)
     return None
+
+
+@app.after_request
+def security_headers(response: Response) -> Response:
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; img-src 'self' data:; media-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+    return response
 
 
 def json_body() -> dict[str, Any]:
@@ -87,6 +157,7 @@ def api_config():
         "runner": config.RUNNER,
         "version": config.VERSION, "segment_seconds": config.SEGMENT_SECONDS,
         "models": settings_mod.available_models(),
+        "auth": {"password_set": bool(config.AUTH_PASSWORD), "anonymous_allowed": config.ALLOW_ANONYMOUS},
     })
 
 
@@ -230,8 +301,13 @@ def api_resume():
 @app.post("/api/cancel/<job_id>")
 @app.post("/api/jobs/<job_id>/cancel")
 def api_cancel(job_id: str):
-    if not valid_job_id(job_id) or not worker.cancel(job_id):
+    if not valid_job_id(job_id):
         return error("Tâche introuvable", 404)
+    try:
+        if not worker.cancel(job_id):
+            return error("Tâche introuvable", 404)
+    except ValueError as exc:
+        return error(str(exc), 409)
     return jsonify({"ok": True})
 
 

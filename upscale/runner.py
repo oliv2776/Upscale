@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import socket
 import subprocess
 import threading
@@ -140,6 +141,11 @@ def stop_process(proc: subprocess.Popen, container: str | None) -> None:
         except (OSError, subprocess.TimeoutExpired):
             pass
     if proc.poll() is None:
+        if os.name == "posix":
+            try:
+                proc.send_signal(signal.SIGCONT)  # un processus suspendu ignorerait SIGTERM
+            except OSError:
+                pass
         proc.terminate()
         try:
             proc.wait(timeout=10)
@@ -159,6 +165,7 @@ class RunningProcess:
         self.job_id, self.container = job_id, container
         self.parse_progress, self.on_progress = parse_progress, on_progress
         self.last_log = 0.0
+        self._paused = False
         db.log_line(job_id, "$ " + " ".join(command))
         self.proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                      stdin=subprocess.DEVNULL, cwd=cwd)
@@ -197,7 +204,31 @@ class RunningProcess:
     def returncode(self) -> int | None:
         return self.proc.returncode
 
+    def paused(self) -> bool:
+        return self._paused
+
+    def pause(self) -> None:
+        """Suspend le processus (SIGSTOP) : utilisé pour borner l'espace disque de la découpe."""
+        if self._paused or not self.running() or os.name != "posix":
+            return
+        try:
+            os.kill(self.proc.pid, signal.SIGSTOP)
+            self._paused = True
+        except (OSError, ProcessLookupError):
+            pass
+
+    def resume(self) -> None:
+        """Reprend un processus suspendu (SIGCONT)."""
+        if not self._paused:
+            return
+        try:
+            os.kill(self.proc.pid, signal.SIGCONT)
+        except (OSError, ProcessLookupError):
+            pass
+        self._paused = False
+
     def stop(self) -> None:
+        self.resume()
         stop_process(self.proc, self.container)
         self.finish()
 

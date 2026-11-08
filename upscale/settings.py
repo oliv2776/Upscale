@@ -181,10 +181,30 @@ def source_root_for(path: Path, settings: dict[str, Any]) -> Path:
 
 
 def _int_in(value: Any, key: str, low: int, high: int) -> int:
+    if isinstance(value, bool):
+        raise ValueError(f"{key} doit être un nombre entier")
     number = int(value)
     if not low <= number <= high:
         raise ValueError(f"{key} doit être compris entre {low} et {high}")
     return number
+
+
+TRUE_VALUES = {"1", "true", "yes", "on", "oui", "vrai"}
+FALSE_VALUES = {"0", "false", "no", "off", "non", "faux"}
+
+
+def _bool(value: Any) -> bool:
+    """Booléen strict : ``bool("false")`` vaut ``True`` en Python, ce qui activerait des options dangereuses."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and value in (0, 1):
+        return bool(value)
+    text = str(value).strip().lower()
+    if text in TRUE_VALUES:
+        return True
+    if text in FALSE_VALUES:
+        return False
+    raise ValueError("Valeur booléenne attendue (true/false)")
 
 
 def _choice(value: Any, key: str, choices: tuple[str, ...]) -> str:
@@ -258,8 +278,8 @@ VALIDATORS: dict[str, Any] = {
     "model": validate_model,
     "preset": lambda v: _choice(v, "preset", PRESETS),
     "codec": lambda v: _choice(v, "codec", CODECS),
-    "include_subfolders": bool,
-    "replace_original": bool,
+    "include_subfolders": _bool,
+    "replace_original": _bool,
     "trash_days": lambda v: _int_in(v, "trash_days", 0, 365),
     "deinterlace": lambda v: _choice(v, "deinterlace", DEINTERLACE_MODES),
     "denoise": lambda v: _choice(v, "denoise", DENOISE_LEVELS),
@@ -267,16 +287,16 @@ VALIDATORS: dict[str, Any] = {
     "render": lambda v: _choice(v, "render", RENDERS),
     "ai_strength": lambda v: _int_in(v, "ai_strength", 30, 100),
     "grain": lambda v: _choice(v, "grain", GRAIN_LEVELS),
-    "watch_enabled": bool,
+    "watch_enabled": _bool,
     "watch_interval": lambda v: _int_in(v, "watch_interval", 5, 1440),
-    "schedule_enabled": bool,
+    "schedule_enabled": _bool,
     "notify_type": lambda v: _choice(v, "notify_type", NOTIFY_TYPES),
     "notify_url": lambda v: _url(v, "L'adresse de notification"),
-    "notify_on_complete": bool,
-    "notify_on_failure": bool,
+    "notify_on_complete": _bool,
+    "notify_on_failure": _bool,
     "media_type": lambda v: _choice(v, "media_type", MEDIA_TYPES),
     "media_url": lambda v: _url(v, "L'adresse du serveur multimédia"),
-    "ollama_enabled": bool,
+    "ollama_enabled": _bool,
     "ollama_url": lambda v: _url(v, "L'adresse Ollama"),
     "ollama_model": lambda v: str(v)[:200],
 }

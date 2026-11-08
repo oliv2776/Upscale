@@ -50,10 +50,14 @@ NCNN_BIN = _env("UPSCALE_NCNN_BIN", "/opt/upscayl/upscayl-bin")
 # Convertisseur des modèles PyTorch/ONNX en ncnn (torch + spandrel + pnnx). Installé à la première conversion
 # dans le dossier d'état (environ 1 Go), sauf si UPSCALE_CONVERTER_PYTHON désigne un interpréteur déjà prêt.
 CONVERTER_PYTHON = _env("UPSCALE_CONVERTER_PYTHON")
+# Exécute la conversion de modèles non fiables en tant que « nobody » (setpriv) quand le conteneur est root.
+CONVERTER_DROP_PRIVILEGES = _env("UPSCALE_CONVERTER_DROP_PRIVILEGES", "1") != "0"
 TORCH_INDEX = _env("UPSCALE_TORCH_INDEX", "https://download.pytorch.org/whl/cpu")
 OPENMODELDB_DATA = _env("UPSCALE_OPENMODELDB_DATA",
                         "https://raw.githubusercontent.com/OpenModelDB/open-model-database/main/data/models")
 MODEL_MAX_BYTES = int(float(_env("UPSCALE_MODEL_MAX_MB", "2048")) * 1024**2)
+# Téléchargement de modèles depuis une adresse privée (miroir interne, tests) : refusé par défaut (SSRF).
+ALLOW_PRIVATE_MODEL_URLS = _env("UPSCALE_ALLOW_PRIVATE_MODEL_URLS", "0").lower() in {"1", "true", "yes", "on"}
 # Segments plus courts avec ce moteur : il travaille sur des images PNG, plus volumineuses.
 CUSTOM_SEGMENT_SECONDS = int(_env("UPSCALE_CUSTOM_SEGMENT_SECONDS", "30"))
 VIDEO_GID = _env("VIDEO_GID", "44")
@@ -65,6 +69,8 @@ DEFAULT_DESTINATION = _env("DEFAULT_DESTINATION", "/data/videos_upscaled")
 
 AUTH_USER = _env("UPSCALE_USER", "admin")
 AUTH_PASSWORD = os.environ.get("UPSCALE_PASSWORD", os.environ.get("USCALE_PASSWORD", ""))
+# Sans mot de passe : lecture seule par défaut ; UPSCALE_ALLOW_ANONYMOUS=1 rétablit l'ancien comportement.
+ALLOW_ANONYMOUS = _env("UPSCALE_ALLOW_ANONYMOUS", "0").lower() in {"1", "true", "yes", "on"}
 TRUSTED_HOSTS = {h.strip() for h in _env("UPSCALE_TRUSTED_HOSTS").split(",") if h.strip()}
 
 MIN_FREE_BYTES = int(float(_env("UPSCALE_MIN_FREE_GB", "5")) * 1024**3)

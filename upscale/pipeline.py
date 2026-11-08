@@ -30,6 +30,10 @@ defer_reason: Callable[[], str | None] = lambda: None  # noqa: E731
 
 # Bitrate prudent utilisé pour estimer la taille des segments encodés (octets/s).
 ENCODED_BYTES_PER_SECOND = 1_500_000
+# Découpe et IA simultanées : au plus ce nombre de segments en attente (contre-pression SIGSTOP).
+MAX_PENDING_SEGMENTS = 2
+# Marge de sécurité appliquée au débit réellement mesuré des segments encodés.
+SEGMENT_RATE_MARGIN = 1.15
 
 
 def job_settings(job: sqlite3.Row) -> dict[str, Any]:
@@ -184,17 +188,25 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
     segmented = (work / "segments.json").exists()
     resumed = segmented or any((work / "enc").glob("seg_*.mkv"))  # segments déjà encodés conservés
     progress = Progress(job_id, start=float(job["progress"] or 0) if resumed else 0.0)
+    measured = {"rate": 0.0}
+    processed = {"seconds": 0.0}
 
     frames = info["frames"] * multiplier
     segment_frames = min(frames, int(segment_seconds * info["fps"] * multiplier) + 1)
+    overlap = not segmented and multiplier == 1
     needed = media.estimate_ffv1_bytes(info["width"] * scale, info["height"] * scale, segment_frames)
     if custom:  # images PNG du segment (entrée + sortie agrandie), environ 1,5 octet par pixel
         needed += int(segment_frames * info["width"] * info["height"] * 1.5 * (1 + scale * scale))
     needed += int(info["duration"] * ENCODED_BYTES_PER_SECOND)
     if not segmented:
-        needed += media.estimate_ffv1_bytes(info["width"], info["height"], frames)
-        if multiplier > 1:
-            needed += media.estimate_ffv1_bytes(info["width"], info["height"], info["frames"] + frames)
+        if overlap:
+            # Découpe et IA simultanées : la contre-pression borne les segments en attente.
+            pending = min(frames, segment_frames * (MAX_PENDING_SEGMENTS + 2))
+            needed += media.estimate_ffv1_bytes(info["width"], info["height"], pending)
+        else:
+            needed += media.estimate_ffv1_bytes(info["width"], info["height"], frames)
+            if multiplier > 1:
+                needed += media.estimate_ffv1_bytes(info["width"], info["height"], info["frames"] + frames)
     free = shutil.disk_usage(disk_dir).free
     if free - needed < config.MIN_FREE_BYTES:
         raise JobError(f"Espace disque insuffisant : environ {human_size(needed)} nécessaires, "
@@ -207,10 +219,21 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
     if not custom or multiplier > 1:  # Video2X sert aussi à l'interpolation RIFE
         runner.ensure_image(job_id)
 
-    overlap = not segmented and multiplier == 1
     prep_share = 0.15 if multiplier > 1 else (0.0 if overlap else 0.05)
     span = 0.97 - prep_share
     estimated = max(1, math.ceil(info["duration"] / segment_seconds)) if info["duration"] > 0 else 1
+
+    def check_projected_space() -> None:
+        """Arrête tôt si le débit réellement mesuré ne laisse pas assez de place pour la suite."""
+        rate = measured["rate"]
+        if rate <= 0:
+            return
+        remaining = project_remaining_bytes(rate, info["duration"], processed["seconds"])
+        free = shutil.disk_usage(disk_dir).free
+        if free - remaining < config.MIN_FREE_BYTES:
+            raise JobError("Espace disque insuffisant pour la suite : environ "
+                           f"{human_size(remaining)} restants à écrire (débit mesuré {rate / 1024**2:.1f} Mo/s), "
+                           f"{human_size(free)} libres (marge de {human_size(config.MIN_FREE_BYTES)} conservée)")
 
     def process_segment(index: int, name: str, total: int, approximate: bool, note: str = "") -> None:
         """Agrandit puis encode un segment (sauf s'il l'a déjà été lors d'une exécution précédente)."""
@@ -219,8 +242,12 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
         total = max(total, index + 1)
         base = prep_share + span * index / total
         width = span / total
+        segment_duration = min(float(segment_seconds), max(0.0, info["duration"] - processed["seconds"]))
+        if segment_duration <= 0:
+            segment_duration = float(segment_seconds)
         if encoded.exists():
             segment.unlink(missing_ok=True)
+            processed["seconds"] += segment_duration
             progress.update(base + width)
             return
         reason = defer_reason()
@@ -238,6 +265,9 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
         temp.replace(encoded)
         ai.unlink(missing_ok=True)
         segment.unlink(missing_ok=True)
+        processed["seconds"] += segment_duration
+        measured["rate"] = max(measured["rate"], encoded.stat().st_size / segment_duration)
+        check_projected_space()
         db.set_job(job_id, segments_done=index + 1)
         progress.update(base + width, force=True)
 
@@ -287,6 +317,11 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
     live = settings_mod.get_settings()
     notify.notify_job(live, "completed", dict(job), warning or "")
     notify.refresh_async(live)
+
+
+def project_remaining_bytes(rate: float, total_seconds: float, processed_seconds: float) -> int:
+    """Octets restant à écrire d'après le débit réellement mesuré, avec marge de sécurité."""
+    return int(rate * max(0.0, total_seconds - processed_seconds) * SEGMENT_RATE_MARGIN)
 
 
 def unique_path(path: Path) -> Path:
@@ -372,6 +407,11 @@ def cut_segments_while_upscaling(job_id: str, source: Path, work: Path, info: di
     try:
         while True:
             names = ready()
+            pending = len(names) - done
+            if pending > MAX_PENDING_SEGMENTS and cutter.running() and not cutter.paused():
+                cutter.pause()  # l'IA est plus lente que la découpe : on borne les segments en attente
+            elif pending <= MAX_PENDING_SEGMENTS and cutter.paused():
+                cutter.resume()
             if done < len(names):
                 note = f" · découpe {cut['value'] * 100:.0f} %" if cutter.running() else ""
                 process_segment(done, names[done], max(estimated, len(names)), approximate=cutter.running(),

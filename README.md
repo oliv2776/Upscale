@@ -19,7 +19,7 @@ Le projet cible notamment les NAS sous Ubuntu équipés d'un GPU AMD compatible 
 
 **Fiabilité**
 - Traitement par **segments** (3 min par défaut) : une coupure, un redémarrage ou une pause ne fait perdre que le segment en cours ; « Relancer » reprend là où la tâche s'était arrêtée.
-- Espace disque borné : l'intermédiaire sans perte ne dépasse jamais un segment ; vérification avant et pendant le traitement.
+- Espace disque borné : la découpe est suspendue tant que plus de deux segments attendent l'IA ; vérification avant et pendant le traitement, avec ré-estimation d'après le débit réel mesuré.
 - **Réglages figés par tâche** au moment de la mise en file : changer un réglage n'affecte pas les vidéos déjà en attente.
 - Par défaut, les originaux ne sont jamais modifiés, une sortie existante n'est jamais écrasée et l'arborescence relative est conservée. En option, la nouvelle version **remplace l'original** (gardé en corbeille, restaurable).
 
@@ -30,14 +30,14 @@ Le projet cible notamment les NAS sous Ubuntu équipés d'un GPU AMD compatible 
 - Dossier surveillé, plage horaire (ex. 22 h – 7 h), notifications ntfy / Gotify / webhook, actualisation Jellyfin / Plex, suffixe de nom de fichier.
 - Statistiques GPU en direct (charge, température, VRAM, puissance).
 - Fichiers produits attribués au propriétaire de la vidéo d'origine (ou à PUID/PGID), jamais à root par défaut.
-- Authentification par mot de passe optionnelle, protection CSRF.
+- Authentification par mot de passe (lecture seule sans mot de passe), protection CSRF et en-têtes de sécurité.
 
 ## Prérequis
 
 - NAS ou serveur Ubuntu 22.04/24.04 (ou Linux compatible Docker).
 - Docker Engine et Docker Compose v2.
 - GPU AMD exposé via /dev/dri et pilote Mesa Vulkan opérationnel (paquets hôte mesa-vulkan-drivers et vulkan-tools).
-- Accès au dépôt GitHub. S'il est privé, configure une clé SSH autorisée sur GitHub avant le clonage.
+- Accès au dépôt GitHub (public) : le clonage HTTPS suffit, aucune clé SSH n'est nécessaire.
 
 ### À propos de la RX 5500 XT
 
@@ -46,7 +46,7 @@ La présence de la carte dans lspci ne suffit pas : vulkaninfo --summary doit af
 ## Installation rapide (recommandée)
 
 ~~~bash
-git clone git@github.com:oliv2776/Upscale.git
+git clone https://github.com/oliv2776/Upscale.git
 cd Upscale && sudo bash install.sh
 ~~~
 
@@ -54,7 +54,7 @@ Le script install.sh :
 - installe les dépendances système manquantes (Docker/Compose, Git, pilotes/outils Vulkan) et active Docker au démarrage ;
 - crée /data/videos et /data/videos_upscaled, attribués à l'utilisateur qui a lancé sudo ;
 - détecte le GPU piloté par amdgpu (même si un iGPU occupe card0), ses GID et son périphérique VAAPI ;
-- génère .env avec ton fuseau horaire et ton utilisateur de session (PUID/PGID) ; si .env existe déjà, il n'ajoute que les clés manquantes ;
+- génère .env avec ton fuseau horaire, ton utilisateur de session (PUID/PGID) et un **mot de passe aléatoire** pour l'interface ; si .env existe déjà, il n'ajoute que les clés manquantes ;
 - télécharge l'image Video2X à l'avance (plusieurs Go) ;
 - construit et démarre Upscale sur le port **27000** (ou celui défini dans .env).
 
@@ -68,6 +68,8 @@ docker compose up -d --build
 ~~~
 
 L'historique, les réglages et les tâches en attente sont conservés (migration automatique de la base).
+
+> **2.8 — sécurité** : sans UPSCALE_PASSWORD, l'interface passe en **lecture seule** (les actions sont refusées). Définis un mot de passe, ou UPSCALE_ALLOW_ANONYMOUS=1 pour conserver l'ancien comportement sur un réseau de confiance. install.sh génère désormais un mot de passe et l'affiche à la fin de l'installation.
 
 > **Ancien nom « Uscale »** : le projet s'appelle désormais Upscale. Les anciennes variables USCALE_* de ton .env restent lues (les nouvelles UPSCALE_* sont prioritaires), la base et le volume de données sont repris tels quels, et les conteneurs ou dossiers de travail d'une tâche interrompue sous l'ancien nom sont récupérés. Rien à faire ; tu peux renommer les variables à ton rythme.
 
@@ -105,7 +107,7 @@ Le dossier de destination doit être distinct du dossier source (ni l'un dans l'
 ### 4. Configuration
 
 ~~~bash
-git clone git@github.com:oliv2776/Upscale.git && cd Upscale
+git clone https://github.com/oliv2776/Upscale.git && cd Upscale
 cp .env.example .env && nano .env
 ~~~
 
@@ -169,7 +171,7 @@ En mode standard, Upscale lit ses propres montages et donne exactement les même
 ### Comment se déroule une tâche
 
 1. Préparation : filtres éventuels puis découpe de la vidéo en segments sans perte (FFV1, sur tous les cœurs du processeur) à la résolution source. **La découpe et l'IA avancent en même temps** : chaque segment est agrandi par la carte graphique dès que le processeur l'a terminé (la file affiche alors « segment 3/~40 · découpe 35 % »). Avec RIFE, l'interpolation est faite sur la vidéo entière à la résolution source avant la découpe.
-2. Pour chaque segment : Video2X agrandit le segment (intermédiaire sans perte), puis FFmpeg l'encode à la taille finale. L'intermédiaire est aussitôt supprimé.
+2. Pour chaque segment : Video2X agrandit le segment (intermédiaire sans perte), puis FFmpeg l'encode à la taille finale. L'intermédiaire est aussitôt supprimé. Si l'IA prend du retard, la découpe est suspendue (SIGSTOP) dès que plus de deux segments attendent, puis reprise : l'espace disque reste borné.
 3. Assemblage : les segments encodés sont concaténés sans réencodage, avec l'audio, les sous-titres, les chapitres et les polices de l'original.
 4. Vérification : durée, nombre de pistes audio et de sous-titres (et images/s avec RIFE). Une anomalie est signalée par ⚠ dans la file, sans supprimer le fichier.
 
@@ -177,7 +179,7 @@ Les fichiers de travail sont dans un dossier caché .upscale-ID à côté de la 
 
 **Pause** : la vidéo en cours s'arrête à la fin de son segment et reprendra à partir du suivant. **Arrêter** interrompt immédiatement et supprime les fichiers de travail.
 
-**Espace disque** : Upscale estime l'espace nécessaire (segments à la résolution source, un segment agrandi, la sortie) et refuse de démarrer s'il manque de la place ; pendant le traitement, la tâche s'arrête si l'espace libre descend sous UPSCALE_MIN_FREE_GB.
+**Espace disque** : Upscale estime l'espace nécessaire (quelques segments en attente, un segment agrandi, la sortie) et refuse de démarrer s'il manque de la place ; pendant le traitement, l'estimation est révisée d'après le débit réellement mesuré des segments encodés, et la tâche s'arrête si l'espace libre descend sous UPSCALE_MIN_FREE_GB.
 
 ### Rendu « Peau normale »
 
@@ -266,8 +268,11 @@ N'expose pas le port 11434 sur Internet.
 | VIDEO2X_IMAGE | ghcr.io/k4yt3x/video2x:6.4.0 | Image Video2X (mode standard) |
 | VIDEO2X_GPU | (vide) | Index du GPU Vulkan (voir **Tester le GPU**) |
 | VAAPI_DEVICE | /dev/dri/renderD128 | Périphérique pour l'encodage matériel |
-| UPSCALE_USER / UPSCALE_PASSWORD | admin / (vide) | Authentification de l'interface |
-| UPSCALE_TRUSTED_HOSTS | (vide) | Noms publics autorisés derrière un reverse proxy |
+| UPSCALE_USER / UPSCALE_PASSWORD | admin / (généré par install.sh) | Authentification de l'interface (HTTP Basic) |
+| UPSCALE_ALLOW_ANONYMOUS | 0 | Autorise les actions sans mot de passe (réseau de confiance uniquement, déconseillé) |
+| UPSCALE_TRUSTED_HOSTS | (vide) | Noms publics autorisés (reverse proxy, protection CSRF) ; le proxy doit conserver `Host` |
+| UPSCALE_ALLOW_PRIVATE_MODEL_URLS | 0 | Autorise les liens de modèles vers des adresses privées (miroir interne) |
+| UPSCALE_CONVERTER_DROP_PRIVILEGES | 1 | Exécute la conversion des modèles en « nobody » (setpriv) quand le conteneur est root |
 | UPSCALE_MIN_FREE_GB | 5 | Espace libre minimal conservé |
 | UPSCALE_SEGMENT_SECONDS | 180 | Durée des segments |
 | UPSCALE_LOG_RETENTION_DAYS | 90 | Conservation des journaux des tâches terminées |
@@ -287,7 +292,7 @@ UPSCALE_PULL_POLICY=always
 UPSCALE_VERSION=latest
 ~~~
 
-puis docker compose pull && docker compose up -d. Si le dépôt est privé, le paquet l'est aussi : connecte d'abord le NAS avec un jeton GitHub ayant le droit read:packages (docker login ghcr.io -u oliv2776). Pour revenir à une version précise : UPSCALE_VERSION=2.0.0.
+puis docker compose pull && docker compose up -d. Le paquet GHCR suit la visibilité du dépôt (public ici) ; s'il est privé chez toi, connecte d'abord le NAS avec un jeton GitHub ayant le droit read:packages (docker login ghcr.io -u oliv2776). Pour revenir à une version précise : UPSCALE_VERSION=2.8.0.
 
 ## Mode sans socket Docker (expérimental)
 
@@ -335,6 +340,7 @@ docker volume rm upscale_uscale-state
 - **L'interface ne répond pas** : docker compose ps, docker compose logs --tail=200 upscale, sudo ss -ltnp | grep 27000.
 - **Le conteneur ne démarre pas (/dev/dri)** : Upscale a besoin de /dev/dri (encodage VAAPI, statistiques GPU). Vérifie ls -l /dev/dri sur l'hôte.
 - **Le GPU n'est pas détecté** : **Tester le GPU** lance Video2X --list-devices avec les mêmes permissions que les traitements. S'il affiche plusieurs GPU (iGPU + Radeon), indique l'index de la Radeon dans VIDEO2X_GPU. Vérifie VIDEO_GID et RENDER_GID, puis docker compose up -d --build.
+- **« Aucun mot de passe configuré » / interface en lecture seule** : définis UPSCALE_PASSWORD dans .env puis `docker compose up -d`. Pour assumer l'absence de mot de passe sur un réseau de confiance : UPSCALE_ALLOW_ANONYMOUS=1.
 - **Une tâche échoue** : bouton **Logs** dans la file. Corrige la cause puis **Relancer** : les segments déjà encodés sont conservés.
 - **Encodage VAAPI en erreur** : vérifie VAAPI_DEVICE (le renderD* de la Radeon) ; sinon utilise un encodeur logiciel.
 - **Redémarrage pendant un traitement** : le conteneur Video2X orphelin est supprimé au démarrage et la tâche reprend au segment en cours.
@@ -343,7 +349,13 @@ docker volume rm upscale_uscale-state
 
 **Le socket Docker est extrêmement privilégié** : un processus qui le contrôle peut obtenir les droits administrateur du NAS (voir le mode sans socket ci-dessus).
 
-Définis UPSCALE_PASSWORD (authentification HTTP Basic). Sans mot de passe, l'interface est ouverte à tout le réseau local. Les actions de l'API exigent un corps JSON et refusent les requêtes venant d'un autre site (protection CSRF) ; derrière un reverse proxy, transmets X-Forwarded-Host ou liste le nom public dans UPSCALE_TRUSTED_HOSTS. L'authentification Basic n'est pas chiffrée : hors du LAN, utilise un VPN (WireGuard, Tailscale) ou un reverse proxy HTTPS. Ne publie jamais le port 27000 sur Internet.
+Définis UPSCALE_PASSWORD (authentification HTTP Basic). **Sans mot de passe, l'interface est en lecture seule** : les actions (POST) sont refusées avec un message explicite. `UPSCALE_ALLOW_ANONYMOUS=1` rétablit l'ancien comportement, à réserver à un réseau de confiance. Les échecs d'authentification sont limités (429 après 15 tentatives en 5 minutes).
+
+Les actions de l'API exigent un corps JSON et une origine identique à l'hôte de la requête ; cet hôte doit être une adresse IP, `localhost` ou figurer dans UPSCALE_TRUSTED_HOSTS (protection CSRF, y compris contre un DNS rebinding). Derrière un reverse proxy, conserve l'en-tête `Host` : `X-Forwarded-Host` n'est plus utilisé. Le serveur ajoute aussi les en-têtes de sécurité (CSP, `X-Frame-Options`, `nosniff`, `Referrer-Policy`).
+
+Les téléchargements de modèles refusent par défaut les adresses privées, loopback et link-local, et revérifient chaque redirection (SSRF) ; `UPSCALE_ALLOW_PRIVATE_MODEL_URLS=1` autorise un miroir interne.
+
+L'authentification Basic n'est pas chiffrée : hors du LAN, utilise un VPN (WireGuard, Tailscale) ou un reverse proxy HTTPS. Ne publie jamais le port 27000 sur Internet. La conversion de modèles s'exécute dans le conteneur Upscale : n'installe que des modèles de sources connues (voir SECURITY.md).
 
 L'explorateur limite les chemins à la racine configurée (/data) et ignore les liens symboliques qui en sortiraient.
 
@@ -355,9 +367,16 @@ ruff check .
 pytest -q
 ~~~
 
-Le code est dans le paquet upscale/ : config, db, settings (réglages et profils), media (ffprobe et commandes FFmpeg), runner (processus, Video2X), scanner, pipeline (segments et aperçus), worker (file, plage horaire, surveillance, maintenance), notify, gpu, ollama, web (API Flask).
+Le code est dans le paquet upscale/ : config, db, settings (réglages et profils), media (ffprobe et commandes FFmpeg), runner (processus, Video2X), scanner, pipeline (segments et aperçus), worker (file, plage horaire, surveillance, maintenance), converter et models (installation des modèles), net (garde-fous réseau), notify, gpu, ollama, web (API Flask).
 
 Les tests utilisent FFmpeg, un faux Video2X (Docker et local, Real-ESRGAN et RIFE) et un faux serveur HTTP : ils couvrent le pipeline complet, la reprise après pause, les aperçus, les notifications, Jellyfin/Plex, Ollama et la sécurité, sans GPU. La CI construit aussi les deux images Docker et exécute un vrai traitement Video2X sur Vulkan logiciel (lavapipe).
+
+## Licence
+
+Upscale est distribué sous **GNU AGPL v3.0** (voir [LICENSE](LICENSE)). Les images embarquent
+Video2X et upscayl-ncnn (AGPL-3.0) : les sources correspondantes et les licences des autres composants sont
+listées dans [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Les modèles installés depuis OpenModelDB
+gardent leur propre licence (certaines interdisent l'usage commercial).
 
 ## Documentation et projets utilisés
 

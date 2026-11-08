@@ -4,3 +4,6 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 docker-compose.override.yml
+.venv/
+.coverage
+htmlcov/

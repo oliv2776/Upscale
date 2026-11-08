@@ -100,6 +100,10 @@ function applySettings(s) {
   }
   select.value = s.ollama_model || "";
 }
+function applyAuthState(auth) {
+  const warning = $("authWarning");
+  if (warning) warning.classList.toggle("hidden", !(auth && !auth.password_set && !auth.anonymous_allowed));
+}
 async function saveSettings(quiet = false) {
   const result = await post("/api/config", settingsPayload());
   applySettings(result.settings);
@@ -658,7 +662,7 @@ $("videoLeft").addEventListener("seeked", () => { $("videoRight").currentTime = 
 (async function init() {
   setupNav();
   try {
-    const data = await api("/api/config"); state.models = data.models; fillModelSelects(); applySettings(data.settings); renderDisks(data.disks || []);
+    const data = await api("/api/config"); state.models = data.models; fillModelSelects(); applySettings(data.settings); renderDisks(data.disks || []); applyAuthState(data.auth);
     reloadModels().catch(e => console.warn(e));
   } catch (e) { toast(e.message); }
   try { const s = await api("/api/scan"); if (s.running) { showScanResult(describeScan(s)); pollScan(); } } catch (e) { /* rien */ }

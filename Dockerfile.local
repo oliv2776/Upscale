@@ -36,6 +36,7 @@ RUN pip install -r requirements.txt
 COPY VERSION app.py ./
 COPY upscale ./upscale
 COPY static ./static
+COPY LICENSE THIRD_PARTY_NOTICES.md /usr/share/doc/upscale/
 RUN mkdir -p /app/state
 ENV UPSCALE_RUNNER=local VIDEO2X_BIN=/opt/video2x/AppRun VIDEO2X_WORKDIR=/usr/share/video2x \
     VIDEO2X_IMAGE="video2x ${VIDEO2X_VERSION} (AppImage)"

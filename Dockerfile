@@ -27,6 +27,7 @@ RUN pip install -r requirements.txt
 COPY VERSION app.py ./
 COPY upscale ./upscale
 COPY static ./static
+COPY LICENSE THIRD_PARTY_NOTICES.md /usr/share/doc/upscale/
 RUN mkdir -p /app/state
 EXPOSE 27000
 HEALTHCHECK --interval=60s --timeout=5s --start-period=20s --retries=3 \

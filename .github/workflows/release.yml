@@ -1,0 +1,26 @@
+name: Release
+
+# Crée une GitHub Release (notes générées) quand un tag vX.Y.Z est poussé.
+# L'image correspondante est publiée par publish.yml sur le même tag.
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Vérifier que VERSION correspond au tag
+        run: |
+          version="$(cat VERSION)"
+          test "v${version}" = "${GITHUB_REF_NAME}" || {
+            echo "VERSION (${version}) ne correspond pas au tag ${GITHUB_REF_NAME}"; exit 1;
+          }
+      - name: Créer la release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true

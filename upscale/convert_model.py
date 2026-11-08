@@ -19,6 +19,22 @@ import sys
 from pathlib import Path
 
 
+def _limit_resources() -> None:
+    """Limite les dégâts d'un modèle malveillant : temps CPU borné, pas de core dump."""
+    try:
+        import resource
+    except ImportError:
+        return
+    for limit, value in ((resource.RLIMIT_CORE, 0), (resource.RLIMIT_CPU, 7200)):
+        try:
+            resource.setrlimit(limit, (value, value))
+        except (OSError, ValueError):
+            pass
+
+
+_limit_resources()
+
+
 def fail(message: str) -> None:
     print(json.dumps({"ok": False, "error": message}), flush=True)
     sys.exit(2)
