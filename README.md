@@ -29,6 +29,7 @@ Le projet cible notamment les NAS sous Ubuntu équipés d'un GPU AMD compatible 
 - **Réglages figés par tâche** au moment de la mise en file : changer un réglage n'affecte pas les vidéos déjà en attente.
 - Par défaut, les originaux ne sont jamais modifiés, une sortie existante n'est jamais écrasée et l'arborescence relative est conservée. En option, la nouvelle version **remplace l'original** (gardé en corbeille, restaurable).
 - **Remplacement après coup** : dans la file, une vidéo déjà terminée peut remplacer son original par sa sortie du dossier de destination (bouton par tâche ou action groupée). L'original part dans la corbeille et reste restaurable.
+- **Dossier de travail séparé** : les segments et le fichier temporaire peuvent être écrits hors de la bibliothèque (par exemple sur un SSD) ; seule la sortie finale apparaît dans la destination.
 
 **Organisation**
 - Profils par dossier (ex. Animation → AnimeVideo v3, Films → Plus 1080p HEVC).
@@ -119,7 +120,7 @@ sudo mkdir -p /data/videos /data/videos_upscaled
 sudo chown "$USER": /data/videos /data/videos_upscaled
 ~~~
 
-Le dossier de destination doit être distinct du dossier source (ni l'un dans l'autre).
+Le dossier de destination peut être à l'intérieur d'un dossier source (il est exclu du scan), mais un dossier source ne peut pas être à l'intérieur de la destination.
 
 ### 4. Configuration
 
@@ -141,7 +142,7 @@ Au premier traitement, Docker peut télécharger l'image Video2X (plusieurs Go).
 
 ## Utilisation
 
-1. **Configuration** : choisis un ou plusieurs dossiers source (**+ Ajouter un dossier source**, sur n'importe quel disque) et la destination, la hauteur maximale des sources à traiter (480p pour traiter 240p, 360p et 480p), la résolution de sortie, le modèle, les filtres et l'encodeur. Clique sur **Enregistrer**.
+1. **Configuration** : choisis un ou plusieurs dossiers source (**+ Ajouter un dossier source**, sur n'importe quel disque), la destination et éventuellement un **dossier de travail** (SSD, hors bibliothèque), la hauteur maximale des sources à traiter (480p pour traiter 240p, 360p et 480p), la résolution de sortie, le modèle, les filtres et l'encodeur. Clique sur **Enregistrer**.
 2. **Aperçu** : choisis une vidéo, un instant de départ et quelques modèles, puis **Générer l'aperçu**. Les aperçus passent devant la file (même en pause), et restent visibles dans la file et sur le tableau de bord avec un badge **Aperçu**. Compare ensuite deux variantes avec le curseur ; l'original agrandi sans IA sert de référence. Les **aperçus récents** sont listés sous le comparateur : **Supprimer** efface l'aperçu et ses fichiers.
 3. **Profils par dossier** (facultatif) : par exemple /data/videos/Animation → AnimeVideo v3. Un fichier utilise le profil du dossier le plus précis qui le contient ; les champs « Global » reprennent les réglages généraux.
 4. **Analyser les vidéos** compte les fichiers éligibles ; **Lancer le traitement** les met en file. Un dossier parent suffit : les sous-dossiers sont inclus (option **Inclure tous les sous-dossiers**). Si des sous-dossiers sont déjà listés, choisir le parent les fusionne ; la destination peut être un sous-dossier de la source, elle est ignorée par l'analyse.
@@ -165,7 +166,8 @@ Le script écrit docker-compose.override.yml (chargé automatiquement par Docker
 
 - l'explorateur (**Parcourir**) s'ouvre sur la liste des disques, avec l'espace libre de chacun ;
 - **+ Ajouter un dossier source** permet d'analyser plusieurs dossiers à la fois, sur des disques différents ;
-- la destination peut être sur n'importe quel disque (un sous-dossier, pas la racine du disque).
+- la destination peut être sur n'importe quel disque (un sous-dossier, pas la racine du disque) ;
+- le dossier de travail (optionnel) doit lui aussi être sous `/data` ou `/disques/...` pour que Video2X puisse y accéder. Un SSD monté via `bibliotheques.sh` est idéal.
 
 Avec un seul dossier source, les sorties vont directement dans la destination. Avec plusieurs, chacune a son sous-dossier au nom du dossier source (/data/out/Films/…, /data/out/Séries/…) ; les vidéos déjà traitées avant l'ajout d'une source ne sont pas refaites. En mode remplacement, chaque vidéo est remplacée dans son propre dossier et la corbeille se trouve dans le dossier source concerné.
 
@@ -196,7 +198,9 @@ Les fichiers de travail sont dans un dossier caché .upscale-ID à côté de la 
 
 **Pause** : la vidéo en cours s'arrête à la fin de son segment et reprendra à partir du suivant. **Arrêter** interrompt immédiatement et supprime les fichiers de travail.
 
-**Espace disque** : Upscale estime l'espace nécessaire (quelques segments en attente, un segment agrandi, la sortie) et refuse de démarrer s'il manque de la place ; pendant le traitement, l'estimation est révisée d'après le débit réellement mesuré des segments encodés, et la tâche s'arrête si l'espace libre descend sous UPSCALE_MIN_FREE_GB.
+**Espace disque** : Upscale estime l'espace nécessaire (quelques segments en attente, un segment agrandi, la sortie) et refuse de démarrer s'il manque de la place ; pendant le traitement, l'estimation est révisée d'après le débit réellement mesuré des segments encodés, et la tâche s'arrête si l'espace libre descend sous UPSCALE_MIN_FREE_GB. Si le dossier de travail est sur un autre disque que la destination, Upscale vérifie aussi la place nécessaire à la copie finale.
+
+**SSD ou disque dur ?** L'upscaling est surtout limité par le GPU (ou le CPU), pas par le disque : un SSD n'accélère pas l'inférence. Il aide surtout à éviter que les écritures FFV1 des segments ne saturent un disque dur, en particulier en 4K, et il garde la bibliothèque propre. La lecture de la source reste sur son disque d'origine ; la copie finale du SSD vers la bibliothèque ajoute un transfert en fin de tâche. Le gain est donc variable, souvent modeste, mais le dossier de travail sur SSD est recommandé pour la propreté et la réactivité.
 
 ### Rendu « Peau normale »
 
@@ -242,7 +246,7 @@ Depuis la version 2.2, l'encodeur par défaut est HEVC 10 bits : environ 40 % pl
 
 ### Remplacer les fichiers d'origine
 
-Option **Remplacer les fichiers d'origine** (section Bibliothèque vidéo) : la nouvelle version prend la place de l'original dans son dossier (film.avi → film.mkv, film.mkv → film.mkv) et le dossier de destination n'est plus utilisé. Garde-fous :
+Option **Remplacer les fichiers d'origine** (section Bibliothèque vidéo) : la nouvelle version prend la place de l'original dans son dossier (film.avi → film.mkv, film.mkv → film.mkv) et le dossier de destination n'est plus utilisé. Le dossier de travail, s'il est défini, reste utilisé pour les fichiers temporaires. Garde-fous :
 
 - l'original est déplacé dans **.upscale-corbeille** à la racine du dossier source (même arborescence) et conservé 7, 30 (défaut) ou 90 jours, ou supprimé immédiatement si tu le choisis ;
 - tant qu'il est dans la corbeille, **Restaurer l'original** (dans la file) supprime la version Upscale et remet l'original à sa place ;

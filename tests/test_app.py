@@ -1028,6 +1028,30 @@ def test_scan_ignores_upscale_internal_folders(env):
     assert names == ["vrai.mkv"]
 
 
+def test_work_dir_must_be_an_accessible_directory(env):
+    outside = "/tmp/upscale-work-hors-racine"
+    with pytest.raises(ValueError, match="hors des dossiers accessibles"):
+        st.save_settings({"work_dir": outside})
+    file_path = env / "pas-un-dossier"
+    file_path.write_text("x")
+    with pytest.raises(ValueError, match="doit être un dossier"):
+        st.save_settings({"work_dir": str(file_path)})
+
+
+@needs_ffmpeg
+def test_work_dir_keeps_temporary_files_out_of_destination(env, fake_docker):
+    work = env / "work"
+    saved = st.save_settings({"work_dir": str(work), "destination": str(env / "out"),
+                              "sources": [str(env / "videos")]})
+    assert saved["work_dir"] == str(work.resolve())
+    make_video(env / "videos" / "film.mp4")
+    [row] = process_all(env)
+    assert row["status"] == "completed", job_log(row)
+    assert (env / "out" / "film.mkv").exists()
+    assert not list((env / "out").glob(".upscale-*"))
+    assert not list(work.glob(".upscale-*"))
+
+
 @needs_ffmpeg
 def test_replace_original_and_restore(env, fake_docker):
     st.save_settings({"replace_original": True, "trash_days": 30})

@@ -44,21 +44,39 @@ def job_settings(job: sqlite3.Row) -> dict[str, Any]:
     return settings_mod.effective_settings(settings_mod.get_settings(), Path(job["source"]))
 
 
-def upscale_work_dir(job: sqlite3.Row) -> Path:
+def work_root(job: sqlite3.Row, settings: dict[str, Any] | None = None) -> Path:
+    """Dossier racine des traitements : réglage work_dir, sinon à côté de la destination."""
+    settings = settings or job_settings(job)
+    raw = str(settings.get("work_dir") or "").strip()
+    return settings_mod.safe_path(raw, must_exist=False) if raw else Path(job["destination"]).parent
+
+
+def upscale_work_dir(job: sqlite3.Row, settings: dict[str, Any] | None = None) -> Path:
+    root = work_root(job, settings)
+    work = root / f".upscale-{job['id']}"
+    if work.is_dir():
+        return work
     folder = Path(job["destination"]).parent
-    work = folder / f".upscale-{job['id']}"
-    legacy = folder / f".uscale-{job['id']}"  # tâche interrompue avec une version précédente
-    if legacy.is_dir() and not work.exists():
-        try:
-            legacy.rename(work)
-        except OSError:
-            pass
+    old = folder / f".upscale-{job['id']}"
+    if old.is_dir():
+        return old  # reprise d'une tâche lancée avant le dossier de travail
+    legacy = folder / f".uscale-{job['id']}"
+    if legacy.is_dir():
+        if root == folder:
+            try:
+                legacy.rename(work)
+                return work
+            except OSError:
+                pass
+        return legacy
     return work
 
 
 def preview_work_dir(job_id: str, settings: dict[str, Any]) -> Path:
-    # Sous la racine de données : le conteneur Video2X doit pouvoir y lire et écrire.
-    return Path(settings["destination"]) / f".upscale-preview-{job_id}"
+    # Sous une racine montée : le conteneur Video2X doit pouvoir y lire et écrire.
+    raw = str(settings.get("work_dir") or "").strip()
+    root = settings_mod.safe_path(raw, must_exist=False) if raw else Path(settings["destination"])
+    return root / f".upscale-preview-{job_id}"
 
 
 def remove_tree(path: Path) -> None:
@@ -98,6 +116,9 @@ def cleanup_job_files(job: sqlite3.Row) -> None:
         return
     remove_tree(upscale_work_dir(job))
     destination = Path(job["destination"])
+    for legacy in (destination.parent / f".upscale-{job['id']}",
+                   destination.parent / f".uscale-{job['id']}"):
+        remove_tree(legacy)
     destination.with_name(destination.stem + f".{job['id']}.partial.mkv").unlink(missing_ok=True)
 
 
@@ -155,9 +176,9 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
     job_id = job["id"]
     source = Path(job["source"])
     destination = Path(job["destination"])
-    work = upscale_work_dir(job)
-    temp_final = destination.with_name(destination.stem + f".{job_id}.partial.mkv")
-    disk_dir = destination.parent
+    work = upscale_work_dir(job, settings)
+    temp_final = work / "final.mkv"
+    disk_dir = work
     destination.parent.mkdir(parents=True, exist_ok=True)
     temp_final.unlink(missing_ok=True)
     replace = bool(settings.get("replace_original"))
@@ -304,11 +325,21 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
         raise JobError(f"La destination a été créée pendant le traitement, elle n'est pas écrasée : {destination}")
     owner = output_owner(source, settings, destination)  # avant de déplacer l'original
     warning = ("Vérification : " + "; ".join(problems)) if problems else None
+    if work.stat().st_dev != destination.parent.stat().st_dev:
+        free = shutil.disk_usage(destination.parent).free
+        size = temp_final.stat().st_size
+        if free - size < config.MIN_FREE_BYTES:
+            raise JobError(f"Espace insuffisant sur la destination : {human_size(size)} à copier, "
+                           f"{human_size(free)} libres")
     if replace:
         destination, warning = place_replacing_original(job_id, source, destination, temp_final, settings, warning)
         stop = settings_mod.source_root_for(source, settings)
     else:
-        temp_final.replace(destination)
+        try:
+            shutil.move(str(temp_final), str(destination))
+        except OSError:
+            destination.unlink(missing_ok=True)
+            raise
         stop = Path(settings.get("destination", destination.parent))
     chown_tree(destination, stop, owner)
     remove_tree(work)
@@ -353,15 +384,16 @@ def place_replacing_original(job_id: str, source: Path, destination: Path, temp_
     """
     if warning:
         alternative = unique_path(source.with_name(f"{source.stem} - Upscale.mkv"))
-        temp_final.replace(alternative)
+        shutil.move(str(temp_final), str(alternative))
         db.log_line(job_id, f"[{db.now()}] Original conservé (vérification en échec), nouvelle version : {alternative}")
         return alternative, f"{warning} — original conservé, nouvelle version à côté : {alternative.name}"
     trash = trash_location(source, settings)
     trash.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(source), str(trash))
     try:
-        temp_final.replace(destination)
+        shutil.move(str(temp_final), str(destination))
     except OSError:
+        destination.unlink(missing_ok=True)
         shutil.move(str(trash), str(source))  # on remet l'original en place
         raise
     days = int(settings.get("trash_days", 30))

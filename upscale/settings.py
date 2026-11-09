@@ -41,6 +41,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "source": config.DEFAULT_SOURCE,
     "sources": [config.DEFAULT_SOURCE],
     "destination": config.DEFAULT_DESTINATION,
+    "work_dir": "",
     "max_input_height": 480,
     "output_height": 720,
     "model": "realesrgan-plus",
@@ -152,6 +153,11 @@ def validate_folders(settings: dict[str, Any]) -> tuple[list[Path], Path]:
     if not sources:
         raise ValueError("Ajoute au moins un dossier source")
     dest = safe_path(settings["destination"], must_exist=False)
+    work_raw = str(settings.get("work_dir") or "").strip()
+    if work_raw:
+        work = safe_path(work_raw, must_exist=False)
+        if work.exists() and not work.is_dir():
+            raise ValueError(f"Le dossier de travail doit être un dossier : {work}")
     for source in sources:
         if not source.is_dir():
             raise ValueError(f"Le dossier source doit exister et être un dossier : {source}")
@@ -274,6 +280,7 @@ def validate_profile(raw: Any) -> dict[str, Any]:
 VALIDATORS: dict[str, Any] = {
     "source": str,
     "destination": str,
+    "work_dir": lambda v: str(v or "").strip()[:500],
     "max_input_height": lambda v: _int_in(v, "max_input_height", 120, 2160),
     "output_height": lambda v: _int_in(v, "output_height", 240, 2160),
     "crf": lambda v: _int_in(v, "crf", 12, 30),
@@ -352,7 +359,7 @@ def save_settings(payload: dict[str, Any]) -> dict[str, Any]:
             settings[key] = ""
         elif payload.get(key):
             settings[key] = str(payload[key]).strip()[:500]
-    if "source" in payload or "sources" in payload or "destination" in payload:
+    if any(key in payload for key in ("source", "sources", "destination", "work_dir")):
         sources, destination = validate_folders(settings)
         settings["sources"] = [str(source) for source in sources]
         settings["source"] = settings["sources"][0] if settings["sources"] else ""

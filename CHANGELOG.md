@@ -3,6 +3,24 @@
 Toutes les évolutions notables sont consignées ici. Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet utilise le [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [2.18.0] — 2026-11-09
+
+### Ajouté
+
+- **Dossier de travail configurable** : les segments, les fichiers intermédiaires et le MKV temporaire
+  sont écrits hors de la bibliothèque, puis la sortie finale est déplacée dans la destination.
+  Vide = ancien comportement (à côté de la destination).
+- Le dossier de travail peut être placé sur un SSD monté sous `/data` ou `/disques/...` ; il est
+  validé, accessible à Video2X, et l'espace de la destination est vérifié avant la copie finale.
+- Les aperçus utilisent aussi ce dossier de travail.
+
+### Note
+
+- Les tâches déjà en file gardent le dossier de travail figé dans leurs réglages ; les nouvelles
+  tâches utilisent le nouveau réglage.
+- Un SSD n'accélère pas l'IA elle-même (GPU/CPU) ; il évite surtout les goulots d'écriture et garde
+  la bibliothèque propre.
+
 ## [2.17.0] — 2026-11-08
 
 ### Ajouté

@@ -50,6 +50,7 @@ function fillModelSelects() {
 function settingsPayload() {
   return {
     sources: readSources(), destination: $("destination").value.trim(),
+    work_dir: $("workDir").value.trim(),
     output_suffix: $("outputSuffix").value, include_subfolders: $("recursive").checked,
     replace_original: $("replaceOriginal").checked, trash_days: Number($("trashDays").value),
     max_input_height: Number($("maxInput").value), output_height: Number($("outputHeight").value),
@@ -103,6 +104,7 @@ function updateMediaStatusFromForm() {
 }
 function applySettings(s) {
   renderSources(s.sources && s.sources.length ? s.sources : [s.source || ""]); $("destination").value = s.destination;
+  $("workDir").value = s.work_dir || "";
   $("outputSuffix").value = s.output_suffix || ""; $("recursive").checked = s.include_subfolders;
   $("replaceOriginal").checked = !!s.replace_original; setSelect("trashDays", s.trash_days ?? 30); updateReplaceUi();
   setSelect("maxInput", s.max_input_height); setSelect("outputHeight", s.output_height);
