@@ -1,6 +1,7 @@
 """Analyse de la bibliothèque et mise en file (réglages figés par tâche)."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sqlite3
@@ -22,6 +23,10 @@ worker_wakeup = threading.Event()
 
 
 HIDDEN_PREFIXES = (".upscale", ".uscale")
+
+
+def library_id(path: Path) -> str:
+    return hashlib.sha1(str(path).encode("utf-8")).hexdigest()[:16]
 
 
 def is_upscale_internal(path: Path, root: Path) -> bool:
@@ -165,7 +170,8 @@ def scan_files(settings: dict[str, Any], progress: Callable[[int, int], None] | 
                     already_known += 1
                     continue
                 item = {"source": str(path), "relative": rel.as_posix(), "destination": str(output),
-                        "size": stat.st_size, "mtime_ns": stat.st_mtime_ns, "path": path}
+                        "ambiguous": ambiguous, "size": stat.st_size, "mtime_ns": stat.st_mtime_ns,
+                        "path": path}
                 cached = cache.get(str(path))
                 if cached and cached[0] == stat.st_size and cached[1] == stat.st_mtime_ns:
                     item["dims"] = (cached[2], cached[3]) if cached[2] else None
@@ -211,8 +217,10 @@ def scan_files(settings: dict[str, Any], progress: Callable[[int, int], None] | 
                 resolutions["over_480"] += 1
             if height > max_input or height < 120:
                 continue
-            files.append({"source": item["source"], "relative": item["relative"],
-                          "destination": item["destination"], "width": width, "height": height,
+            files.append({"id": library_id(Path(item["source"])), "source": item["source"],
+                          "relative": item["relative"], "destination": item["destination"],
+                          "ambiguous": item.get("ambiguous", False),
+                          "width": width, "height": height,
                           "size": item["size"], "mtime_ns": item["mtime_ns"]})
     return {"files": files, "already_known": already_known, "too_recent": too_recent,
             "checked": len(candidates), "resolutions": resolutions}
@@ -276,6 +284,7 @@ def _run_scan(settings: dict[str, Any], enqueue_files: bool, min_age_seconds: fl
 
     try:
         result = scan_files(settings, progress, min_age_seconds, probe)
+        db.replace_library_items(result["files"])
         update: dict[str, Any] = {
             "found": len(result["files"]), "already_known": result["already_known"],
             "too_recent": result["too_recent"], "checked": result["checked"], "total": result["checked"],

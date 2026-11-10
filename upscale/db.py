@@ -86,6 +86,21 @@ def init_db() -> None:
             updated_at TEXT NOT NULL
           )
         """)
+        conn.execute("""
+          CREATE TABLE IF NOT EXISTS library_items (
+            id TEXT PRIMARY KEY,
+            source TEXT NOT NULL UNIQUE,
+            relative TEXT NOT NULL,
+            destination TEXT NOT NULL,
+            ambiguous INTEGER NOT NULL DEFAULT 0,
+            width INTEGER NOT NULL,
+            height INTEGER NOT NULL,
+            size INTEGER NOT NULL,
+            mtime_ns INTEGER NOT NULL,
+            scanned_at TEXT NOT NULL
+          )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS library_source ON library_items(source)")
         version = conn.execute("SELECT value FROM app_state WHERE key='probe_cache_version'").fetchone()
         if not version or version[0] != str(config.PROBE_CACHE_VERSION):
             # Une ancienne méthode a pu enregistrer des dimensions de vignette/cover.
@@ -106,6 +121,71 @@ def connect() -> Iterator[sqlite3.Connection]:
         conn.commit()
     finally:
         conn.close()
+
+
+def replace_library_items(items: list[dict[str, Any]]) -> None:
+    """Remplace le catalogue par le résultat complet d'une analyse."""
+    with connect() as conn:
+        conn.execute("DELETE FROM library_items")
+        conn.executemany("""
+          INSERT INTO library_items(id,source,relative,destination,ambiguous,width,height,size,mtime_ns,scanned_at)
+          VALUES(?,?,?,?,?,?,?,?,?,?)
+        """, [(item["id"], item["source"], item["relative"], item["destination"],
+               int(bool(item.get("ambiguous"))), item["width"], item["height"], item["size"],
+               item["mtime_ns"], now()) for item in items])
+
+
+def library_item(item_id: str) -> sqlite3.Row | None:
+    with connect() as conn:
+        return conn.execute("SELECT * FROM library_items WHERE id=?", (item_id,)).fetchone()
+
+
+def library_items_by_ids(ids: list[str]) -> list[sqlite3.Row]:
+    if not ids:
+        return []
+    rows: list[sqlite3.Row] = []
+    with connect() as conn:
+        for start in range(0, len(ids), 500):
+            chunk = ids[start:start + 500]
+            placeholders = ",".join("?" * len(chunk))
+            rows.extend(conn.execute(f"SELECT * FROM library_items WHERE id IN ({placeholders})",
+                                     chunk).fetchall())
+    return rows
+
+
+def library_page(page: int, limit: int, query: str = "", status: str = "all") -> dict[str, Any]:
+    """Page du catalogue avec le dernier statut de tâche pour chaque vidéo."""
+    join = """FROM library_items l
+              LEFT JOIN jobs j ON j.id = (
+                SELECT j2.id FROM jobs j2
+                WHERE j2.source=l.source AND j2.source_size=l.size AND j2.source_mtime_ns=l.mtime_ns
+                  AND j2.kind='upscale'
+                ORDER BY j2.updated_at DESC LIMIT 1
+              )"""
+    where, params = [], []
+    if query:
+        where.append("(l.source LIKE ? OR l.relative LIKE ?)")
+        params += [f"%{query}%", f"%{query}%"]
+    if status == "new":
+        where.append("(j.id IS NULL OR j.status IN ('failed','cancelled'))")
+    elif status == "queued":
+        where.append("j.status IN ('queued','running')")
+    elif status == "done":
+        where.append("j.status='completed'")
+    clause = (" WHERE " + " AND ".join(where)) if where else ""
+    with connect() as conn:
+        counts = conn.execute(f"""SELECT COUNT(*) AS total,
+            COALESCE(SUM(CASE WHEN j.id IS NULL OR j.status IN ('failed','cancelled') THEN 1 ELSE 0 END),0) AS new_count,
+            COALESCE(SUM(CASE WHEN j.status IN ('queued','running') THEN 1 ELSE 0 END),0) AS queued_count,
+            COALESCE(SUM(CASE WHEN j.status='completed' THEN 1 ELSE 0 END),0) AS done_count
+            {join}""").fetchone()
+        count = conn.execute(f"SELECT COUNT(*) AS n {join}{clause}", params).fetchone()["n"]
+        rows = conn.execute(f"""SELECT l.*, j.status AS job_status, j.id AS job_id
+            {join}{clause} ORDER BY l.source COLLATE NOCASE LIMIT ? OFFSET ?""",
+                            [*params, limit, (page - 1) * limit]).fetchall()
+    return {"items": rows, "total": count, "page": page, "limit": limit,
+            "counts": {"total": counts["total"], "new": counts["new_count"],
+                       "queued": counts["queued_count"], "done": counts["done_count"]}}
 
 
 def load_settings_payload() -> dict[str, Any]:

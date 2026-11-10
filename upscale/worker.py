@@ -236,8 +236,9 @@ def maintenance() -> dict[str, int]:
             removed["previews"] += 1
         known_previews = {row["id"] for row in conn.execute("SELECT id FROM jobs WHERE kind='preview'")}
         known_jobs = {row["id"] for row in conn.execute("SELECT id FROM jobs")}
+        known_library = {f"lib-{row['id']}" for row in conn.execute("SELECT id FROM library_items")}
     for path in config.thumbnail_dir().glob("*.jpg"):
-        if path.stem not in known_jobs:
+        if path.stem not in known_jobs and path.stem not in known_library:
             path.unlink(missing_ok=True)
             removed["thumbnails"] += 1
     for folder in config.preview_dir().glob("*"):

@@ -3,6 +3,20 @@
 Toutes les évolutions notables sont consignées ici. Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet utilise le [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [2.19.0] — 2026-11-10
+
+### Ajouté
+
+- **Onglet Vidéos** : la dernière analyse construit un catalogue persistant des vidéos éligibles,
+  avec vignette extraite de la vidéo, nom, résolution, taille, chemin et statut (nouveau, en file,
+  terminé, échec).
+- Recherche, filtre (à traiter / en file / terminées), pagination, sélection multiple et bouton
+  **Ajouter la sélection** pour mettre uniquement les vidéos choisies en file.
+- Les vidéos déjà en file ou terminées sont verrouillées ; les échecs/annulations peuvent être
+  resélectionnés pour relance.
+- Le catalogue est reconstruit à chaque analyse (bouton **Analyser** ou **Lancer le traitement**)
+  et les chemins/dimensions sont vérifiés au moment de l'ajout.
+
 ## [2.18.1] — 2026-11-09
 
 ### Corrigé

@@ -33,6 +33,7 @@
     <nav>
       <a class="active" href="#dashboard" data-view="dashboard"><svg><use href="#i-grid"/></svg><span>Tableau de bord</span></a>
       <a href="#library" data-view="library"><svg><use href="#i-lib"/></svg><span>Bibliothèque</span></a>
+      <a href="#videos" data-view="videos"><svg><use href="#i-film"/></svg><span>Vidéos</span><span class="nav-badge" id="navVideosBadge">0</span></a>
       <a href="#queue" data-view="queue"><svg><use href="#i-queue"/></svg><span>File</span><span class="nav-badge" id="navQueueBadge">0</span></a>
       <a href="#preview" data-view="preview"><svg><use href="#i-eye"/></svg><span>Aperçu</span></a>
       <a href="#models" data-view="models"><svg><use href="#i-cube"/></svg><span>Modèles</span></a>
@@ -128,6 +129,29 @@
       <div class="replace-box" id="replaceBox">
         <div class="field"><label>REMPLACER LES FICHIERS D'ORIGINE</label><div class="toggle-row"><span>La nouvelle version prend la place de l'original, dans son dossier</span><label class="switch"><input id="replaceOriginal" type="checkbox"><span></span></label></div><small>film.avi → film.mkv au même endroit. Le dossier de destination n'est alors plus utilisé. Si la vérification automatique relève un problème, l'original est conservé et la nouvelle version est posée à côté.</small></div>
         <div class="field"><label>ORIGINAUX REMPLACÉS</label><select id="trashDays"><option value="7">Gardés 7 jours dans la corbeille</option><option value="30" selected>Gardés 30 jours dans la corbeille</option><option value="90">Gardés 90 jours dans la corbeille</option><option value="0">Supprimés immédiatement</option></select><small>Corbeille : dossier .upscale-corbeille dans le dossier source. « Restaurer l'original » est possible depuis la file tant qu'il y est.</small></div>
+      </div>
+    </section>
+
+    <section class="view panel no-title" id="videos" data-view="videos">
+      <div class="section-head"><div><div class="eyebrow">02 / SÉLECTION</div><h2>Vidéos analysées</h2><p>Choisis les vidéos à mettre en file. La liste est construite par la dernière analyse.</p></div><span class="tag" id="libraryTotal">0 VIDÉO</span></div>
+      <div class="library-toolbar">
+        <input class="text-input library-search" id="librarySearch" type="search" placeholder="Rechercher un nom ou un chemin…">
+        <select id="libraryFilter" class="library-filter">
+          <option value="all">Toutes</option>
+          <option value="new">À traiter</option>
+          <option value="queued">En file</option>
+          <option value="done">Terminées</option>
+        </select>
+        <button class="secondary small" id="libraryScan">Analyser</button>
+        <button class="secondary small" id="libraryRefresh">Actualiser</button>
+        <button class="secondary small" id="librarySelectAll">Tout sélectionner</button>
+        <button class="primary small" id="libraryEnqueue" disabled>Ajouter la sélection</button>
+      </div>
+      <div id="libraryList" class="library-list"><div class="empty">Lance une analyse pour construire la liste des vidéos.</div></div>
+      <div class="library-pager">
+        <button class="secondary small" id="libraryPrev" disabled>← Précédent</button>
+        <span id="libraryPageInfo">Page 1</span>
+        <button class="secondary small" id="libraryNext" disabled>Suivant →</button>
       </div>
     </section>
 

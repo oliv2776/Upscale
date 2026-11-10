@@ -254,6 +254,28 @@ def test_within_schedule():
 
 
 @needs_ffmpeg
+@needs_ffmpeg
+def test_library_catalog_from_scan_and_selection(env):
+    source = make_video(env / "videos" / "film.mkv", width=320, height=240)
+    settings = st.get_settings()
+    scanner._run_scan(settings, False, 0)
+    page = db.library_page(1, 20)
+    assert page["counts"]["total"] == 1 and page["counts"]["new"] == 1
+    [item] = page["items"]
+    assert item["source"] == str(source) and (item["width"], item["height"]) == (320, 240)
+    client = app.test_client()
+    data = client.get("/api/library").get_json()
+    assert data["total"] == 1 and data["items"][0]["thumbnail"].endswith("/thumbnail")
+    thumb = client.get(data["items"][0]["thumbnail"])
+    assert thumb.status_code == 200 and thumb.mimetype == "image/jpeg"
+
+    result = client.post("/api/library/queue", json={"ids": [item["id"]]})
+    assert result.status_code == 200 and result.get_json()["added"] == 1
+    queued = db.library_page(1, 20, status="queued")
+    assert queued["total"] == 1 and queued["items"][0]["job_status"] == "queued"
+    assert client.get("/api/library?filter=done").get_json()["total"] == 0
+
+
 def test_probe_dimensions_ignores_attached_cover(monkeypatch):
     monkeypatch.setattr(media, "ffprobe_json", lambda *a, **k: {"streams": [
         {"codec_name": "mjpeg", "width": 200, "height": 150, "disposition": {"attached_pic": 1}},

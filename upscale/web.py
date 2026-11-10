@@ -173,6 +173,14 @@ def valid_job_id(job_id: str) -> bool:
     return bool(worker.JOB_ID_RE.fullmatch(job_id))
 
 
+LIBRARY_ID_RE = re.compile(r"[a-f0-9]{16}")
+LIBRARY_FILTERS = {"all", "new", "queued", "done"}
+
+
+def valid_library_id(item_id: str) -> bool:
+    return bool(LIBRARY_ID_RE.fullmatch(item_id))
+
+
 # ---------------------------------------------------------------- pages et réglages
 
 @app.get("/")
@@ -500,28 +508,21 @@ def api_preview():
         return error(str(exc))
 
 
-@app.get("/api/jobs/<job_id>/thumbnail")
-def api_job_thumbnail(job_id: str):
-    """Première image utile de la vidéo source (miniature du tableau de bord)."""
-    if not valid_job_id(job_id):
-        return error("Tâche introuvable", 404)
-    job = db.get_job(job_id)
-    if not job:
-        return error("Tâche introuvable", 404)
-    source = Path(job["source"])
+def _thumbnail_target(source: Path, key: str) -> Path | None:
+    """Extrait et met en cache une image de la vidéo ; None si impossible."""
     try:
         source_stat = source.stat()
     except OSError:
-        return error("Vidéo source introuvable", 404)
+        return None
     folder = config.thumbnail_dir()
     folder.mkdir(parents=True, exist_ok=True)
-    target = folder / f"{job_id}.jpg"
+    target = folder / f"{key}.jpg"
     try:
         fresh = target.exists() and target.stat().st_mtime >= source_stat.st_mtime
     except OSError:
         fresh = False
     if not fresh:
-        temp = folder / f".{job_id}.{uuid.uuid4().hex[:8]}.jpg"
+        temp = folder / f".{key}.{uuid.uuid4().hex[:8]}.jpg"
         try:
             seconds = media.probe_duration(source)
             at = min(max(seconds * 0.2, 0.0), 120.0) if seconds > 0 else 5.0
@@ -529,12 +530,118 @@ def api_job_thumbnail(job_id: str):
                                     capture_output=True, timeout=30)
             if result.returncode != 0 or not temp.exists() or temp.stat().st_size == 0:
                 temp.unlink(missing_ok=True)
-                return error("Aucune image extraite", 404)
+                return None
             temp.replace(target)
         except (OSError, subprocess.TimeoutExpired):
             temp.unlink(missing_ok=True)
-            return error("Extraction impossible", 404)
+            return None
+    return target
+
+
+def _thumbnail_response(source: Path, key: str):
+    target = _thumbnail_target(source, key)
+    if target is None:
+        return error("Miniature indisponible", 404)
     return send_file(target, mimetype="image/jpeg", conditional=True, max_age=3600)
+
+
+@app.get("/api/jobs/<job_id>/thumbnail")
+def api_job_thumbnail(job_id: str):
+    if not valid_job_id(job_id):
+        return error("Tâche introuvable", 404)
+    job = db.get_job(job_id)
+    if not job:
+        return error("Tâche introuvable", 404)
+    return _thumbnail_response(Path(job["source"]), job_id)
+
+
+@app.get("/api/library")
+def api_library():
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+        limit = max(1, min(int(request.args.get("limit", 50)), 200))
+    except ValueError:
+        return error("Pagination invalide")
+    query = request.args.get("q", "").strip()[:200]
+    status = request.args.get("filter", "all")
+    if status not in LIBRARY_FILTERS:
+        status = "all"
+    data = db.library_page(page, limit, query, status)
+    items = []
+    for row in data["items"]:
+        item = dict(row)
+        item["thumbnail"] = f"/api/library/{item['id']}/thumbnail"
+        items.append(item)
+    return jsonify({**data, "items": items, "q": query, "filter": status})
+
+
+@app.get("/api/library/<item_id>/thumbnail")
+def api_library_thumbnail(item_id: str):
+    if not valid_library_id(item_id):
+        return error("Vidéo introuvable", 404)
+    row = db.library_item(item_id)
+    if not row:
+        return error("Vidéo introuvable", 404)
+    return _thumbnail_response(Path(row["source"]), f"lib-{item_id}")
+
+
+@app.post("/api/library/queue")
+def api_library_queue():
+    try:
+        ids = json_body().get("ids")
+        if not isinstance(ids, list) or not ids:
+            return error("Aucune vidéo sélectionnée")
+        ids = list(dict.fromkeys(str(item) for item in ids if valid_library_id(str(item))))
+        if not ids:
+            return error("Aucune vidéo sélectionnée")
+        if len(ids) > 5000:
+            return error("Sélection limitée à 5000 vidéos")
+        settings = settings_mod.get_settings()
+        sources, destination_root = settings_mod.validate_folders(settings)
+        labels = scanner.source_labels(sources)
+        suffix = settings.get("output_suffix", "")
+        replace = bool(settings.get("replace_original"))
+        rows = db.library_items_by_ids(ids)
+        files, skipped = [], 0
+        for row in rows:
+            source = Path(row["source"]).resolve()
+            try:
+                stat = source.stat()
+            except OSError:
+                skipped += 1
+                continue
+            if stat.st_size != row["size"] or stat.st_mtime_ns != row["mtime_ns"]:
+                skipped += 1
+                continue  # fichier modifié depuis l'analyse
+            root = next((candidate for candidate in sources
+                         if source == candidate or candidate in source.parents), None)
+            if root is None:
+                skipped += 1
+                continue
+            relative = Path(row["relative"])
+            if (root / relative).resolve() != source:
+                skipped += 1
+                continue  # analyse faite avec une autre racine source
+            ambiguous = bool(row["ambiguous"])
+            if replace:
+                output = source.parent / media.output_relative(Path(source.name), ambiguous, suffix).name
+                if output != source and output.exists():
+                    skipped += 1
+                    continue
+            else:
+                base = destination_root / labels[root] if len(sources) > 1 else destination_root
+                output = base / media.output_relative(relative, ambiguous, suffix)
+                if output.exists():
+                    skipped += 1
+                    continue
+            files.append({"source": str(source), "relative": relative.as_posix(),
+                          "destination": str(output), "width": row["width"], "height": row["height"],
+                          "size": stat.st_size, "mtime_ns": stat.st_mtime_ns})
+        result = scanner.enqueue(files, settings)
+        result["skipped"] = skipped + max(0, len(ids) - len(rows))
+        return jsonify({"ok": True, **result})
+    except ValueError as exc:
+        return error(str(exc))
 
 
 @app.get("/api/previews")

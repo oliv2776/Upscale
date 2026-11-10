@@ -1,5 +1,6 @@
 const $ = (id) => document.getElementById(id);
-const state = { models: {}, filter: "", page: 1, limit: 25, total: 0, previews: [], currentPreview: null, disks: [], gpu: null, paused: false };
+const state = { models: {}, filter: "", page: 1, limit: 25, total: 0, previews: [], currentPreview: null, disks: [], gpu: null, paused: false,
+  libraryPage: 1, libraryLimit: 50, libraryTotal: 0, libraryItems: [], libraryData: null, librarySelected: new Set() };
 let picker = { input: null, mode: "dir", path: "" };
 let toastTimer, scanPolling = null, gpuPolling = null;
 
@@ -385,8 +386,8 @@ function pollScan() {
       if (!s.running) {
         clearInterval(scanPolling); scanPolling = null;
         if (s.error) toast(s.error);
-        else if (s.enqueue) { toast((s.added || 0) + " tâche(s) ajoutée(s)"); await refreshJobs(); $("queue").scrollIntoView({ behavior: "smooth" }); }
-        else toast(s.found + " vidéo(s) détectée(s)");
+        else if (s.enqueue) { toast((s.added || 0) + " tâche(s) ajoutée(s)"); await refreshJobs(); await refreshLibrary(); $("queue").scrollIntoView({ behavior: "smooth" }); }
+        else { toast(s.found + " vidéo(s) détectée(s) — choisis-les dans Vidéos"); await refreshLibrary(); }
       }
     } catch (error) { clearInterval(scanPolling); scanPolling = null; showScanResult(error.message, true); }
   }, 1000);
@@ -460,6 +461,128 @@ async function refreshJobs() {
     attachThumbFallbacks();
   } catch (error) { console.warn(error); }
 }
+function libraryStatus(item) {
+  const status = item.job_status;
+  if (status === "queued") return { label: "En file", cls: "queued", locked: true };
+  if (status === "running") return { label: "En cours", cls: "running", locked: true };
+  if (status === "completed") return { label: "Terminée", cls: "completed", locked: true };
+  if (status === "failed") return { label: "Échec", cls: "failed", locked: false };
+  if (status === "cancelled") return { label: "Annulée", cls: "cancelled", locked: false };
+  return { label: "Nouveau", cls: "queued", locked: false };
+}
+function librarySize(bytes) {
+  if (bytes >= 1073741824) return (bytes / 1073741824).toFixed(2).replace(".", ",") + " Go";
+  return sizeMo(bytes);
+}
+function updateLibrarySelection() {
+  const button = $("libraryEnqueue");
+  if (!button) return;
+  const count = state.librarySelected.size;
+  button.textContent = count ? "Ajouter la sélection (" + count + ")" : "Ajouter la sélection";
+  button.disabled = count === 0;
+  const selectable = (state.libraryItems || []).filter(item => !libraryStatus(item).locked);
+  $("librarySelectAll").textContent = selectable.length && selectable.every(item => state.librarySelected.has(item.id))
+    ? "Tout désélectionner" : "Tout sélectionner";
+}
+function renderLibrary(data) {
+  const list = $("libraryList");
+  if (!list) return;
+  state.libraryData = data;
+  state.libraryItems = data.items || [];
+  for (const item of state.libraryItems) {
+    if (libraryStatus(item).locked) state.librarySelected.delete(item.id);
+  }
+  const counts = data.counts || {};
+  $("libraryTotal").textContent = (counts.total || 0) + " VIDÉO" + ((counts.total || 0) > 1 ? "S" : "");
+  $("navVideosBadge").textContent = counts.new || 0;
+  if (!state.libraryItems.length) {
+    list.innerHTML = '<div class="empty">' +
+      (data.q || data.filter !== "all" ? "Aucune vidéo ne correspond à ce filtre." :
+        "Aucune vidéo analysée. Clique sur « Analyser » pour construire la liste.") + "</div>";
+    $("libraryPageInfo").textContent = "Page 1";
+    $("libraryPrev").disabled = true;
+    $("libraryNext").disabled = true;
+    updateLibrarySelection();
+    return;
+  }
+  list.innerHTML = state.libraryItems.map(item => {
+    const info = libraryStatus(item);
+    const checked = state.librarySelected.has(item.id);
+    const name = item.source.split("/").pop();
+    return '<label class="library-row' + (info.locked ? " locked" : "") + '">' +
+      '<input type="checkbox" data-lib-select="' + escapeHtml(item.id) + '"' +
+      (info.locked ? " disabled" : "") + (checked ? " checked" : "") + ">" +
+      thumbHtml(item.id, "lib-thumb", "/api/library/" + item.id + "/thumbnail") +
+      '<div class="lib-info"><b>' + escapeHtml(name) + "</b><small>" +
+      (item.width || "?") + " × " + (item.height || "?") + " · " + librarySize(item.size) +
+      '</small><small class="lib-path" title="' + escapeHtml(item.source) + '">' + escapeHtml(item.source) + "</small></div>" +
+      '<span class="status ' + info.cls + '">' + info.label + "</span></label>";
+  }).join("");
+  const pages = Math.max(1, Math.ceil(data.total / state.libraryLimit));
+  $("libraryPageInfo").textContent = "Page " + state.libraryPage + " / " + pages + " · " + data.total + " vidéo(s)";
+  $("libraryPrev").disabled = state.libraryPage <= 1;
+  $("libraryNext").disabled = state.libraryPage >= pages;
+  attachThumbFallbacks();
+  updateLibrarySelection();
+}
+async function refreshLibrary() {
+  const list = $("libraryList");
+  if (!list) return;
+  const params = new URLSearchParams({
+    page: String(state.libraryPage), limit: String(state.libraryLimit),
+    q: ($("librarySearch").value || "").trim(), filter: $("libraryFilter").value || "all"
+  });
+  try {
+    const data = await api("/api/library?" + params.toString());
+    data.q = params.get("q");
+    data.filter = params.get("filter");
+    const pages = Math.max(1, Math.ceil(data.total / state.libraryLimit));
+    if (state.libraryPage > pages) { state.libraryPage = pages; return refreshLibrary(); }
+    renderLibrary(data);
+  } catch (error) { console.warn(error); }
+}
+function setupLibrary() {
+  let searchTimer = null;
+  $("librarySearch").addEventListener("input", () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => { state.libraryPage = 1; refreshLibrary(); }, 250);
+  });
+  $("libraryFilter").addEventListener("change", () => { state.libraryPage = 1; refreshLibrary(); });
+  $("libraryScan").addEventListener("click", () => startScan(false));
+  $("libraryRefresh").addEventListener("click", refreshLibrary);
+  $("libraryPrev").addEventListener("click", () => { if (state.libraryPage > 1) { state.libraryPage--; refreshLibrary(); } });
+  $("libraryNext").addEventListener("click", () => { state.libraryPage++; refreshLibrary(); });
+  $("libraryList").addEventListener("change", event => {
+    const box = event.target.closest("[data-lib-select]");
+    if (!box) return;
+    if (box.checked) state.librarySelected.add(box.dataset.libSelect);
+    else state.librarySelected.delete(box.dataset.libSelect);
+    updateLibrarySelection();
+  });
+  $("librarySelectAll").addEventListener("click", () => {
+    const selectable = (state.libraryItems || []).filter(item => !libraryStatus(item).locked);
+    const all = selectable.length && selectable.every(item => state.librarySelected.has(item.id));
+    selectable.forEach(item => all ? state.librarySelected.delete(item.id) : state.librarySelected.add(item.id));
+    renderLibrary(state.libraryData || { items: [], total: 0, counts: {} });
+  });
+  $("libraryEnqueue").addEventListener("click", async () => {
+    const ids = [...state.librarySelected];
+    if (!ids.length) return;
+    const button = $("libraryEnqueue");
+    button.disabled = true;
+    try {
+      const result = await post("/api/library/queue", { ids });
+      let message = result.added + " vidéo(s) ajoutée(s) à la file";
+      if (result.conflicts) message += " · " + result.conflicts + " conflit(s)";
+      if (result.skipped) message += " · " + result.skipped + " ignorée(s)";
+      toast(message);
+      state.librarySelected.clear();
+      await refreshLibrary();
+      await refreshJobs();
+      refreshDashboard();
+    } catch (error) { toast(error.message); updateLibrarySelection(); }
+  });
+}
 function compactName(path) {
   return String(path || "").split("/").pop();
 }
@@ -481,9 +604,9 @@ function renderSystem() {
   $("dashTemp").textContent = gpu && gpu.temperature_c != null ? Math.round(gpu.temperature_c) + " °C" : "—";
   renderDiskRail();
 }
-function thumbHtml(id, className) {
+function thumbHtml(id, className, url) {
   return '<div class="' + className + '"><span class="thumb-fallback"><svg><use href="#i-film"/></svg></span>' +
-    '<img data-thumb loading="lazy" src="/api/jobs/' + id + '/thumbnail" alt=""></div>';
+    '<img data-thumb loading="lazy" src="' + escapeHtml(url || ("/api/jobs/" + id + "/thumbnail")) + '" alt=""></div>';
 }
 function attachThumbFallbacks() {
   document.querySelectorAll("img[data-thumb]").forEach(img => {
@@ -850,8 +973,8 @@ function openPicker(input, mode) {
   $("picker").classList.remove("hidden");
   browse(input.value || (mode === "file" ? firstSource() : ""));
 }
-const VIEW_TITLES = { dashboard: "Tableau de bord", library: "Bibliothèque", queue: "File de traitement",
-  preview: "Aperçu avant/après", models: "Modèles IA", settings: "Réglages",
+const VIEW_TITLES = { dashboard: "Tableau de bord", library: "Bibliothèque", videos: "Vidéos",
+  queue: "File de traitement", preview: "Aperçu avant/après", models: "Modèles IA", settings: "Réglages",
   automation: "Automatisation", system: "Système" };
 
 function showView(name, updateHash = true) {
@@ -863,6 +986,7 @@ function showView(name, updateHash = true) {
   if (updateHash) history.replaceState(null, "", "#" + name);
   window.scrollTo({ top: 0, behavior: "auto" });
   setTimeout(() => window.scrollTo({ top: 0, behavior: "auto" }), 60);
+  if (name === "videos") refreshLibrary();
 }
 let queueDragId = null;
 function setupQueueDrag() {
@@ -1057,7 +1181,7 @@ $("logModal").addEventListener("click", e => { if (e.target.id === "logModal") $
 $("saveSettings").addEventListener("click", () => saveSettings().catch(e => toast(e.message)));
 $("scanBtn").addEventListener("click", () => startScan(false)); $("scanHero").addEventListener("click", () => startScan(false));
 $("queueBtn").addEventListener("click", () => startScan(true));
-$("refreshBtn").addEventListener("click", () => { refreshJobs(); refreshDashboard(); checkHealth(); refreshPreviews(); refreshUpdate(); });
+$("refreshBtn").addEventListener("click", () => { refreshJobs(); refreshDashboard(); checkHealth(); refreshPreviews(); refreshUpdate(); refreshLibrary(); });
 $("addVideos").addEventListener("click", () => { showView("library"); $("addSource").focus(); });
 $("browseBtn").addEventListener("click", () => showView("library"));
 $("dashSeeQueue").addEventListener("click", () => showView("queue"));
@@ -1110,12 +1234,13 @@ $("videoLeft").addEventListener("seeked", () => { $("videoRight").currentTime = 
   setupNav();
   setupDashboardDrag();
   setupQueueDrag();
+  setupLibrary();
   try {
     const data = await api("/api/config"); state.models = data.models; fillModelSelects(); applySettings(data.settings); renderDisks(data.disks || []); applyAuthState(data.auth);
     reloadModels().catch(e => console.warn(e));
   } catch (e) { toast(e.message); }
   try { const s = await api("/api/scan"); if (s.running) { showScanResult(describeScan(s)); pollScan(); } } catch (e) { /* rien */ }
-  refreshJobs(); refreshDashboard(); checkHealth(); checkOllama(); refreshPreviews(); refreshGpuStats(); refreshUpdate();
+  refreshJobs(); refreshDashboard(); checkHealth(); checkOllama(); refreshPreviews(); refreshGpuStats(); refreshUpdate(); refreshLibrary();
   setInterval(refreshJobs, 3000); setInterval(refreshDashboard, 4000); setInterval(refreshPreviews, 4000); setInterval(refreshGpuStats, 5000);
   setInterval(checkHealth, 60000); setInterval(checkOllama, 60000);
 })();
