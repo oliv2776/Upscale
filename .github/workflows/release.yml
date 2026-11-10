@@ -39,6 +39,6 @@ jobs:
           PY
           test -s release-notes.md
       - name: Créer la release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           body_path: release-notes.md
