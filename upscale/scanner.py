@@ -114,6 +114,7 @@ def scan_files(settings: dict[str, Any], progress: Callable[[int, int], None] | 
     replace = bool(settings.get("replace_original"))
     max_input = int(settings["max_input_height"])
     files: list[dict[str, Any]] = []
+    resolutions = {"under_360": 0, "360_480": 0, "over_480": 0, "unknown": 0}
     already_known = too_recent = 0
     with db.connect() as conn:
         known = {}
@@ -199,14 +200,22 @@ def scan_files(settings: dict[str, Any], progress: Callable[[int, int], None] | 
         for item in pending:
             dims = item.get("dims")
             if not dims:
+                resolutions["unknown"] += 1
                 continue
             width, height = dims
+            if height < 360:
+                resolutions["under_360"] += 1
+            elif height <= 480:
+                resolutions["360_480"] += 1
+            else:
+                resolutions["over_480"] += 1
             if height > max_input or height < 120:
                 continue
             files.append({"source": item["source"], "relative": item["relative"],
                           "destination": item["destination"], "width": width, "height": height,
                           "size": item["size"], "mtime_ns": item["mtime_ns"]})
-    return {"files": files, "already_known": already_known, "too_recent": too_recent, "checked": len(candidates)}
+    return {"files": files, "already_known": already_known, "too_recent": too_recent,
+            "checked": len(candidates), "resolutions": resolutions}
 
 
 def next_position(conn: sqlite3.Connection) -> float:
@@ -271,6 +280,7 @@ def _run_scan(settings: dict[str, Any], enqueue_files: bool, min_age_seconds: fl
             "found": len(result["files"]), "already_known": result["already_known"],
             "too_recent": result["too_recent"], "checked": result["checked"], "total": result["checked"],
             "recursive": bool(settings.get("include_subfolders", True)),
+            "resolutions": result["resolutions"],
             "files": [f["relative"] for f in result["files"][:200]],
         }
         if enqueue_files:

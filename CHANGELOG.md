@@ -3,6 +3,18 @@
 Toutes les évolutions notables sont consignées ici. Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet utilise le [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [2.18.1] — 2026-11-09
+
+### Corrigé
+
+- **Recherche des résolutions** : `ffprobe` pouvait lire la résolution d'une jaquette
+  `attached_pic` au lieu de la vraie piste vidéo, ce qui classait des films HD comme « basse
+  résolution ». La bonne piste est maintenant choisie.
+- Le **cache des dimensions** est invalidé une fois à la mise à jour : la première analyse suivante
+  re-sonde les fichiers avec la méthode corrigée.
+- Le résultat d'analyse affiche une **répartition des résolutions examinées** (< 360p, 360–480p,
+  > 480p) pour vérifier rapidement les comptes.
+
 ## [2.18.0] — 2026-11-09
 
 ### Ajouté

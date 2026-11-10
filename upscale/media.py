@@ -52,11 +52,18 @@ def ffprobe_json(path: Path, *args: str, timeout: int = 60) -> dict[str, Any]:
 
 def probe_dimensions(path: Path) -> tuple[int, int] | None:
     try:
-        data = ffprobe_json(path, "-select_streams", "v:0", "-show_entries", "stream=width,height", timeout=30)
+        data = ffprobe_json(path, "-select_streams", "v", "-show_entries",
+                            "stream=codec_name,width,height,disposition", timeout=30)
         streams = data.get("streams", [])
-        if not streams:
+        # v:0 peut être une jaquette « attached_pic » : on prend la vraie piste vidéo.
+        video = next((s for s in streams
+                      if not s.get("disposition", {}).get("attached_pic")
+                      and s.get("codec_name") not in IMAGE_CODECS), None)
+        if video is None:
+            video = next((s for s in streams if not s.get("disposition", {}).get("attached_pic")), None)
+        if not video:
             return None
-        return int(streams[0]["width"]), int(streams[0]["height"])
+        return int(video["width"]), int(video["height"])
     except (ProbeError, OSError, ValueError, KeyError, subprocess.TimeoutExpired, json.JSONDecodeError):
         return None
 

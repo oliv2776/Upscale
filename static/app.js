@@ -358,6 +358,11 @@ function describeScan(s) {
   if (s.already_known) text += " " + s.already_known + " déjà en file ou traitée(s).";
   if (s.too_recent) text += " " + s.too_recent + " en cours de copie, ignorée(s) pour l'instant.";
   if (s.recursive === false) text += " Les sous-dossiers ne sont pas inclus (Bibliothèque → Inclure tous les sous-dossiers).";
+  if (s.resolutions) {
+    text += " Résolutions examinées : " + (s.resolutions.under_360 || 0) + " < 360p, " +
+      (s.resolutions["360_480"] || 0) + " 360–480p, " + (s.resolutions.over_480 || 0) + " > 480p.";
+    if (s.resolutions.unknown) text += " " + s.resolutions.unknown + " illisible(s).";
+  }
   if (s.enqueue) {
     text += " " + (s.added || 0) + " ajoutée(s) à la file.";
     if (s.conflicts) text += " " + s.conflicts + " ignorée(s) : même fichier de sortie qu'une tâche en cours.";

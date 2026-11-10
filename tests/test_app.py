@@ -254,6 +254,35 @@ def test_within_schedule():
 
 
 @needs_ffmpeg
+def test_probe_dimensions_ignores_attached_cover(monkeypatch):
+    monkeypatch.setattr(media, "ffprobe_json", lambda *a, **k: {"streams": [
+        {"codec_name": "mjpeg", "width": 200, "height": 150, "disposition": {"attached_pic": 1}},
+        {"codec_name": "h264", "width": 1920, "height": 1080, "disposition": {}},
+    ]})
+    assert media.probe_dimensions(Path("/data/film.mkv")) == (1920, 1080)
+
+
+def test_probe_cache_is_invalidated_when_version_changes(env):
+    with db.connect() as conn:
+        conn.execute("INSERT INTO probe_cache VALUES('/data/vieux.mkv',1,1,320,180,?)", (db.now(),))
+    db.set_state("probe_cache_version", "1")
+    db.init_db()
+    with db.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM probe_cache").fetchone()[0] == 0
+    assert db.get_state("probe_cache_version") == str(config.PROBE_CACHE_VERSION)
+
+
+@needs_ffmpeg
+def test_scan_reports_resolution_histogram(env):
+    videos = env / "videos"
+    make_video(videos / "sd.mkv", width=160, height=120)
+    make_video(videos / "dvd.mkv", width=640, height=480)
+    make_video(videos / "hd.mkv", width=1280, height=720)
+    result = scanner.scan_files(st.get_settings())
+    assert result["resolutions"] == {"under_360": 1, "360_480": 1, "over_480": 1, "unknown": 0}
+    assert len(result["files"]) == 2  # 120p et 480p sont sous la limite de 480p
+
+
 def test_scan_disambiguates_collisions_and_uses_cache(env, monkeypatch):
     videos = env / "videos"
     make_video(videos / "film.mp4")

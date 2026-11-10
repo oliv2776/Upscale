@@ -86,6 +86,12 @@ def init_db() -> None:
             updated_at TEXT NOT NULL
           )
         """)
+        version = conn.execute("SELECT value FROM app_state WHERE key='probe_cache_version'").fetchone()
+        if not version or version[0] != str(config.PROBE_CACHE_VERSION):
+            # Une ancienne méthode a pu enregistrer des dimensions de vignette/cover.
+            conn.execute("DELETE FROM probe_cache")
+            conn.execute("INSERT OR REPLACE INTO app_state(key,value) VALUES('probe_cache_version',?)",
+                         (str(config.PROBE_CACHE_VERSION),))
         conn.commit()
     finally:
         conn.close()

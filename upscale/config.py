@@ -86,6 +86,8 @@ PUID = _int_or_none(_env("PUID"))
 PGID = _int_or_none(_env("PGID"))
 
 LOG_RETENTION_DAYS = int(_env("UPSCALE_LOG_RETENTION_DAYS", "90"))
+# Incrémenter invalide le cache des dimensions (changement de méthode ffprobe).
+PROBE_CACHE_VERSION = 2
 # Nombre de ffprobe simultanés pendant l'analyse d'une grande bibliothèque.
 try:
     SCAN_WORKERS = max(1, min(int(_env("UPSCALE_SCAN_WORKERS", "4")), 16))
