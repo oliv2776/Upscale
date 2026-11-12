@@ -121,6 +121,7 @@
         <div class="field"><label>DOSSIER DE DESTINATION</label><div class="path-control"><input id="destination" value="/data/videos_upscaled"><button data-picker="destination" class="browse">Parcourir</button></div><small>Arborescence conservée, sortie MKV.</small></div>
       </div>
       <div class="field top-gap work-field"><label>DOSSIER DE TRAVAIL (OPTIONNEL)</label><div class="path-control"><input id="workDir" placeholder="Vide = à côté de la destination"><button data-picker="workDir" class="browse">Parcourir</button></div><small>Les segments et le fichier final temporaire y sont écrits, puis la sortie définitive est copiée dans la destination. Choisis un dossier hors de ta bibliothèque (idéalement un SSD) pour ne rien y laisser pendant le traitement.</small></div>
+      <div class="field top-gap"><label>DOSSIERS EXCLUS</label><div id="excludeList" class="sources-list"></div><button class="secondary small" id="addExclude">+ Exclure un dossier</button><small>Les vidéos de ces dossiers (et de leurs sous-dossiers) sont ignorées lors de l'analyse.</small></div>
       <div class="disks-hint" id="disksHint"></div>
       <div class="settings-grid top-gap">
         <div class="field"><label>SUFFIXE DES FICHIERS PRODUITS</label><input class="text-input" id="outputSuffix" placeholder="ex. « - 720p IA »" maxlength="60"><small>Film (2001).avi → Film (2001) - 720p IA.mkv (pratique pour Jellyfin/Plex).</small></div>

@@ -3,6 +3,15 @@
 Toutes les évolutions notables sont consignées ici. Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet utilise le [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [2.21.0] — 2026-11-13
+
+### Ajouté
+
+- **Dossiers exclus** dans Bibliothèque : les vidéos de ces dossiers et de leurs sous-dossiers sont
+  ignorées par l'analyse, le catalogue Vidéos et la mise en file automatique.
+- Validation : un dossier exclu doit être à l'intérieur d'un dossier source ; les exclusions
+  imbriquées sont fusionnées et le dossier source lui-même ne peut pas être exclu.
+
 ## [2.20.0] — 2026-11-12
 
 ### Ajouté

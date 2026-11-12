@@ -40,6 +40,7 @@ PROFILE_KEYS = ("model", "output_height", "crf", "denoise", "codec", "interpolat
 DEFAULT_SETTINGS: dict[str, Any] = {
     "source": config.DEFAULT_SOURCE,
     "sources": [config.DEFAULT_SOURCE],
+    "exclude_dirs": [],
     "destination": config.DEFAULT_DESTINATION,
     "work_dir": "",
     "max_input_height": 480,
@@ -148,6 +149,27 @@ def source_list(settings: dict[str, Any]) -> list[str]:
     return sources or ([str(settings["source"])] if settings.get("source") else [])
 
 
+def exclusion_paths(settings: dict[str, Any], sources: list[Path]) -> list[Path]:
+    """Dossiers ignorés pendant l'analyse, validés et dédoublonnés (le parent suffit)."""
+    found: list[Path] = []
+    raw_exclusions = settings.get("exclude_dirs") or []
+    if not isinstance(raw_exclusions, list):
+        raw_exclusions = []
+    for raw in raw_exclusions:
+        path = safe_path(str(raw), must_exist=True)
+        if not path.is_dir():
+            raise ValueError(f"Le dossier exclu doit être un dossier : {path}")
+        if not any(source in path.parents for source in sources):
+            raise ValueError(f"Le dossier exclu doit être à l'intérieur d'un dossier source : {path}")
+        found.append(path)
+    unique: list[Path] = []
+    for path in sorted(set(found), key=lambda item: (len(item.parts), str(item))):
+        if any(parent == path or parent in path.parents for parent in unique):
+            continue
+        unique.append(path)
+    return unique
+
+
 def validate_folders(settings: dict[str, Any]) -> tuple[list[Path], Path]:
     sources = [safe_path(raw, must_exist=True) for raw in source_list(settings)]
     if not sources:
@@ -172,6 +194,7 @@ def validate_folders(settings: dict[str, Any]) -> tuple[list[Path], Path]:
         if any(parent == source or parent in source.parents for parent in unique):
             continue
         unique.append(source)
+    exclusion_paths(settings, unique)
     if config.root_of(dest) in (None, dest):
         raise ValueError("La destination doit être un sous-dossier d'un disque (ex. /data/videos_upscaled)")
     return unique, dest
@@ -332,6 +355,11 @@ def _validate_suffix(value: Any) -> str:
 def save_settings(payload: dict[str, Any]) -> dict[str, Any]:
     """Valide et enregistre les clés présentes. Les dossiers ne sont vérifiés que s'ils sont envoyés."""
     settings = get_settings()
+    if "exclude_dirs" in payload:
+        raw_exclusions = payload["exclude_dirs"]
+        if not isinstance(raw_exclusions, list) or len(raw_exclusions) > 100:
+            raise ValueError("Liste de dossiers exclus invalide")
+        settings["exclude_dirs"] = [str(item).strip() for item in raw_exclusions if str(item).strip()]
     for key, value in payload.items():
         if key in VALIDATORS:
             settings[key] = validate_value(key, value)
@@ -359,11 +387,12 @@ def save_settings(payload: dict[str, Any]) -> dict[str, Any]:
             settings[key] = ""
         elif payload.get(key):
             settings[key] = str(payload[key]).strip()[:500]
-    if any(key in payload for key in ("source", "sources", "destination", "work_dir")):
+    if any(key in payload for key in ("source", "sources", "destination", "work_dir", "exclude_dirs")):
         sources, destination = validate_folders(settings)
         settings["sources"] = [str(source) for source in sources]
         settings["source"] = settings["sources"][0] if settings["sources"] else ""
         settings["destination"] = str(destination)
+        settings["exclude_dirs"] = [str(path) for path in exclusion_paths(settings, sources)]
     db.store_settings_payload(settings)
     return settings
 

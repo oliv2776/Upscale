@@ -315,6 +315,26 @@ def test_scan_reports_resolution_histogram(env):
 
 
 @needs_ffmpeg
+def test_excluded_folders_validation_and_scan(env):
+    videos = env / "videos"
+    extras = videos / "Extras"
+    extras.mkdir(parents=True)
+    nested = extras / "Sous"
+    nested.mkdir()
+    (env / "out").mkdir()
+    saved = st.save_settings({"exclude_dirs": [str(extras), str(nested)]})
+    assert saved["exclude_dirs"] == [str(extras.resolve())]
+    with pytest.raises(ValueError, match="à l'intérieur"):
+        st.save_settings({"exclude_dirs": [str(env / "out")]})
+    with pytest.raises(ValueError, match="à l'intérieur"):
+        st.save_settings({"exclude_dirs": [str(videos)]})
+    make_video(videos / "film.mkv", width=160, height=120)
+    make_video(extras / "bonus.mkv", width=160, height=120)
+    result = scanner.scan_files(st.get_settings())
+    assert [Path(item["source"]).name for item in result["files"]] == ["film.mkv"]
+
+
+@needs_ffmpeg
 def test_library_duration_filters_sort_and_ids(env):
     make_video(env / "videos" / "court.mkv", seconds=1)
     make_video(env / "videos" / "long.mkv", seconds=3)

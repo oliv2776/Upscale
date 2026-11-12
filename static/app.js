@@ -50,8 +50,8 @@ function fillModelSelects() {
 }
 function settingsPayload() {
   return {
-    sources: readSources(), destination: $("destination").value.trim(),
-    work_dir: $("workDir").value.trim(),
+    sources: readSources(), exclude_dirs: readExcludes(),
+    destination: $("destination").value.trim(), work_dir: $("workDir").value.trim(),
     output_suffix: $("outputSuffix").value, include_subfolders: $("recursive").checked,
     replace_original: $("replaceOriginal").checked, trash_days: Number($("trashDays").value),
     max_input_height: Number($("maxInput").value), output_height: Number($("outputHeight").value),
@@ -104,7 +104,9 @@ function updateMediaStatusFromForm() {
     media_token_set: state.mediaTokenSet });
 }
 function applySettings(s) {
-  renderSources(s.sources && s.sources.length ? s.sources : [s.source || ""]); $("destination").value = s.destination;
+  renderSources(s.sources && s.sources.length ? s.sources : [s.source || ""]);
+  renderExcludes(s.exclude_dirs || []);
+  $("destination").value = s.destination;
   $("workDir").value = s.work_dir || "";
   $("outputSuffix").value = s.output_suffix || ""; $("recursive").checked = s.include_subfolders;
   $("replaceOriginal").checked = !!s.replace_original; setSelect("trashDays", s.trash_days ?? 30); updateReplaceUi();
@@ -971,8 +973,13 @@ async function testGpu() {
 function sourceRow(path = "") {
   return '<div class="path-control source-row"><input class="s-path" value="' + escapeHtml(path) + '" placeholder="/data/videos ou /disques/…"><button class="browse" data-picker="sourceRow">Parcourir</button><button class="icon-btn remove-source" data-remove-source title="Retirer ce dossier">×</button></div>';
 }
+function excludeRow(path = "") {
+  return '<div class="path-control source-row exclude-row"><input class="x-path" value="' + escapeHtml(path) + '" placeholder="/data/videos/Extras ou /disques/…"><button class="browse" data-picker="excludeRow">Parcourir</button><button class="icon-btn" data-remove-exclude title="Retirer cette exclusion">×</button></div>';
+}
 function renderSources(paths) { $("sourcesList").innerHTML = (paths.length ? paths : [""]).map(sourceRow).join(""); }
+function renderExcludes(paths) { $("excludeList").innerHTML = (paths || []).map(excludeRow).join(""); }
 function readSources() { return [...document.querySelectorAll("#sourcesList .s-path")].map(i => i.value.trim()).filter(Boolean); }
+function readExcludes() { return [...document.querySelectorAll("#excludeList .x-path")].map(i => i.value.trim()).filter(Boolean); }
 function firstSource() { return readSources()[0] || ""; }
 function diskSpace(disk) {
   if (!disk.total) return "";
@@ -1166,6 +1173,7 @@ document.addEventListener("click", async event => {
   if (id("data-delete")) { if (!confirm("Supprimer cette tâche, son journal et ses fichiers temporaires ?")) return; return jobAction(() => post("/api/jobs/" + id("data-delete") + "/delete"), "Tâche supprimée"); }
   for (const where of ["top", "up", "down"]) if (id("data-move-" + where)) return jobAction(() => post("/api/jobs/" + id("data-move-" + where) + "/move", { to: where }));
   if (t.closest("[data-remove-source]")) { t.closest(".source-row").remove(); if (!document.querySelector("#sourcesList .source-row")) renderSources([]); return; }
+  if (t.closest("[data-remove-exclude]")) { t.closest(".exclude-row").remove(); return; }
   if (t.closest("[data-remove-profile]")) { t.closest("tr").remove(); if (!readProfiles().length && !$("profilesBody").querySelector(".p-path")) renderProfiles([]); }
   const filter = t.closest("[data-filter]");
   if (filter) { state.filter = filter.dataset.filter; state.page = 1; document.querySelectorAll("#filters button").forEach(b => b.classList.toggle("active", b === filter)); refreshJobs(); }
@@ -1179,6 +1187,7 @@ $("lanModeToggle").addEventListener("click", () => setLanMode($("lanModeToggle")
 $("installModel").addEventListener("click", () => installModel());
 $("installSource").addEventListener("keydown", e => { if (e.key === "Enter") installModel(); });
 $("addSource").addEventListener("click", () => { $("sourcesList").insertAdjacentHTML("beforeend", sourceRow("")); openPicker([...document.querySelectorAll("#sourcesList .s-path")].pop(), "dir"); });
+$("addExclude").addEventListener("click", () => { $("excludeList").insertAdjacentHTML("beforeend", excludeRow("")); openPicker([...document.querySelectorAll("#excludeList .x-path")].pop(), "dir"); });
 $("addProfile").addEventListener("click", () => { $("profilesBody").querySelector(".empty-row")?.remove(); $("profilesBody").insertAdjacentHTML("beforeend", profileRow({ path: firstSource() })); });
 function pruneSources(selected) {
   const clean = String(selected || "").replace(/\/+$/, "");

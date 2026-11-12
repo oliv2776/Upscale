@@ -38,14 +38,18 @@ def _inside(path: Path, parent: Path) -> bool:
     return path == parent or parent in path.parents
 
 
-def list_candidates(source_root: Path, recursive: bool, exclude: Path | None = None) -> list[Path]:
+def list_candidates(source_root: Path, recursive: bool, exclude: Path | None = None,
+                    exclude_dirs: list[Path] | None = None) -> list[Path]:
     """Parcourt récursivement sans échouer sur un dossier illisible ou un lien symbolique.
 
     ``exclude`` (la destination) est ignoré : on peut ainsi choisir un dossier parent qui contient
     la destination sans rescanner les sorties.
     """
     found: list[Path] = []
-    excluded = exclude.resolve() if exclude is not None else None
+    excluded: list[Path] = []
+    if exclude is not None:
+        excluded.append(exclude.resolve())
+    excluded.extend(path.resolve() for path in (exclude_dirs or []))
 
     def onerror(_error: OSError) -> None:  # dossier illisible : on continue l'analyse
         return
@@ -55,19 +59,21 @@ def list_candidates(source_root: Path, recursive: bool, exclude: Path | None = N
         current = Path(dirpath)
         if not recursive:
             dirnames[:] = []
-        if excluded is not None and _inside(current, excluded):
+        if any(_inside(current, item) for item in excluded):
             dirnames[:] = []
             continue
         dirnames[:] = [
             name for name in dirnames
             if not name.startswith(HIDDEN_PREFIXES)
             and not (current / name).is_symlink()
-            and not (excluded is not None and _inside(current / name, excluded))
+            and not any(_inside(current / name, item) for item in excluded)
         ]
         for name in filenames:
             path = current / name
             try:
                 if path.is_symlink() or path.suffix.lower() not in media.VIDEO_EXTENSIONS or not path.is_file():
+                    continue
+                if any(_inside(path, item) for item in excluded):
                     continue
                 if is_upscale_internal(path, source_root):
                     continue
@@ -99,9 +105,10 @@ def scan_files(settings: dict[str, Any], progress: Callable[[int, int], None] | 
                on_probe: Callable[[int, int], None] | None = None) -> dict[str, Any]:
     sources, destination_root = settings_mod.validate_folders(settings)
     labels = source_labels(sources)
+    exclusions = settings_mod.exclusion_paths(settings, sources)
     candidates = [(source, path) for source in sources
                   for path in list_candidates(source, settings.get("include_subfolders", True),
-                                              destination_root)]
+                                              destination_root, exclusions)]
     stems = Counter((p.parent, p.stem.lower()) for _, p in candidates)
     suffix = settings.get("output_suffix", "")
     replace = bool(settings.get("replace_original"))
