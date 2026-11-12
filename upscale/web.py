@@ -566,13 +566,42 @@ def api_library():
     status = request.args.get("filter", "all")
     if status not in LIBRARY_FILTERS:
         status = "all"
-    data = db.library_page(page, limit, query, status)
+    try:
+        min_duration = float(request.args["min_duration"]) if request.args.get("min_duration") else None
+        max_duration = float(request.args["max_duration"]) if request.args.get("max_duration") else None
+    except ValueError:
+        return error("Durée invalide")
+    if (min_duration is not None and min_duration < 0) or (max_duration is not None and max_duration < 0):
+        return error("Durée invalide")
+    if min_duration is not None and max_duration is not None and min_duration > max_duration:
+        return error("La durée minimale dépasse la durée maximale")
+    sort = request.args.get("sort", "name")
+    if sort not in {"name", "duration_asc", "duration_desc", "resolution", "size"}:
+        sort = "name"
+    data = db.library_page(page, limit, query, status, min_duration, max_duration, sort)
     items = []
     for row in data["items"]:
         item = dict(row)
         item["thumbnail"] = f"/api/library/{item['id']}/thumbnail"
         items.append(item)
-    return jsonify({**data, "items": items, "q": query, "filter": status})
+    return jsonify({**data, "items": items, "q": query, "filter": status, "sort": sort,
+                    "min_duration": min_duration, "max_duration": max_duration})
+
+
+@app.get("/api/library/ids")
+def api_library_ids():
+    query = request.args.get("q", "").strip()[:200]
+    status = request.args.get("filter", "all")
+    if status not in LIBRARY_FILTERS:
+        status = "all"
+    try:
+        min_duration = float(request.args["min_duration"]) if request.args.get("min_duration") else None
+        max_duration = float(request.args["max_duration"]) if request.args.get("max_duration") else None
+    except ValueError:
+        return error("Durée invalide")
+    if (min_duration is not None and max_duration is not None and min_duration > max_duration):
+        return error("La durée minimale dépasse la durée maximale")
+    return jsonify({"ids": db.library_ids(query, status, min_duration, max_duration)})
 
 
 @app.get("/api/library/<item_id>/thumbnail")
@@ -594,8 +623,8 @@ def api_library_queue():
         ids = list(dict.fromkeys(str(item) for item in ids if valid_library_id(str(item))))
         if not ids:
             return error("Aucune vidéo sélectionnée")
-        if len(ids) > 5000:
-            return error("Sélection limitée à 5000 vidéos")
+        if len(ids) > 20000:
+            return error("Sélection limitée à 20 000 vidéos")
         settings = settings_mod.get_settings()
         sources, destination_root = settings_mod.validate_folders(settings)
         labels = scanner.source_labels(sources)

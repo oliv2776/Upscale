@@ -80,18 +80,6 @@ def list_candidates(source_root: Path, recursive: bool, exclude: Path | None = N
     return found
 
 
-def cached_dimensions(conn: sqlite3.Connection, path: Path, stat: os.stat_result) -> tuple[int, int] | None:
-    row = conn.execute("SELECT size,mtime_ns,width,height FROM probe_cache WHERE path=?", (str(path),)).fetchone()
-    if row and row["size"] == stat.st_size and row["mtime_ns"] == stat.st_mtime_ns:
-        return (row["width"], row["height"]) if row["width"] else None
-    dims = media.probe_dimensions(path)
-    conn.execute("""INSERT OR REPLACE INTO probe_cache(path,size,mtime_ns,width,height,updated_at)
-                    VALUES(?,?,?,?,?,?)""",
-                 (str(path), stat.st_size, stat.st_mtime_ns,
-                  dims[0] if dims else None, dims[1] if dims else None, db.now()))
-    return dims
-
-
 def source_labels(sources: list[Path]) -> dict[Path, str]:
     """Nom du sous-dossier de destination de chaque source (seulement s'il y a plusieurs sources)."""
     labels: dict[Path, str] = {}
@@ -133,8 +121,8 @@ def scan_files(settings: dict[str, Any], progress: Callable[[int, int], None] | 
         produced = {destination for status, destination, _ in known.values() if status == "completed"}
         intent = (settings.get("destination"), suffix, replace)
         # Cache des dimensions : évite un ffprobe par fichier à chaque analyse.
-        cache = {row["path"]: (row["size"], row["mtime_ns"], row["width"], row["height"])
-                 for row in conn.execute("SELECT path,size,mtime_ns,width,height FROM probe_cache")}
+        cache = {row["path"]: (row["size"], row["mtime_ns"], row["width"], row["height"], row["duration"])
+                 for row in conn.execute("SELECT path,size,mtime_ns,width,height,duration FROM probe_cache")}
         pending: list[dict[str, Any]] = []
         for index, (source_root, path) in enumerate(candidates, 1):
             if progress and (index % 10 == 0 or index == len(candidates)):
@@ -174,41 +162,42 @@ def scan_files(settings: dict[str, Any], progress: Callable[[int, int], None] | 
                         "path": path}
                 cached = cache.get(str(path))
                 if cached and cached[0] == stat.st_size and cached[1] == stat.st_mtime_ns:
-                    item["dims"] = (cached[2], cached[3]) if cached[2] else None
+                    item["meta"] = (cached[2], cached[3], cached[4]) if cached[2] else None
                 pending.append(item)
             except (OSError, ValueError):
                 continue
 
         # Les ffprobe manquants sont lancés en parallèle : c'est la partie lente d'une première analyse.
-        missing = [item for item in pending if "dims" not in item]
+        missing = [item for item in pending if "meta" not in item]
         if missing:
             workers = max(1, min(config.SCAN_WORKERS, len(missing)))
             if on_probe:
                 on_probe(0, len(missing))
             done = 0
             with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="upscale-probe") as pool:
-                futures = {pool.submit(media.probe_dimensions, item["path"]): item for item in missing}
+                futures = {pool.submit(media.probe_metadata, item["path"]): item for item in missing}
                 for future in as_completed(futures):
                     item = futures[future]
                     try:
-                        dims = future.result()
+                        meta = future.result()
                     except Exception:  # noqa: BLE001 - un fichier illisible ne doit pas arrêter l'analyse
-                        dims = None
-                    item["dims"] = dims
-                    conn.execute("""INSERT OR REPLACE INTO probe_cache(path,size,mtime_ns,width,height,updated_at)
-                                    VALUES(?,?,?,?,?,?)""",
+                        meta = None
+                    item["meta"] = meta
+                    conn.execute("""INSERT OR REPLACE INTO probe_cache(path,size,mtime_ns,width,height,duration,updated_at)
+                                    VALUES(?,?,?,?,?,?,?)""",
                                  (item["source"], item["size"], item["mtime_ns"],
-                                  dims[0] if dims else None, dims[1] if dims else None, db.now()))
+                                  meta[0] if meta else None, meta[1] if meta else None,
+                                  meta[2] if meta else None, db.now()))
                     done += 1
                     if on_probe:
                         on_probe(done, len(missing))
 
         for item in pending:
-            dims = item.get("dims")
-            if not dims:
+            meta = item.get("meta")
+            if not meta:
                 resolutions["unknown"] += 1
                 continue
-            width, height = dims
+            width, height, duration = meta
             if height < 360:
                 resolutions["under_360"] += 1
             elif height <= 480:
@@ -220,7 +209,7 @@ def scan_files(settings: dict[str, Any], progress: Callable[[int, int], None] | 
             files.append({"id": library_id(Path(item["source"])), "source": item["source"],
                           "relative": item["relative"], "destination": item["destination"],
                           "ambiguous": item.get("ambiguous", False),
-                          "width": width, "height": height,
+                          "width": width, "height": height, "duration": duration,
                           "size": item["size"], "mtime_ns": item["mtime_ns"]})
     return {"files": files, "already_known": already_known, "too_recent": too_recent,
             "checked": len(candidates), "resolutions": resolutions}

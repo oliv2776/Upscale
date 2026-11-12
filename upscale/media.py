@@ -50,12 +50,12 @@ def ffprobe_json(path: Path, *args: str, timeout: int = 60) -> dict[str, Any]:
     return json.loads(probe.stdout or "{}")
 
 
-def probe_dimensions(path: Path) -> tuple[int, int] | None:
+def probe_metadata(path: Path) -> tuple[int, int, float | None] | None:
+    """Dimensions et durée de la vraie piste vidéo (pas d'une jaquette)."""
     try:
         data = ffprobe_json(path, "-select_streams", "v", "-show_entries",
-                            "stream=codec_name,width,height,disposition", timeout=30)
+                            "stream=codec_name,width,height,disposition,duration:format=duration", timeout=30)
         streams = data.get("streams", [])
-        # v:0 peut être une jaquette « attached_pic » : on prend la vraie piste vidéo.
         video = next((s for s in streams
                       if not s.get("disposition", {}).get("attached_pic")
                       and s.get("codec_name") not in IMAGE_CODECS), None)
@@ -63,9 +63,16 @@ def probe_dimensions(path: Path) -> tuple[int, int] | None:
             video = next((s for s in streams if not s.get("disposition", {}).get("attached_pic")), None)
         if not video:
             return None
-        return int(video["width"]), int(video["height"])
+        duration = (parse_ratio(data.get("format", {}).get("duration"))
+                    or parse_ratio(video.get("duration")))
+        return int(video["width"]), int(video["height"]), (duration if duration > 0 else None)
     except (ProbeError, OSError, ValueError, KeyError, subprocess.TimeoutExpired, json.JSONDecodeError):
         return None
+
+
+def probe_dimensions(path: Path) -> tuple[int, int] | None:
+    metadata = probe_metadata(path)
+    return (metadata[0], metadata[1]) if metadata else None
 
 
 def parse_ratio(raw: Any, default: float = 0.0) -> float:

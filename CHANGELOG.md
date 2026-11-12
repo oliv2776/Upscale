@@ -3,6 +3,23 @@
 Toutes les évolutions notables sont consignées ici. Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet utilise le [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [2.20.0] — 2026-11-12
+
+### Ajouté
+
+- **Durée dans le catalogue Vidéos** : `ffprobe` récupère dimensions et durée en un seul appel ;
+  la durée est affichée sur chaque ligne.
+- **Filtre de durée** dans l'onglet Vidéos : minimum et maximum, en **secondes ou minutes**.
+- **Tri** par nom, durée croissante/décroissante, résolution ou taille.
+- **Tout sélectionner** applique la sélection à tous les résultats filtrés (pas seulement la page),
+  dans la limite de 20 000 vidéos.
+
+### Modifié
+
+- Cache des métadonnées (version 3) et schéma du catalogue avec la durée ; la première analyse après
+  mise à jour re-sonde les fichiers.
+- La file conserve la sélection explicite ; « Lancer le traitement » continue de tout traiter.
+
 ## [2.19.0] — 2026-11-10
 
 ### Ajouté

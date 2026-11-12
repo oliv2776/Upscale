@@ -254,7 +254,6 @@ def test_within_schedule():
 
 
 @needs_ffmpeg
-@needs_ffmpeg
 def test_library_catalog_from_scan_and_selection(env):
     source = make_video(env / "videos" / "film.mkv", width=320, height=240)
     settings = st.get_settings()
@@ -263,6 +262,7 @@ def test_library_catalog_from_scan_and_selection(env):
     assert page["counts"]["total"] == 1 and page["counts"]["new"] == 1
     [item] = page["items"]
     assert item["source"] == str(source) and (item["width"], item["height"]) == (320, 240)
+    assert item["duration"] and 0.9 <= item["duration"] <= 1.5
     client = app.test_client()
     data = client.get("/api/library").get_json()
     assert data["total"] == 1 and data["items"][0]["thumbnail"].endswith("/thumbnail")
@@ -284,9 +284,18 @@ def test_probe_dimensions_ignores_attached_cover(monkeypatch):
     assert media.probe_dimensions(Path("/data/film.mkv")) == (1920, 1080)
 
 
+def test_probe_metadata_returns_duration(monkeypatch):
+    monkeypatch.setattr(media, "ffprobe_json", lambda *a, **k: {
+        "streams": [{"codec_name": "h264", "width": 1280, "height": 720, "disposition": {}}],
+        "format": {"duration": "95.5"},
+    })
+    assert media.probe_metadata(Path("/data/film.mkv")) == (1280, 720, 95.5)
+
+
 def test_probe_cache_is_invalidated_when_version_changes(env):
     with db.connect() as conn:
-        conn.execute("INSERT INTO probe_cache VALUES('/data/vieux.mkv',1,1,320,180,?)", (db.now(),))
+        conn.execute("INSERT INTO probe_cache(path,size,mtime_ns,width,height,duration,updated_at) "
+                     "VALUES('/data/vieux.mkv',1,1,320,180,NULL,?)", (db.now(),))
     db.set_state("probe_cache_version", "1")
     db.init_db()
     with db.connect() as conn:
@@ -305,6 +314,21 @@ def test_scan_reports_resolution_histogram(env):
     assert len(result["files"]) == 2  # 120p et 480p sont sous la limite de 480p
 
 
+@needs_ffmpeg
+def test_library_duration_filters_sort_and_ids(env):
+    make_video(env / "videos" / "court.mkv", seconds=1)
+    make_video(env / "videos" / "long.mkv", seconds=3)
+    scanner._run_scan(st.get_settings(), False, 0)
+    client = app.test_client()
+    filtered = client.get("/api/library?min_duration=2").get_json()
+    assert filtered["total"] == 1 and filtered["items"][0]["duration"] >= 2
+    ordered = client.get("/api/library?sort=duration_desc").get_json()["items"]
+    durations = [item["duration"] for item in ordered]
+    assert durations == sorted(durations, reverse=True)
+    ids = client.get("/api/library/ids?min_duration=2").get_json()["ids"]
+    assert ids == [filtered["items"][0]["id"]]
+
+
 def test_scan_disambiguates_collisions_and_uses_cache(env, monkeypatch):
     videos = env / "videos"
     make_video(videos / "film.mp4")
@@ -314,7 +338,7 @@ def test_scan_disambiguates_collisions_and_uses_cache(env, monkeypatch):
     result = scanner.scan_files(st.get_settings())
     assert sorted(Path(f["destination"]).name for f in result["files"]) == ["autre.mkv", "film.avi.mkv", "film.mp4.mkv"]
     probed = []
-    monkeypatch.setattr(media, "probe_dimensions", lambda path: probed.append(path))
+    monkeypatch.setattr(media, "probe_metadata", lambda path: probed.append(path))
     assert len(scanner.scan_files(st.get_settings())["files"]) == 3 and probed == []
 
 
@@ -477,7 +501,8 @@ def test_maintenance(env, monkeypatch):
     (config.log_dir() / "ffffffffffff.log").write_text("orphelin")
     (config.thumbnail_dir() / "orphelin.jpg").write_bytes(b"x")
     with db.connect() as conn:
-        conn.execute("INSERT INTO probe_cache VALUES('/nexiste/pas.mkv',1,1,10,10,?)", (db.now(),))
+        conn.execute("INSERT INTO probe_cache(path,size,mtime_ns,width,height,duration,updated_at) "
+                     "VALUES('/nexiste/pas.mkv',1,1,10,10,NULL,?)", (db.now(),))
     for index in range(3):
         job_id = f"ccccccccccc{index}"
         insert_job(job_id, status="completed", kind="preview")

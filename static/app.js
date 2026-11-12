@@ -514,7 +514,8 @@ function renderLibrary(data) {
       (info.locked ? " disabled" : "") + (checked ? " checked" : "") + ">" +
       thumbHtml(item.id, "lib-thumb", "/api/library/" + item.id + "/thumbnail") +
       '<div class="lib-info"><b>' + escapeHtml(name) + "</b><small>" +
-      (item.width || "?") + " × " + (item.height || "?") + " · " + librarySize(item.size) +
+      (item.width || "?") + " × " + (item.height || "?") + " · " +
+      (item.duration > 0 ? formatDuration(item.duration) : "durée ?") + " · " + librarySize(item.size) +
       '</small><small class="lib-path" title="' + escapeHtml(item.source) + '">' + escapeHtml(item.source) + "</small></div>" +
       '<span class="status ' + info.cls + '">' + info.label + "</span></label>";
   }).join("");
@@ -525,13 +526,33 @@ function renderLibrary(data) {
   attachThumbFallbacks();
   updateLibrarySelection();
 }
+function libraryDurationValue(id) {
+  const raw = ($(id).value || "").trim().replace(",", ".");
+  return raw ? Number(raw) : null;
+}
+function libraryQueryParams(includePage = false) {
+  const unit = Number($("libraryDurationUnit").value) || 60;
+  const min = libraryDurationValue("libraryMinDuration");
+  const max = libraryDurationValue("libraryMaxDuration");
+  const params = new URLSearchParams({
+    q: ($("librarySearch").value || "").trim(), filter: $("libraryFilter").value || "all",
+    sort: $("librarySort").value || "name"
+  });
+  if (min !== null) params.set("min_duration", String(min * unit));
+  if (max !== null) params.set("max_duration", String(max * unit));
+  if (includePage) {
+    params.set("page", String(state.libraryPage));
+    params.set("limit", String(state.libraryLimit));
+  }
+  return params;
+}
 async function refreshLibrary() {
   const list = $("libraryList");
   if (!list) return;
-  const params = new URLSearchParams({
-    page: String(state.libraryPage), limit: String(state.libraryLimit),
-    q: ($("librarySearch").value || "").trim(), filter: $("libraryFilter").value || "all"
-  });
+  const min = libraryDurationValue("libraryMinDuration");
+  const max = libraryDurationValue("libraryMaxDuration");
+  if (min !== null && max !== null && min > max) { toast("La durée minimale dépasse la durée maximale"); return; }
+  const params = libraryQueryParams(true);
   try {
     const data = await api("/api/library?" + params.toString());
     data.q = params.get("q");
@@ -548,6 +569,15 @@ function setupLibrary() {
     searchTimer = setTimeout(() => { state.libraryPage = 1; refreshLibrary(); }, 250);
   });
   $("libraryFilter").addEventListener("change", () => { state.libraryPage = 1; refreshLibrary(); });
+  $("librarySort").addEventListener("change", () => { state.libraryPage = 1; refreshLibrary(); });
+  let durationTimer = null;
+  for (const id of ["libraryMinDuration", "libraryMaxDuration", "libraryDurationUnit"]) {
+    $(id).addEventListener("input", () => {
+      clearTimeout(durationTimer);
+      durationTimer = setTimeout(() => { state.libraryPage = 1; refreshLibrary(); }, 350);
+    });
+    $(id).addEventListener("change", () => { state.libraryPage = 1; refreshLibrary(); });
+  }
   $("libraryScan").addEventListener("click", () => startScan(false));
   $("libraryRefresh").addEventListener("click", refreshLibrary);
   $("libraryPrev").addEventListener("click", () => { if (state.libraryPage > 1) { state.libraryPage--; refreshLibrary(); } });
@@ -559,11 +589,14 @@ function setupLibrary() {
     else state.librarySelected.delete(box.dataset.libSelect);
     updateLibrarySelection();
   });
-  $("librarySelectAll").addEventListener("click", () => {
-    const selectable = (state.libraryItems || []).filter(item => !libraryStatus(item).locked);
-    const all = selectable.length && selectable.every(item => state.librarySelected.has(item.id));
-    selectable.forEach(item => all ? state.librarySelected.delete(item.id) : state.librarySelected.add(item.id));
-    renderLibrary(state.libraryData || { items: [], total: 0, counts: {} });
+  $("librarySelectAll").addEventListener("click", async () => {
+    try {
+      const data = await api("/api/library/ids?" + libraryQueryParams(false).toString());
+      const ids = data.ids || [];
+      const all = ids.length && ids.every(id => state.librarySelected.has(id));
+      ids.forEach(id => all ? state.librarySelected.delete(id) : state.librarySelected.add(id));
+      renderLibrary(state.libraryData || { items: [], total: 0, counts: {} });
+    } catch (error) { toast(error.message); }
   });
   $("libraryEnqueue").addEventListener("click", async () => {
     const ids = [...state.librarySelected];

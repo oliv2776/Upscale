@@ -147,6 +147,24 @@
         <button class="secondary small" id="librarySelectAll">Tout sélectionner</button>
         <button class="primary small" id="libraryEnqueue" disabled>Ajouter la sélection</button>
       </div>
+      <div class="library-duration-row">
+        <label for="libraryMinDuration">DURÉE</label>
+        <input class="text-input" id="libraryMinDuration" type="number" min="0" step="0.1" placeholder="min.">
+        <span>à</span>
+        <input class="text-input" id="libraryMaxDuration" type="number" min="0" step="0.1" placeholder="max.">
+        <select id="libraryDurationUnit" class="library-filter" aria-label="Unité de durée">
+          <option value="60">minutes</option>
+          <option value="1">secondes</option>
+        </select>
+        <label for="librarySort">TRIER</label>
+        <select id="librarySort" class="library-filter">
+          <option value="name">Nom</option>
+          <option value="duration_asc">Durée ↑</option>
+          <option value="duration_desc">Durée ↓</option>
+          <option value="resolution">Résolution</option>
+          <option value="size">Taille</option>
+        </select>
+      </div>
       <div id="libraryList" class="library-list"><div class="empty">Lance une analyse pour construire la liste des vidéos.</div></div>
       <div class="library-pager">
         <button class="secondary small" id="libraryPrev" disabled>← Précédent</button>
