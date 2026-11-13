@@ -3,6 +3,38 @@
 Toutes les évolutions notables sont consignées ici. Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet utilise le [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [2.22.0] — 2026-11-13
+
+### Ajouté
+
+- **Correctifs de sécurité automatiques** : `security.yml` reconstruit l'image publiée chaque nuit
+  uniquement si Debian propose un correctif de sécurité ; `sudo bash update.sh --installer-auto`
+  installe un minuteur nocturne qui ne redémarre le conteneur que si l'image a changé, à la fin du
+  segment en cours.
+- **Vitesse et temps restant** : images/s affichées dans la file ; le temps restant est calculé
+  d'après la vitesse mesurée de l'IA.
+- **Anti-blocs avant l'IA** (léger / fort), global ou par profil, pour les vidéos 240p/360p très
+  compressées.
+- **Débruitage fort sur la carte graphique** (`nlmeans_vulkan`, AMD / Intel / NVIDIA) avec repli
+  automatique sur le processeur ; `UPSCALE_GPU_DENOISE=0` pour le désactiver.
+- **Intel Arc** : pilote d'encodage Intel dans l'image, encodeur AV1 matériel (`av1_vaapi`),
+  statistiques des cartes Intel.
+- Tests de l'interface dans un navigateur (Playwright) et contrôle de cohérence HTML/JS.
+
+### Modifié
+
+- **Couleurs** : une source SD agrandie en HD est convertie et étiquetée BT.709 (teints de peau
+  justes). Les tâches déjà commencées se terminent avec l'ancien comportement.
+- L'encodage d'un segment se fait pendant que la carte graphique agrandit le suivant.
+- Images : `apt-get upgrade` à la construction, empreinte SHA-256 vérifiée pour `upscayl-bin`.
+- Tests découpés par domaine ; une seule feuille de style ; maquettes de la proposition d'interface
+  retirées de `docs/`.
+- Les anciens noms `USCALE_*` déclenchent un avertissement : ils seront retirés en 3.0.
+
+### Corrigé
+
+- Tests du convertisseur de modèles indépendants de l'utilisateur (root).
+
 ## [2.21.0] — 2026-11-13
 
 ### Ajouté

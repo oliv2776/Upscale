@@ -8,12 +8,17 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+LEGACY_ENV: list[str] = []  # anciens noms USCALE_* encore utilisés (retirés en 3.0)
+
 
 def _env(name: str, default: str = "") -> str:
     """Lit UPSCALE_X, ou l'ancien nom USCALE_X (versions précédentes) s'il est seul défini."""
     value = os.environ.get(name)
     if value is None and name.startswith("UPSCALE_"):
-        value = os.environ.get("USCALE_" + name[len("UPSCALE_"):])
+        legacy = "USCALE_" + name[len("UPSCALE_"):]
+        value = os.environ.get(legacy)
+        if value is not None:
+            LEGACY_ENV.append(legacy)
     return (value if value is not None else default).strip()
 
 
@@ -107,6 +112,11 @@ def db_path() -> Path:
 
 def log_dir() -> Path:
     return STATE_DIR / "logs"
+
+
+# Débruitage « Fort » sur la carte graphique quand c'est possible (0 pour forcer le processeur).
+_gpu_denoise = _env("UPSCALE_GPU_DENOISE", "1").strip().lower()
+GPU_DENOISE: bool | str = "force" if _gpu_denoise == "force" else _gpu_denoise not in {"0", "false", "non", ""}
 
 
 def preview_dir() -> Path:

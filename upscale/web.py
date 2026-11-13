@@ -900,6 +900,9 @@ def main() -> None:
     from waitress import serve
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    if config.LEGACY_ENV:
+        logging.warning("Variables à renommer en UPSCALE_* (les anciens noms seront retirés en 3.0) : %s",
+                        ", ".join(sorted(set(config.LEGACY_ENV))))
     db.init_db()
     settings_mod.migrate()
     worker.recover_interrupted_jobs()

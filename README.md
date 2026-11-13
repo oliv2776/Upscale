@@ -55,6 +55,17 @@ Le projet cible notamment les NAS sous Ubuntu équipés d'un GPU AMD compatible 
 
 La présence de la carte dans lspci ne suffit pas : vulkaninfo --summary doit afficher le GPU AMD, et non uniquement llvmpipe (rendu logiciel CPU). La RX 5500 XT sait aussi encoder en H.264 et HEVC matériel (VAAPI).
 
+### Autres cartes (Intel Arc, AMD récentes)
+
+Upscale n'utilise que des interfaces communes à tous les fabricants : **Vulkan** pour l'IA et le débruitage fort, **VAAPI** pour l'encodage matériel. Passer à une Intel Arc (A380, par exemple) ne demande aucune réinstallation :
+
+- l'image contient déjà le pilote d'encodage Intel (`intel-media-va-driver`) à côté de Mesa (AMD) ;
+- relance `sudo bash install.sh` après avoir changé de carte : il détecte les groupes de `/dev/dri` ; vérifie `VAAPI_DEVICE` (`ls /dev/dri`) et l'index `VIDEO2X_GPU` avec **Tester le GPU** ;
+- l'encodeur **AV1 matériel** (`av1_vaapi`) devient utilisable (Intel Arc, AMD RX 7000 et suivantes) ; la RX 5500 XT ne le propose pas ;
+- les statistiques en direct dépendent du pilote : charge et VRAM pour AMD, température et ventilateur seulement pour Intel.
+
+Ces chemins sont testés en CI sur Vulkan logiciel, pas sur une carte Intel réelle.
+
 ## Installation rapide (recommandée)
 
 ~~~bash
@@ -82,6 +93,20 @@ bash update.sh          # pause au segment, sauvegarde de la base, reconstructio
 update.sh construit d'abord la nouvelle image (le traitement continue), met ensuite la file en pause et attend la fin du **segment en cours**, sauvegarde la base dans backups/, bascule vers la nouvelle image puis remet la file en route. Les segments déjà encodés, la file, les réglages et les dossiers `.upscale-*` sont conservés. Le script passe par la base : il fonctionne même sans mot de passe. Options : `-y` (sans confirmation), `--sans-sauvegarde`, et `UPSCALE_UPDATE_TIMEOUT` (secondes, 900 par défaut).
 
 Sans le script, `docker compose up -d --build` reprend aussi au segment suivant, mais le segment en cours est refait.
+
+### Mises à jour automatiques (correctifs de sécurité)
+
+Docker ne met pas à jour un conteneur tout seul. Pour recevoir les correctifs sans y penser :
+
+~~~bash
+sudo bash update.sh --installer-auto      # une fois ; UPSCALE_AUTO_UPDATE_TIME=03:30 pour changer l'heure
+~~~
+
+- **Côté GitHub** (`security.yml`) : chaque nuit, l'image publiée est inspectée ; elle n'est reconstruite (sans cache, testée puis publiée) que si Debian propose un **correctif de sécurité** pour un de ses paquets. Sans correctif, rien n'est republié. Un rapport `pip-audit` signale les failles des dépendances Python (corrigées par changement de version, via Dependabot).
+- **Côté NAS** : un minuteur systemd lance `update.sh --auto` chaque nuit vers 04:00. Si l'image n'a pas changé, il ne se passe rien. Sinon : pause à la fin du segment en cours, sauvegarde de la base, bascule, reprise. Le NAS passe sur l'image publiée (`UPSCALE_PULL_POLICY=always`).
+- Suivi : `systemctl list-timers upscale-update.timer`, `journalctl -u upscale-update.service -n 50`. Désactiver : `sudo bash update.sh --desinstaller-auto`.
+
+Le système du NAS reste à mettre à jour de son côté (`sudo apt install unattended-upgrades` sur Ubuntu/Debian), et l'image Video2X ne change qu'avec une nouvelle version de son auteur.
 
 **Vérification depuis l'interface** : **Système → Version** interroge GitHub Releases et indique si une version plus récente existe, avec le lien des notes et la commande `update.sh` à copier. La vérification n'est qu'informative : le déclenchement automatique demanderait un service hôte supplémentaire (voir la proposition d'interface).
 
@@ -183,11 +208,18 @@ En mode standard, Upscale lit ses propres montages et donne exactement les même
 | Hauteur de sortie | 480p à 2160p, format d'affichage conservé |
 | Modèle IA | Plus (réel), Plus Anime (animation détaillée), AnimeVideo v3 (animation, ×2/×3/×4, rapide), Automatique (Ollama). L'ancien choix « General v3 », absent de Video2X 6.4, est remplacé automatiquement par Plus |
 | Désentrelacement | Automatique (selon ffprobe), toujours ou jamais |
-| Débruitage | Aucun, léger / moyen (hqdn3d), fort (nlmeans, pour VHS, plus lent) |
+| Débruitage | Aucun, léger / moyen (hqdn3d), fort (nlmeans, pour VHS). Le fort s'exécute sur la carte graphique (Vulkan) quand c'est possible, sinon sur le processeur, beaucoup plus lent ; le journal de la tâche indique lequel |
+| Anti-blocs | Aucun, léger, fort : efface les carrés de compression des vidéos 240p/360p avant l'IA, qui sinon les renforce |
 | Images par seconde | Inchangées ou doublées avec RIFE (expérimental, avant l'upscaling) |
-| Encodeur | HEVC 10 bits (défaut, ~40 % plus léger que H.264), H.264 (compatibilité maximale), AV1 10 bits (le plus léger, lent), H.264/HEVC VAAPI (matériel, rapide) |
+| Encodeur | HEVC 10 bits (défaut, ~40 % plus léger que H.264), H.264 (compatibilité maximale), AV1 10 bits (le plus léger, lent), H.264/HEVC VAAPI (matériel, rapide, AMD ou Intel), AV1 VAAPI (Intel Arc, AMD RX 7000+) |
 | CRF | 16 par défaut pour H.264 ; converti pour HEVC (+2), AV1 (+10) et VAAPI (QP +4) |
 | Preset | Vitesse de l'encodeur logiciel (converti pour SVT-AV1) |
+
+**Vidéos 240p/360p très compressées** : anti-blocs « Fort », débruitage « Moyen », un modèle ×2 pour la vidéo filmée (2xLiveActionV1_SPAN) et le rendu « Peau normale ». Compare dans l'Aperçu avant de lancer une série.
+
+**Couleurs** : une source SD (BT.601) agrandie en 720p ou plus est convertie et étiquetée BT.709, la norme que les lecteurs supposent en HD. Sans cela les rouges et les teints de peau seraient légèrement décalés. Les sources HDR / BT.2020 ne sont pas modifiées. Une tâche commencée avant la 2.22 se termine avec l'ancien comportement.
+
+**Temps restant** : il est calculé d'après la vitesse réellement mesurée de l'IA (affichée en images/s dans la file), pas d'après la progression de la découpe.
 
 ### Comment se déroule une tâche
 
@@ -298,6 +330,8 @@ N'expose pas le port 11434 sur Internet.
 | UPSCALE_CONVERTER_DROP_PRIVILEGES | 1 | Exécute la conversion des modèles en « nobody » (setpriv) quand le conteneur est root |
 | UPSCALE_UPDATE_CHECK | 1 | Vérifie les nouvelles releases GitHub dans **Système** (0 pour un NAS hors ligne) |
 | UPSCALE_SCAN_WORKERS | 4 | Nombre de ffprobe simultanés pendant l'analyse d'une grande bibliothèque (1 à 16) |
+| UPSCALE_GPU_DENOISE | 1 | Débruitage fort sur la carte graphique quand elle le permet ; 0 force le processeur |
+| UPSCALE_AUTO_UPDATE_TIME | 04:00 | Heure du minuteur installé par `update.sh --installer-auto` |
 | UPSCALE_MIN_FREE_GB | 5 | Espace libre minimal conservé |
 | UPSCALE_SEGMENT_SECONDS | 180 | Durée des segments |
 | UPSCALE_LOG_RETENTION_DAYS | 90 | Conservation des journaux des tâches terminées |
@@ -391,13 +425,14 @@ L'explorateur limite les chemins à la racine configurée (/data) et ignore les 
 
 ~~~bash
 pip install -r requirements-dev.txt
+playwright install chromium   # facultatif : test de l'interface dans un navigateur
 ruff check .
 pytest -q
 ~~~
 
 Le code est dans le paquet upscale/ : config, db, settings (réglages et profils), media (ffprobe et commandes FFmpeg), runner (processus, Video2X), scanner, pipeline (segments et aperçus), worker (file, plage horaire, surveillance, maintenance), converter et models (installation des modèles), net (garde-fous réseau), notify, gpu, ollama, web (API Flask).
 
-Les tests utilisent FFmpeg, un faux Video2X (Docker et local, Real-ESRGAN et RIFE) et un faux serveur HTTP : ils couvrent le pipeline complet, la reprise après pause, les aperçus, les notifications, Jellyfin/Emby/Plex, Ollama et la sécurité, sans GPU. La CI construit aussi les deux images Docker et exécute un vrai traitement Video2X sur Vulkan logiciel (lavapipe).
+Les tests (dossier tests/, un fichier par domaine) utilisent FFmpeg, un vrai navigateur pour l'interface (Playwright), un faux Video2X (Docker et local, Real-ESRGAN et RIFE) et un faux serveur HTTP : ils couvrent le pipeline complet, la reprise après pause, les aperçus, les notifications, Jellyfin/Emby/Plex, Ollama et la sécurité, sans GPU. La CI construit aussi les deux images Docker et exécute un vrai traitement Video2X sur Vulkan logiciel (lavapipe).
 
 ## Licence
 
@@ -408,7 +443,6 @@ gardent leur propre licence (certaines interdisent l'usage commercial).
 
 ## Documentation et projets utilisés
 
-- [Proposition d'interface 3.0](docs/UI-PROPOSAL.md) et [maquette interactive](docs/ui-mockup.html)
 - [Video2X — documentation](https://docs.video2x.org/)
 - [Video2X — dépôt GitHub](https://github.com/k4yt3x/video2x)
 - [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN)

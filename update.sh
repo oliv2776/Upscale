@@ -51,6 +51,10 @@ env_value() {
   echo "${value:-$default}"
 }
 
+if [[ -f "${ENV_FILE}" ]] && grep -qE '^USCALE_' "${ENV_FILE}"; then
+  echo "Note : .env contient d'anciens noms USCALE_* ; renomme-les en UPSCALE_* (retirés en 3.0)." >&2
+fi
+
 UNIT_DIR="${UPSCALE_SYSTEMD_DIR:-/etc/systemd/system}"
 
 set_env_value() {

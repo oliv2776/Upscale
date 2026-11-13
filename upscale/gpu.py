@@ -56,8 +56,11 @@ def _read_int(path: Path) -> int | None:
         return None
 
 
+GPU_DRIVERS = {"amdgpu", "i915", "xe"}
+
+
 def stats() -> list[dict[str, Any]]:
-    """Charge, VRAM, température, puissance et ventilateur des cartes amdgpu."""
+    """Charge, VRAM, température, puissance et ventilateur des cartes AMD et Intel."""
     cards = []
     root = config.SYSFS_DRM
     if not root.is_dir():
@@ -70,10 +73,12 @@ def stats() -> list[dict[str, Any]]:
             driver = (device / "driver").resolve().name
         except OSError:
             continue
-        if driver != "amdgpu":
+        if driver not in GPU_DRIVERS:
             continue
+        # amdgpu expose charge et VRAM ; les pilotes Intel (i915, xe) seulement température, puissance et
+        # ventilateur selon le modèle : les valeurs absentes restent vides dans l'interface.
         info: dict[str, Any] = {
-            "card": card.name,
+            "card": card.name, "driver": driver,
             "busy_percent": _read_int(device / "gpu_busy_percent"),
             "vram_used": _read_int(device / "mem_info_vram_used"),
             "vram_total": _read_int(device / "mem_info_vram_total"),

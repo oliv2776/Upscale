@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Upscale — AI Video Upscaler</title>
-  <link rel="stylesheet" href="/static/app.css"><link rel="stylesheet" href="/static/app-v2.css">
+  <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -181,7 +181,8 @@
         <div class="field"><label>RÉSOLUTION DE SORTIE</label><select id="outputHeight"><option value="480">480p</option><option value="720" selected>720p</option><option value="1080">1080p</option><option value="1440">1440p</option><option value="2160">2160p</option></select></div>
         <div class="field"><label>MODÈLE IA</label><select id="model" class="model-select"></select><small>Comparez-les dans « Aperçu ». Automatique = Ollama choisit selon des images de la vidéo.</small></div>
         <div class="field"><label>DÉSENTRELACEMENT</label><select id="deinterlace"><option value="auto" selected>Automatique · sources entrelacées détectées</option><option value="on">Toujours</option><option value="off">Jamais</option></select><small>DVD/VOB souvent entrelacés.</small></div>
-        <div class="field"><label>DÉBRUITAGE AVANT L'IA</label><select id="denoise" class="denoise-select"><option value="off">Aucun</option><option value="light">Léger · hqdn3d</option><option value="medium">Moyen · hqdn3d</option><option value="strong">Fort · nlmeans (VHS, plus lent)</option></select><small>L'IA amplifie le bruit et les blocs de compression.</small></div>
+        <div class="field"><label>DÉBRUITAGE AVANT L'IA</label><select id="denoise" class="denoise-select"><option value="off">Aucun</option><option value="light">Léger · hqdn3d</option><option value="medium">Moyen · hqdn3d</option><option value="strong">Fort · nlmeans (VHS ; sur la carte graphique si possible)</option></select><small>L'IA amplifie le bruit et les blocs de compression.</small></div>
+        <div class="field"><label>ANTI-BLOCS AVANT L'IA</label><select id="deblock"><option value="off">Aucun</option><option value="light">Léger</option><option value="strong">Fort · vidéos 240p/360p très compressées</option></select><small>Efface les carrés de compression que l'IA prendrait pour du détail.</small></div>
         <div class="field"><label>IMAGES PAR SECONDE</label><select id="interpolate"><option value="1">Inchangées</option><option value="2">Doubler (RIFE · expérimental)</option></select><small>25 → 50 i/s pour les contenus anciens.</small></div>
         <div class="field"><label>RENDU</label><select id="render"><option value="ai">IA pure · 100 % Real-ESRGAN</option><option value="peau-normale">Peau normale · 70 % IA + texture d'origine + grain léger</option><option value="custom">Personnalisé…</option></select><small>« Peau normale » évite l'effet peau lisse / cireuse des vidéos filmées.</small></div>
         <div class="field render-custom hidden"><label>PART DE L'IA</label><div class="range-line"><input id="aiStrength" type="range" min="30" max="100" step="5" value="70"><b id="aiStrengthValue">70 %</b></div><small>Le reste vient de l'original agrandi classiquement (texture naturelle).</small></div>
@@ -190,13 +191,13 @@
 
       <div class="section-head compact"><div><div class="eyebrow">03 / ENCODAGE</div><h2>Fichier final</h2></div></div>
       <div class="settings-grid">
-        <div class="field"><label>ENCODEUR</label><select id="codec" class="codec-select"><option value="hevc">HEVC 10 bits · recommandé, ~40 % plus léger</option><option value="h264">H.264 · compatibilité maximale</option><option value="av1">AV1 10 bits · le plus léger, plus lent</option><option value="h264_vaapi">H.264 matériel (VAAPI, GPU AMD)</option><option value="hevc_vaapi">HEVC matériel (VAAPI, GPU AMD)</option></select><small>Le matériel est bien plus rapide mais moins efficace à qualité égale.</small></div>
+        <div class="field"><label>ENCODEUR</label><select id="codec" class="codec-select"><option value="hevc">HEVC 10 bits · recommandé, ~40 % plus léger</option><option value="h264">H.264 · compatibilité maximale</option><option value="av1">AV1 10 bits · le plus léger, plus lent</option><option value="h264_vaapi">H.264 matériel (VAAPI, AMD ou Intel)</option><option value="hevc_vaapi">HEVC matériel (VAAPI, AMD ou Intel)</option><option value="av1_vaapi">AV1 matériel (VAAPI : Intel Arc, AMD RX 7000+)</option></select><small>Le matériel est bien plus rapide mais moins efficace à qualité égale.</small></div>
         <div class="field"><label>QUALITÉ VIDÉO (CRF)</label><div class="range-line"><input id="crf" type="range" min="12" max="30" value="16"><b id="crfValue">16</b></div><small>Plus bas = meilleure qualité. Converti automatiquement pour HEVC, AV1 et VAAPI.</small></div>
         <div class="field"><label>VITESSE D'ENCODAGE</label><select id="preset"><option value="fast">Rapide</option><option value="medium">Équilibré</option><option value="slow" selected>Lent · compression plus efficace</option></select></div>
       </div>
 
       <div class="section-head compact"><div><div class="eyebrow">04 / PROFILS PAR DOSSIER</div><h2>Réglages spécifiques</h2><p>Un fichier utilise le profil du dossier le plus précis qui le contient.</p></div><button class="secondary small" id="addProfile">+ Ajouter un profil</button></div>
-      <div class="table-wrap"><table class="profiles"><thead><tr><th>DOSSIER</th><th>MODÈLE</th><th>SORTIE</th><th>DÉBRUITAGE</th><th>RENDU</th><th>ENCODEUR</th><th></th></tr></thead><tbody id="profilesBody"></tbody></table></div>
+      <div class="table-wrap"><table class="profiles"><thead><tr><th>DOSSIER</th><th>MODÈLE</th><th>SORTIE</th><th>DÉBRUITAGE</th><th>ANTI-BLOCS</th><th>RENDU</th><th>ENCODEUR</th><th></th></tr></thead><tbody id="profilesBody"></tbody></table></div>
     </section>
 
     <section class="view panel no-title" id="queue" data-view="queue">

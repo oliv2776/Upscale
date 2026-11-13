@@ -490,11 +490,16 @@ def ncnn_command(frames_in: Path, frames_out: Path, meta: dict[str, Any]) -> lis
 
 
 def run_custom_upscale(job_id: str, source: Path, output: Path, meta: dict[str, Any], fps: float, *,
-                       on_progress: Callable[[float], None] | None = None, disk_dir: Path | None = None) -> None:
+                       on_progress: Callable[[float], None] | None = None, disk_dir: Path | None = None,
+                       matrix: str | None = None) -> None:
     """Agrandit une vidéo courte (un segment) avec un modèle personnalisé, image par image.
 
     Images extraites en PNG -> moteur ncnn (upscayl-bin) -> nouveau segment FFV1 intra sans perte.
+    matrix : matrice de couleur de la source, appliquée à l'aller (YUV -> RVB) comme au retour, pour que
+    le modèle voie les vraies couleurs et que le segment produit reste dans l'espace de la source.
     """
+    to_rgb = ["-vf", f"scale=in_color_matrix={matrix},format=rgb24"] if matrix else ["-pix_fmt", "rgb24"]
+    to_yuv = ["-vf", f"scale=out_color_matrix={matrix},format=yuv420p"] if matrix else ["-pix_fmt", "yuv420p"]
     work = output.with_name(output.stem + ".frames")
     shutil.rmtree(work, ignore_errors=True)
     frames_in, frames_out = work / "in", work / "out"
@@ -502,7 +507,7 @@ def run_custom_upscale(job_id: str, source: Path, output: Path, meta: dict[str, 
     frames_out.mkdir()
     try:
         check(run_process(job_id, ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-v", "error", "-i", str(source),
-                                   "-map", "0:v:0", "-start_number", "0", "-pix_fmt", "rgb24",
+                                   "-map", "0:v:0", "-start_number", "0", *to_rgb,
                                    "-compression_level", "1", str(frames_in / "%08d.png")], disk_dir=disk_dir),
               "Extraction des images impossible")
         total = sum(1 for _ in frames_in.iterdir())
@@ -524,7 +529,7 @@ def run_custom_upscale(job_id: str, source: Path, output: Path, meta: dict[str, 
         shutil.rmtree(frames_in, ignore_errors=True)
         check(run_process(job_id, ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-v", "error",
                                    "-framerate", f"{fps:.6f}", "-start_number", "0", "-i", str(frames_out / "%08d.png"),
-                                   "-c:v", "ffv1", "-g", "1", "-pix_fmt", "yuv420p", str(output)], disk_dir=disk_dir),
+                                   *to_yuv, "-c:v", "ffv1", "-g", "1", str(output)], disk_dir=disk_dir),
               "Reconstitution de la vidéo impossible")
     finally:
         shutil.rmtree(work, ignore_errors=True)

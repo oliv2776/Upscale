@@ -30,6 +30,8 @@ jobs:
           # Pour tester l'écriture ncnn directe face à PyTorch (convertisseur de modèles).
           pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
           pip install spandrel ncnn
+      - name: Install Chromium (tests de l'interface)
+        run: playwright install --with-deps chromium
       - name: Lint Python
         run: ruff check .
       - name: Tests
@@ -64,6 +66,11 @@ jobs:
           docker exec upscale-ci ffmpeg -hide_banner -encoders | grep -E "libx265|libsvtav1|hevc_vaapi"
           docker exec upscale-ci sh -c '/opt/upscayl/upscayl-bin -h 2>&1 | head -n 20' | grep -i -- "-z model-scale"
           docker rm -f upscale-ci
+      - name: Débruitage fort sur Vulkan (logiciel ici ; informatif)
+        run: |
+          docker run --rm -e UPSCALE_GPU_DENOISE=force --entrypoint python upscale:ci -c \
+            "from upscale import media; import sys; ok = media.vulkan_denoise_available(); print('nlmeans_vulkan :', ok); sys.exit(0 if ok else 1)" \
+            || echo "::warning::nlmeans_vulkan indisponible dans l'image sur Vulkan logiciel (repli processeur)"
       - name: Install real OpenModelDB models and upscale with them (CPU Vulkan)
         run: |
           mkdir -p ci-data/videos

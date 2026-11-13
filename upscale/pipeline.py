@@ -137,6 +137,17 @@ def resolve_model(job: sqlite3.Row, settings: dict[str, Any], source: Path, info
     return chosen
 
 
+def legacy_work_dir(work: Path, fingerprint: dict[str, Any]) -> bool:
+    """Vrai si le dossier de travail contient des segments encodés par une version sans gestion des couleurs
+    (empreinte identique, à la clé « color » près)."""
+    try:
+        previous = json.loads((work / "fingerprint.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return ("color" not in previous and previous == json.loads(json.dumps(fingerprint))
+            and any((work / "enc").glob("seg_*.mkv")))
+
+
 def prepare_work_dir(work: Path, fingerprint: dict[str, Any]) -> None:
     """Réutilise le dossier de travail seulement s'il a été produit avec exactement les mêmes paramètres."""
     fingerprint = json.loads(json.dumps(fingerprint))  # tuples -> listes, comme après relecture
@@ -205,6 +216,14 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
         "render": settings_mod.render_params(settings),
         "segment_seconds": segment_seconds,
     }
+    color = media.color_plan(info, size[1])
+    if legacy_work_dir(work, fingerprint):
+        # Tâche entamée avant la gestion des couleurs : elle se termine comme elle a commencé (sinon les
+        # segments déjà encodés et les suivants n'auraient pas les mêmes teintes).
+        color = None
+    else:
+        fingerprint["color"] = color
+    matrix = color["src"] if color else None
     prepare_work_dir(work, fingerprint)
     # Reliquats d'une exécution interrompue (redémarrage, mise à jour) : jamais réutilisés.
     for stale in [*(work / "enc").glob("tmp_*"), *work.glob("ai_*")]:
@@ -222,6 +241,8 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
     needed = media.estimate_ffv1_bytes(info["width"] * scale, info["height"] * scale, segment_frames)
     if custom:  # images PNG du segment (entrée + sortie agrandie), environ 1,5 octet par pixel
         needed += int(segment_frames * info["width"] * info["height"] * 1.5 * (1 + scale * scale))
+    # L'encodage d'un segment se fait pendant que l'IA traite le suivant : deux segments agrandis au plus.
+    needed += media.estimate_ffv1_bytes(info["width"] * scale, info["height"] * scale, segment_frames)
     needed += int(info["duration"] * ENCODED_BYTES_PER_SECOND)
     if not segmented:
         if overlap:
@@ -240,7 +261,11 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
                         f"{info['field_order']}, {info['fps']:.3f} i/s) -> {size[0]}×{size[1]}, {model} ×{scale}, "
                         f"filtres [{', '.join(filters) or 'aucun'}], interpolation ×{multiplier}, "
                         f"encodeur {settings.get('codec')}, rendu {render_label(settings)}, "
+                        f"couleurs {color['src'] + ' -> ' + color['dst'] if color else 'inchangées'}, "
                         f"espace estimé {human_size(needed)}")
+    if media.NLMEANS_CPU in filters:
+        where = "la carte graphique (Vulkan)" if media.vulkan_denoise_available() else "le processeur (lent)"
+        db.log_line(job_id, f"[{db.now()}] Débruitage fort exécuté sur {where}")
     if not custom or multiplier > 1:  # Video2X sert aussi à l'interpolation RIFE
         runner.ensure_image(job_id)
 
@@ -260,8 +285,41 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
                            f"{human_size(remaining)} restants à écrire (débit mesuré {rate / 1024**2:.1f} Mo/s), "
                            f"{human_size(free)} libres (marge de {human_size(config.MIN_FREE_BYTES)} conservée)")
 
+    encoding: dict[str, Any] = {}
+
+    def finish_encode() -> None:
+        """Attend la fin de l'encodage lancé en arrière-plan, puis range son segment."""
+        if not encoding:
+            return
+        task = dict(encoding)
+        proc = task["proc"]
+        while proc.running():
+            if runner.is_cancel_requested(job_id):
+                raise JobCancelled("Traitement annulé")
+            runner.check_disk(disk_dir)
+            time.sleep(0.3)
+        proc.finish()
+        encoding.clear()
+        check(proc.returncode or 0, f"L'encodage du segment {task['index'] + 1} a échoué")
+        task["temp"].replace(task["encoded"])
+        task["ai"].unlink(missing_ok=True)
+        task["segment"].unlink(missing_ok=True)
+        measured["rate"] = max(measured["rate"], task["encoded"].stat().st_size / task["duration"])
+        check_projected_space()
+        db.set_job(job_id, segments_done=task["index"] + 1)
+        progress.update(task["end"], force=True)
+
+    def abort_encode() -> None:
+        proc = encoding.get("proc")
+        if proc is not None and proc.running():
+            proc.stop()
+        encoding.clear()
+
     def process_segment(index: int, name: str, total: int, approximate: bool, note: str = "") -> None:
-        """Agrandit puis encode un segment (sauf s'il l'a déjà été lors d'une exécution précédente)."""
+        """Agrandit un segment puis lance son encodage en arrière-plan : la carte graphique passe au segment
+        suivant pendant que le processeur encode. Un segment déjà encodé (reprise) est sauté."""
+        if encoding.get("name") == name:
+            finish_encode()
         encoded = work / "enc" / name
         segment = work / "src" / name
         total = max(total, index + 1)
@@ -279,6 +337,7 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
             return
         reason = defer_reason()
         if reason:
+            finish_encode()  # le segment précédent est conservé avant la pause
             raise JobDeferred(reason)
         count = f"{index + 1}/{'~' if approximate else ''}{total}"
         db.set_job(job_id, stage=f"Upscaling IA ×{scale} · segment {count}{note}", segments_done=index)
@@ -291,34 +350,35 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
             ai_span(local)
 
         upscale_video(job_id, model, segment, ai, scale, info["fps"] * multiplier,
-                      on_progress=on_ai, disk_dir=disk_dir)
+                      on_progress=on_ai, disk_dir=disk_dir, matrix=matrix)
+        finish_encode()  # un seul encodage à la fois : attend celui du segment précédent
         temp = work / "enc" / f"tmp_{name}"
-        check(runner.run_process(job_id, media.segment_encode_command(ai, temp, size, settings, original=segment),
-                                 disk_dir=disk_dir),
-              f"L'encodage du segment {index + 1} a échoué")
-        temp.replace(encoded)
-        ai.unlink(missing_ok=True)
-        segment.unlink(missing_ok=True)
+        encoding.update(
+            name=name, index=index, temp=temp, encoded=encoded, ai=ai, segment=segment,
+            duration=segment_duration, end=base + width,
+            proc=runner.RunningProcess(job_id, media.segment_encode_command(ai, temp, size, settings,
+                                                                            original=segment, color=color)))
         processed["seconds"] += segment_duration
         throughput.end(segment_frames_count)
-        measured["rate"] = max(measured["rate"], encoded.stat().st_size / segment_duration)
-        check_projected_space()
-        db.set_job(job_id, segments_done=index + 1)
-        progress.update(base + width, force=True)
 
-    if overlap:
-        # La découpe (processeur) et l'IA (carte graphique) avancent en même temps : chaque segment est
-        # agrandi dès que FFmpeg l'a terminé.
-        cut_segments_while_upscaling(job_id, source, work, info, filters, segment_seconds, estimated,
-                                     disk_dir, process_segment)
-    elif not segmented:
-        prepare_segments(job_id, source, work, info, filters, multiplier, progress, prep_share, disk_dir,
-                         segment_seconds)
-    segments = json.loads((work / "segments.json").read_text(encoding="utf-8"))["segments"]
-    total = len(segments)
-    db.set_job(job_id, segments_total=total)
-    for index, name in enumerate(segments):
-        process_segment(index, name, total, approximate=False)
+    try:
+        if overlap:
+            # La découpe (processeur) et l'IA (carte graphique) avancent en même temps : chaque segment est
+            # agrandi dès que FFmpeg l'a terminé.
+            cut_segments_while_upscaling(job_id, source, work, info, filters, segment_seconds, estimated,
+                                         disk_dir, process_segment)
+            finish_encode()
+        elif not segmented:
+            prepare_segments(job_id, source, work, info, filters, multiplier, progress, prep_share, disk_dir,
+                             segment_seconds)
+        segments = json.loads((work / "segments.json").read_text(encoding="utf-8"))["segments"]
+        total = len(segments)
+        db.set_job(job_id, segments_total=total)
+        for index, name in enumerate(segments):
+            process_segment(index, name, total, approximate=False)
+        finish_encode()
+    finally:
+        abort_encode()  # annulation ou erreur : ne laisse pas d'encodage orphelin
 
     progress.throughput = None  # assemblage : plus de vitesse IA à afficher
     db.set_job(job_id, stage="Assemblage MKV / audio, sous-titres, chapitres", eta_seconds=None, fps=None)
@@ -529,14 +589,16 @@ def prepare_segments(job_id: str, source: Path, work: Path, info: dict[str, Any]
 # ---------------------------------------------------------------- aperçus
 
 def upscale_video(job_id: str, model: str, source: Path, output: Path, scale: int, fps: float, *,
-                  on_progress: Callable[[float], None] | None = None, disk_dir: Path | None = None) -> None:
+                  on_progress: Callable[[float], None] | None = None, disk_dir: Path | None = None,
+                  matrix: str | None = None) -> None:
     """Agrandit une vidéo sans perte avec le bon moteur : Video2X (modèles intégrés) ou ncnn (personnalisés)."""
     output.unlink(missing_ok=True)
     if models.is_custom(model):
         meta = models.get(model)
         if not meta:
             raise JobError(f"Le modèle personnalisé {model} a été supprimé")
-        runner.run_custom_upscale(job_id, source, output, meta, fps, on_progress=on_progress, disk_dir=disk_dir)
+        runner.run_custom_upscale(job_id, source, output, meta, fps, on_progress=on_progress, disk_dir=disk_dir,
+                                  matrix=matrix)
     else:
         check(runner.run_video2x(job_id, runner.upscale_args(source, output, model, scale),
                                  on_progress=on_progress, disk_dir=disk_dir),
@@ -572,6 +634,8 @@ def run_preview(job: sqlite3.Row, settings: dict[str, Any]) -> None:
         start = max(0.0, min(float(params.get("start", 0)), max(0.0, info["duration"] - duration)))
         size = media.output_size(info, int(settings["output_height"]))
         filters = media.prefilters(settings, info)
+        color = media.color_plan(info, size[1])
+        matrix = color["src"] if color else None
         available = settings_mod.available_models()
         checked = [m for m in params.get("models", []) if m in available]
         own_model = preview_model(settings, source, info)
@@ -589,7 +653,8 @@ def run_preview(job: sqlite3.Row, settings: dict[str, Any]) -> None:
                                                             media.video_stream(info))),
               "Extraction de l'extrait impossible")
         steps = len(to_run) + 1
-        check(runner.run_process(job_id, media.preview_encode_command(clip, out_dir / "original.mp4", size)),
+        check(runner.run_process(job_id, media.preview_encode_command(clip, out_dir / "original.mp4", size,
+                                                                      color=color)),
               "Encodage de la référence impossible")
         manifest["variants"].append({"id": "original", "label": "Original agrandi (Lanczos, sans IA)",
                                      "file": "original.mp4"})
@@ -606,25 +671,28 @@ def run_preview(job: sqlite3.Row, settings: dict[str, Any]) -> None:
             db.set_job(job_id, stage=f"Aperçu {name} ×{scale} ({index}/{len(to_run)})")
             ai = work / f"{model}.mkv"
             upscale_video(job_id, model, clip, ai, scale, info["fps"],
-                          on_progress=progress.span(index / steps, 0.9 / steps))
+                          on_progress=progress.span(index / steps, 0.9 / steps), matrix=matrix)
             if model == own_model:
                 # Exactement la chaîne du fichier final : modèle, rendu, encodeur et qualité (CRF).
                 final = work / "config.mkv"
-                check(runner.run_process(job_id, media.segment_encode_command(ai, final, size, settings, original=clip)),
+                check(runner.run_process(job_id, media.segment_encode_command(ai, final, size, settings, original=clip,
+                                                                      color=color)),
                       "Encodage « Votre configuration » impossible")
                 check(runner.run_process(job_id, media.preview_encode_command(final, out_dir / "config.mp4", size)),
                       "Encodage « Votre configuration » impossible")
                 add("config", f"Votre configuration · {name} · {render_label(settings)} · "
                               f"{settings.get('codec', 'hevc').upper()} CRF {settings.get('crf')}")
             if model in checked:
-                check(runner.run_process(job_id, media.preview_encode_command(ai, out_dir / f"{model}.mp4", size)),
+                check(runner.run_process(job_id, media.preview_encode_command(ai, out_dir / f"{model}.mp4", size,
+                                                                          color=color)),
                       f"Encodage de l'aperçu {model} impossible")
                 add(model, f"{name} (×{scale})")
                 if params.get("peau_normale", True):
                     # Même sortie IA, mélangée à l'original : coûte un simple encodage de plus.
                     strength, grain = settings_mod.RENDER_PRESETS["peau-normale"]
                     check(runner.run_process(job_id, media.preview_encode_command(
-                        ai, out_dir / f"{model}-peau-normale.mp4", size, original=clip, strength=strength, grain=grain)),
+                        ai, out_dir / f"{model}-peau-normale.mp4", size, original=clip, strength=strength, grain=grain,
+                        color=color)),
                         f"Encodage de l'aperçu Peau normale ({model}) impossible")
                     add(f"{model}-peau-normale", f"{name} (×{scale}) · Peau normale")
             ai.unlink(missing_ok=True)
