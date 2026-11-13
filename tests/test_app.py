@@ -1666,3 +1666,26 @@ def test_native_esrgan_writer_matches_pytorch(tmp_path):
         extractor.input("data", ncnn.Mat(pixels))
         _, out = extractor.extract("output")
         assert np.abs(np.array(out) - expected).max() < 1e-4
+
+
+def test_throughput_estimates_from_measured_speed():
+    """Temps restant d'après la vitesse mesurée : ni la découpe ni les segments repris ne comptent."""
+    clock = [1000.0]
+    speed = runner.Throughput(1000, clock=lambda: clock[0])
+    speed.skip(200)                      # segments déjà faits avant un redémarrage
+    assert speed.estimate() == (None, None)
+    clock[0] += 500                      # découpe, pause : hors mesure
+    speed.begin()
+    clock[0] += 10
+    speed.advance(20)
+    assert speed.estimate() == (None, None)   # moins de 20 s : pas d'annonce
+    clock[0] += 40
+    speed.advance(100)
+    assert speed.estimate() == (2.0, 350)     # 100 images en 50 s ; reste 700 images
+    speed.end(100)
+    clock[0] += 300                      # attente entre deux segments : hors mesure
+    assert speed.estimate() == (2.0, 350)
+    speed.begin()
+    clock[0] += 50
+    speed.advance(100)
+    assert speed.estimate() == (2.0, 300)

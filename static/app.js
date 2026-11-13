@@ -402,9 +402,12 @@ function progressHtml(job) {
     return "";
   }
   const pct = Math.max(0, Math.min(100, job.progress * 100));
-  const eta = job.eta_seconds != null ? " · reste ~" + formatDuration(job.eta_seconds) : "";
+  const eta = speedLabel(job) + (job.eta_seconds != null ? " · reste ~" + formatDuration(job.eta_seconds) : (job.kind !== "preview" ? " · estimation en cours" : ""));
   const seg = job.segments_total ? " · " + (job.segments_done || 0) + "/" + job.segments_total + " seg." : "";
   return '<div class="progress"><div class="progress-bar"><i style="width:' + pct.toFixed(1) + '%"></i></div><small>' + pct.toFixed(1) + " %" + seg + eta + "</small></div>";
+}
+function speedLabel(job) {
+  return job.fps ? " · " + Number(job.fps).toFixed(job.fps < 10 ? 2 : 1).replace(".", ",") + " i/s" : "";
 }
 function jobActions(job) {
   const b = (attr, label, cls = "") => '<button class="text-btn ' + cls + '" ' + attr + '="' + escapeHtml(job.id) + '">' + label + "</button>";
@@ -672,7 +675,7 @@ function renderDashboard(data) {
   const running = jobs.find(job => job.status === "running");
   if (running) {
     const pct = Math.max(0, Math.min(100, Math.round((running.progress || 0) * 1000) / 10));
-    const eta = running.eta_seconds != null ? " · reste ~" + formatDuration(running.eta_seconds) : "";
+    const eta = speedLabel(running) + (running.eta_seconds != null ? " · reste ~" + formatDuration(running.eta_seconds) : " · estimation en cours");
     const seg = running.segments_total ? " · segment " + (running.segments_done || 0) + "/" + running.segments_total : "";
     const model = modelLabel(running.model), codec = codecLabels[running.codec] || running.codec || "";
     const render = renderLabels[running.render] || "";

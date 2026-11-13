@@ -28,6 +28,7 @@ JOB_COLUMNS = {
     "resolved_model": "TEXT",
     "trash_path": "TEXT",
     "trashed_at": "TEXT",
+    "fps": "REAL",
 }
 
 

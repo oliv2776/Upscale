@@ -1,0 +1,129 @@
+name: Security
+
+# Chaque nuit : l'image publiée est reconstruite UNIQUEMENT si Debian propose un correctif de sécurité
+# pour un paquet qu'elle contient. Sans correctif, rien n'est republié : les NAS en mise à jour
+# automatique (update.sh --installer-auto) ne redémarrent donc pas pour rien.
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Reconstruire même sans correctif en attente"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/upscale
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      rebuild: ${{ steps.pending.outputs.rebuild }}
+    steps:
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: pending
+        name: Correctifs de sécurité Debian en attente dans l'image publiée
+        run: |
+          docker pull -q "${IMAGE}:latest"
+          # Simulation de mise à jour dans l'image : les lignes « Inst ... Debian-Security » sont les
+          # paquets pour lesquels le dépôt de sécurité a une version plus récente.
+          docker run --rm --user 0 --entrypoint sh "${IMAGE}:latest" -c \
+            'apt-get update -qq >/dev/null 2>&1 && apt-get -s upgrade' | grep '^Inst' > pending.txt || true
+          grep -i 'security' pending.txt > security.txt || true
+          {
+            echo "## Image ${IMAGE}:latest"
+            echo
+            echo "- Correctifs de sécurité en attente : **$(wc -l < security.txt)**"
+            echo "- Autres mises à jour Debian (ne déclenchent rien) : $(grep -vci 'security' pending.txt || true)"
+            if [ -s security.txt ]; then echo; echo '```'; cat security.txt; echo '```'; fi
+          } >> "${GITHUB_STEP_SUMMARY}"
+          if [ -s security.txt ]; then echo "rebuild=true" >> "${GITHUB_OUTPUT}"; else echo "rebuild=false" >> "${GITHUB_OUTPUT}"; fi
+
+  audit:
+    # Informatif : failles connues dans les dépendances Python. Elles se corrigent par un changement de
+    # version (proposé par Dependabot), pas par une reconstruction : ce rapport ne déclenche rien.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: pip-audit
+        run: |
+          pip install -q pip-audit
+          {
+            echo "## Dépendances Python"
+            echo '```'
+            pip-audit -r requirements.txt 2>&1 || echo "::warning::pip-audit signale des failles dans requirements.txt"
+            echo '```'
+          } | tee -a "${GITHUB_STEP_SUMMARY}"
+
+  rebuild:
+    needs: check
+    if: needs.check.outputs.rebuild == 'true' || inputs.force
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: stamp
+        run: echo "date=$(date -u +%Y%m%d)" >> "${GITHUB_OUTPUT}"
+      - name: Reconstruire sans cache (base et paquets à jour)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          pull: true
+          no-cache: true
+          tags: upscale:candidate
+      - name: Essai de l'image avant publication
+        run: |
+          docker run -d --name candidate -p 27009:27000 -e UPSCALE_ALLOW_ANONYMOUS=1 upscale:candidate
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:27009/api/ping && break; sleep 1; done
+          curl -fsS http://127.0.0.1:27009/api/ping
+          docker exec candidate ffmpeg -hide_banner -version | head -n 1
+          docker exec candidate sh -c '/opt/upscayl/upscayl-bin -h 2>&1 | head -n 20' | grep -qi -- "-z model-scale"
+          docker rm -f candidate
+      - name: Publier
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          # Mêmes couches que l'essai (cache du constructeur) ; le cache partagé est réécrit pour que les
+          # publications suivantes (publish.yml) repartent des couches corrigées.
+          cache-to: type=gha,mode=max
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:securite-${{ steps.stamp.outputs.date }}
+          provenance: true
+          sbom: true
+      - name: Vérifier que les correctifs sont appliqués
+        run: |
+          docker pull -q "${IMAGE}:latest"
+          docker run --rm --user 0 --entrypoint sh "${IMAGE}:latest" -c \
+            'apt-get update -qq >/dev/null 2>&1 && apt-get -s upgrade' | grep '^Inst' | grep -i security > left.txt || true
+          if [ -s left.txt ]; then cat left.txt; echo "::error::Des correctifs de sécurité restent en attente"; exit 1; fi
+          echo "Image republiée avec les correctifs de sécurité." >> "${GITHUB_STEP_SUMMARY}"

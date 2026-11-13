@@ -8,6 +8,11 @@
 #
 # Usage : git pull && bash update.sh [-y] [--sans-sauvegarde]
 #         (docker compose doit être accessible à l'utilisateur courant ; pas besoin de sudo avec le groupe docker)
+#
+# Mises à jour automatiques (correctifs de sécurité compris) :
+#   sudo bash update.sh --installer-auto      # vérification chaque nuit (04:00), par un minuteur systemd
+#   sudo bash update.sh --desinstaller-auto
+#   bash update.sh --auto                     # ce que lance le minuteur : ne fait rien si l'image n'a pas changé
 set -Eeuo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -16,6 +21,9 @@ cd "${PROJECT_DIR}"
 ENV_FILE="${PROJECT_DIR}/.env"
 TIMEOUT="${UPSCALE_UPDATE_TIMEOUT:-900}"
 ASSUME_YES=0
+AUTO=0
+ACTION=update
+KEEP_BACKUPS="${UPSCALE_KEEP_BACKUPS:-10}"
 BACKUP=1
 PAUSED_BY_US=0
 RESUMED=0
@@ -24,7 +32,10 @@ for arg in "$@"; do
   case "${arg}" in
     -y|--oui) ASSUME_YES=1 ;;
     --sans-sauvegarde) BACKUP=0 ;;
-    -h|--help) sed -n '2,10p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --auto) AUTO=1; ASSUME_YES=1; TIMEOUT="${UPSCALE_UPDATE_TIMEOUT:-21600}" ;;
+    --installer-auto) ACTION=install-auto ;;
+    --desinstaller-auto) ACTION=remove-auto ;;
+    -h|--help) sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Option inconnue : ${arg}"; exit 1 ;;
   esac
 done
@@ -39,6 +50,80 @@ env_value() {
   fi
   echo "${value:-$default}"
 }
+
+UNIT_DIR="${UPSCALE_SYSTEMD_DIR:-/etc/systemd/system}"
+
+set_env_value() {
+  local key="$1" value="$2"
+  touch "${ENV_FILE}"
+  if grep -qE "^${key}=" "${ENV_FILE}"; then
+    sed -i "s|^${key}=.*|${key}=${value}|" "${ENV_FILE}"
+  else
+    echo "${key}=${value}" >> "${ENV_FILE}"
+  fi
+}
+
+if [[ "${ACTION}" == "remove-auto" ]]; then
+  [[ "${EUID}" -eq 0 ]] || { echo "Lance : sudo bash update.sh --desinstaller-auto"; exit 1; }
+  systemctl disable --now upscale-update.timer 2>/dev/null || true
+  rm -f "${UNIT_DIR}/upscale-update.timer" "${UNIT_DIR}/upscale-update.service"
+  systemctl daemon-reload 2>/dev/null || true
+  echo "Mises à jour automatiques désactivées. (UPSCALE_PULL_POLICY reste inchangé dans .env.)"
+  exit 0
+fi
+
+if [[ "${ACTION}" == "install-auto" ]]; then
+  [[ "${EUID}" -eq 0 ]] || { echo "Lance : sudo bash update.sh --installer-auto"; exit 1; }
+  when="${UPSCALE_AUTO_UPDATE_TIME:-04:00}"
+  [[ "${when}" =~ ^[0-2][0-9]:[0-5][0-9]$ ]] || { echo "UPSCALE_AUTO_UPDATE_TIME doit être au format HH:MM"; exit 1; }
+  owner="$(stat -c '%U' "${PROJECT_DIR}")"
+  pre=""
+  if [[ -d "${PROJECT_DIR}/.git" && "${owner}" != "root" && "${owner}" != "UNKNOWN" ]] && command -v runuser >/dev/null 2>&1; then
+    # Scripts et fichiers compose : récupérés avant le lancement (jamais pendant que update.sh s'exécute).
+    pre="ExecStartPre=-$(command -v runuser) -u ${owner} -- $(command -v git) -C ${PROJECT_DIR} pull --ff-only --quiet"
+  fi
+  {
+    echo "[Unit]"
+    echo "Description=Mise à jour automatique d'Upscale (image publiée, correctifs de sécurité)"
+    echo "After=docker.service network-online.target"
+    echo "Wants=network-online.target"
+    echo
+    echo "[Service]"
+    echo "Type=oneshot"
+    echo "WorkingDirectory=${PROJECT_DIR}"
+    [[ -z "${pre}" ]] || echo "${pre}"
+    echo "ExecStart=/bin/bash ${PROJECT_DIR}/update.sh --auto"
+  } > "${UNIT_DIR}/upscale-update.service"
+  {
+    echo "[Unit]"
+    echo "Description=Vérification nocturne des mises à jour d'Upscale"
+    echo
+    echo "[Timer]"
+    echo "OnCalendar=*-*-* ${when}:00"
+    echo "RandomizedDelaySec=20min"
+    echo "Persistent=true"
+    echo
+    echo "[Install]"
+    echo "WantedBy=timers.target"
+  } > "${UNIT_DIR}/upscale-update.timer"
+  # Le NAS utilise désormais l'image publiée (reconstruite dès qu'un correctif de sécurité existe).
+  if [[ "$(docker inspect -f '{{.Config.Image}}' upscale 2>/dev/null || true)" != *upscale-local* ]]; then
+    set_env_value UPSCALE_PULL_POLICY always
+    if [[ "${owner}" != "root" && "${owner}" != "UNKNOWN" ]]; then chown "${owner}": "${ENV_FILE}" 2>/dev/null || true; fi
+    chmod 600 "${ENV_FILE}"
+  fi
+  if [[ -z "${UPSCALE_SYSTEMD_DIR:-}" ]]; then
+    systemctl daemon-reload
+    systemctl enable --now upscale-update.timer
+  fi
+  echo "Mises à jour automatiques activées : vérification chaque nuit vers ${when}."
+  echo "  Le conteneur n'est redémarré que si une nouvelle image a été publiée, à la fin du segment en cours."
+  echo "  État       : systemctl list-timers upscale-update.timer"
+  echo "  Journal    : journalctl -u upscale-update.service -n 50"
+  echo "  Maintenant : sudo systemctl start upscale-update.service"
+  echo "  Désactiver : sudo bash update.sh --desinstaller-auto"
+  exit 0
+fi
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "Docker est introuvable."
@@ -131,8 +216,29 @@ if [[ "${ASSUME_YES}" != "1" ]]; then
   [[ "${answer}" =~ ^[oOyY]$ ]] || { echo "Annulé."; exit 0; }
 fi
 
-echo "==> Construction de la nouvelle image (le traitement en cours continue)"
-"${COMPOSE[@]}" build
+if [[ "${AUTO}" == "1" ]]; then
+  running_image="$(docker inspect -f '{{.Image}}' upscale 2>/dev/null || true)"
+  image_name="$("${COMPOSE[@]}" config --images 2>/dev/null | head -n 1)"
+  if [[ "${image_name}" == *upscale-local* ]]; then
+    # Variante locale : pas d'image publiée. Reconstruction avec une base à jour ; la couche des paquets
+    # système est refaite une fois par semaine (APT_REFRESH change chaque semaine).
+    echo "==> Reconstruction de l'image locale (base à jour)"
+    "${COMPOSE[@]}" build --pull --build-arg "APT_REFRESH=$(date +%G-%V)" >/dev/null
+  else
+    export UPSCALE_PULL_POLICY=always
+    echo "==> Recherche d'une nouvelle image publiée"
+    "${COMPOSE[@]}" pull --quiet upscale
+  fi
+  new_image="$(docker image inspect -f '{{.Id}}' "${image_name}" 2>/dev/null || true)"
+  if [[ -n "${new_image}" && "${new_image}" == "${running_image}" ]] && container_running; then
+    echo "==> Déjà à jour : rien à faire."
+    exit 0
+  fi
+  echo "==> Nouvelle image disponible"
+else
+  echo "==> Construction de la nouvelle image (le traitement en cours continue)"
+  "${COMPOSE[@]}" build
+fi
 
 if container_running; then
   running="$(count_running)"
@@ -162,6 +268,12 @@ if container_running; then
     echo "==> Sauvegarde de la base : ${backup}"
     backup_database "${backup}"
     echo "    (contient les jetons de notification : dossier en 700)"
+    if [[ "${AUTO}" == "1" && "${KEEP_BACKUPS}" =~ ^[0-9]+$ ]]; then
+      # Mises à jour automatiques : seules les dernières sauvegardes sont conservées.
+      find "${PROJECT_DIR}/backups" -maxdepth 1 -name 'upscale-db-*.sqlite3' -printf '%T@ %p\n' 2>/dev/null \
+        | sort -rn | tail -n "+$((KEEP_BACKUPS + 1))" | cut -d' ' -f2- \
+        | while read -r old; do rm -f -- "${old}"; done
+    fi
   fi
 else
   echo "==> Conteneur non démarré : pas de pause ni de sauvegarde possible"
@@ -188,6 +300,11 @@ fi
 
 version="$("${COMPOSE[@]}" exec -T upscale python -c 'from upscale import config; print(config.VERSION)')"
 expected="$(cat "${PROJECT_DIR}/VERSION")"
+if [[ "${AUTO}" == "1" ]]; then
+  # L'image publiée peut être en avance ou en retard de quelques minutes sur le dépôt local.
+  expected="${version}"
+  docker image prune -f >/dev/null 2>&1 || true
+fi
 if [[ "${version}" != "${expected}" ]]; then
   echo "ERREUR : le conteneur a démarré en version ${version}, alors que le dépôt est en ${expected}."
   echo "Le conteneur n'a pas été recréé. Force avec :"

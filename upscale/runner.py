@@ -72,11 +72,58 @@ def human_size(value: float) -> str:
 
 # ---------------------------------------------------------------- progression
 
+class Throughput:
+    """Vitesse de traitement mesurée (images par seconde) et temps restant qui en découle.
+
+    Seul le temps passé à traiter des segments (IA puis encodage) est compté : ni la découpe initiale, ni les
+    pauses, ni les segments déjà faits lors d'une exécution précédente ne faussent l'estimation.
+    """
+
+    MIN_SECONDS = 20.0  # en dessous, la mesure est trop bruitée pour annoncer une durée
+
+    def __init__(self, total_frames: float, clock: Callable[[], float] = time.monotonic):
+        self.total = max(float(total_frames), 1.0)
+        self.clock = clock
+        self.skipped = 0.0   # images déjà traitées avant cette exécution
+        self.done = 0.0      # images traitées pendant cette exécution (segments terminés)
+        self.active = 0.0    # secondes passées sur les segments terminés
+        self.current = 0.0   # images du segment en cours
+        self.started: float | None = None
+
+    def skip(self, frames: float) -> None:
+        self.skipped += frames
+
+    def begin(self) -> None:
+        self.started = self.clock()
+        self.current = 0.0
+
+    def advance(self, frames: float) -> None:
+        self.current = max(self.current, frames)
+
+    def end(self, frames: float) -> None:
+        if self.started is not None:
+            self.active += self.clock() - self.started
+        self.started = None
+        self.done += frames
+        self.current = 0.0
+
+    def estimate(self) -> tuple[float | None, int | None]:
+        """(images par seconde, secondes restantes) ; (None, None) tant que la mesure est insuffisante."""
+        elapsed = self.active + (self.clock() - self.started if self.started is not None else 0.0)
+        frames = self.done + self.current
+        if elapsed < self.MIN_SECONDS or frames <= 0:
+            return None, None
+        fps = frames / elapsed
+        remaining = max(self.total - self.skipped - frames, 0.0)
+        return round(fps, 2), int(remaining / fps)
+
+
 class Progress:
     """Progression globale d'une tâche (0..1) avec estimation du temps restant, écrite au plus toutes les 3 s."""
 
-    def __init__(self, job_id: str, start: float = 0.0):
+    def __init__(self, job_id: str, start: float = 0.0, throughput: Throughput | None = None):
         self.job_id = job_id
+        self.throughput = throughput
         self.start_value = start
         self.value = start
         self.started = time.monotonic()
@@ -89,6 +136,11 @@ class Progress:
         if not force and current - self.last_write < 3:
             return
         self.last_write = current
+        if self.throughput is not None:
+            # Tâche d'agrandissement : temps restant d'après la vitesse réellement mesurée de l'IA.
+            fps, eta = self.throughput.estimate()
+            db.set_job(self.job_id, progress=round(value, 4), eta_seconds=eta, fps=fps)
+            return
         done = value - self.start_value
         eta = int((current - self.started) * (1 - value) / done) if done > 0.002 else None
         db.set_job(self.job_id, progress=round(value, 4), eta_seconds=eta)

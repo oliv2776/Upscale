@@ -226,6 +226,9 @@ def fake_converter(tmp_path, monkeypatch, fake_docker):
     script.write_text(FAKE_CONVERTER.format(python=sys.executable))
     script.chmod(script.stat().st_mode | stat.S_IEXEC)
     monkeypatch.setattr(config, "CONVERTER_PYTHON", str(script))
+    # Lancés en root, les tests ne doivent pas basculer vers « nobody » : il ne peut pas lire le dossier
+    # temporaire de pytest. L'abandon de privilèges a son propre test.
+    monkeypatch.setattr(config, "CONVERTER_DROP_PRIVILEGES", False)
     from upscale import converter
     monkeypatch.setattr(converter, "start_worker", lambda: None)  # les tests traitent la file eux-mêmes
     converter.INSTALLS.clear()

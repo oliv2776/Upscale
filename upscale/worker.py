@@ -113,7 +113,7 @@ def recover_interrupted_jobs() -> None:
     runner.cleanup_orphan_containers()
     with db.connect() as conn:
         conn.execute("""
-          UPDATE jobs SET status='queued',stage='Reprise après redémarrage',eta_seconds=NULL,
+          UPDATE jobs SET status='queued',stage='Reprise après redémarrage',eta_seconds=NULL,fps=NULL,
             error='Le serveur a redémarré pendant ce traitement; la tâche reprendra au segment en cours.',
             updated_at=? WHERE status='running'
         """, (db.now(),))

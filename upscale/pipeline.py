@@ -93,14 +93,14 @@ def run_job(job: sqlite3.Row) -> None:
         else:
             run_upscale(job, settings)
     except JobDeferred as exc:
-        db.set_job(job_id, status="queued", stage=str(exc), eta_seconds=None)
+        db.set_job(job_id, status="queued", stage=str(exc), eta_seconds=None, fps=None)
         db.log_line(job_id, f"[{db.now()}] Suspendu : {exc} (reprise au segment suivant)")
     except JobCancelled as exc:
         cleanup_job_files(job)
-        db.set_job(job_id, status="cancelled", stage="Arrêté", error=str(exc), eta_seconds=None)
+        db.set_job(job_id, status="cancelled", stage="Arrêté", error=str(exc), eta_seconds=None, fps=None)
         db.log_line(job_id, f"[{db.now()}] {exc}")
     except Exception as exc:  # noqa: BLE001 - toute erreur doit marquer la tâche en échec
-        db.set_job(job_id, status="failed", stage="Erreur", error=str(exc), eta_seconds=None)
+        db.set_job(job_id, status="failed", stage="Erreur", error=str(exc), eta_seconds=None, fps=None)
         db.log_line(job_id, f"[{db.now()}] ERREUR : {exc}")
         if job["kind"] != "preview":
             notify.notify_job(settings_mod.get_settings(), "failed", dict(job), str(exc))
@@ -211,11 +211,12 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
         stale.unlink(missing_ok=True)
     segmented = (work / "segments.json").exists()
     resumed = segmented or any((work / "enc").glob("seg_*.mkv"))  # segments déjà encodés conservés
-    progress = Progress(job_id, start=float(job["progress"] or 0) if resumed else 0.0)
+    frames = info["frames"] * multiplier
+    throughput = runner.Throughput(frames)
+    progress = Progress(job_id, start=float(job["progress"] or 0) if resumed else 0.0, throughput=throughput)
     measured = {"rate": 0.0}
     processed = {"seconds": 0.0}
 
-    frames = info["frames"] * multiplier
     segment_frames = min(frames, int(segment_seconds * info["fps"] * multiplier) + 1)
     overlap = not segmented and multiplier == 1
     needed = media.estimate_ffv1_bytes(info["width"] * scale, info["height"] * scale, segment_frames)
@@ -269,9 +270,11 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
         segment_duration = min(float(segment_seconds), max(0.0, info["duration"] - processed["seconds"]))
         if segment_duration <= 0:
             segment_duration = float(segment_seconds)
+        segment_frames_count = segment_duration * info["fps"] * multiplier
         if encoded.exists():
             segment.unlink(missing_ok=True)
             processed["seconds"] += segment_duration
+            throughput.skip(segment_frames_count)
             progress.update(base + width)
             return
         reason = defer_reason()
@@ -280,8 +283,15 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
         count = f"{index + 1}/{'~' if approximate else ''}{total}"
         db.set_job(job_id, stage=f"Upscaling IA ×{scale} · segment {count}{note}", segments_done=index)
         ai = work / f"ai_{name}"
+        throughput.begin()
+        ai_span = progress.span(base, width * 0.85)
+
+        def on_ai(local: float) -> None:
+            throughput.advance(local * segment_frames_count)
+            ai_span(local)
+
         upscale_video(job_id, model, segment, ai, scale, info["fps"] * multiplier,
-                      on_progress=progress.span(base, width * 0.85), disk_dir=disk_dir)
+                      on_progress=on_ai, disk_dir=disk_dir)
         temp = work / "enc" / f"tmp_{name}"
         check(runner.run_process(job_id, media.segment_encode_command(ai, temp, size, settings, original=segment),
                                  disk_dir=disk_dir),
@@ -290,6 +300,7 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
         ai.unlink(missing_ok=True)
         segment.unlink(missing_ok=True)
         processed["seconds"] += segment_duration
+        throughput.end(segment_frames_count)
         measured["rate"] = max(measured["rate"], encoded.stat().st_size / segment_duration)
         check_projected_space()
         db.set_job(job_id, segments_done=index + 1)
@@ -309,7 +320,8 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
     for index, name in enumerate(segments):
         process_segment(index, name, total, approximate=False)
 
-    db.set_job(job_id, stage="Assemblage MKV / audio, sous-titres, chapitres", eta_seconds=None)
+    progress.throughput = None  # assemblage : plus de vitesse IA à afficher
+    db.set_job(job_id, stage="Assemblage MKV / audio, sous-titres, chapitres", eta_seconds=None, fps=None)
     concat = work / "concat.txt"
     media.write_concat_list(concat, [work / "enc" / name for name in segments])
     command, skipped = media.final_mux_command(concat, source, temp_final, info)
