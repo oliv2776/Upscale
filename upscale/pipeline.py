@@ -237,7 +237,7 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
     processed = {"seconds": 0.0}
 
     segment_frames = min(frames, int(segment_seconds * info["fps"] * multiplier) + 1)
-    overlap = not segmented and multiplier == 1
+    overlap = not segmented and multiplier == 1 and config.OVERLAP
     needed = media.estimate_ffv1_bytes(info["width"] * scale, info["height"] * scale, segment_frames)
     if custom:  # images PNG du segment (entrée + sortie agrandie), environ 1,5 octet par pixel
         needed += int(segment_frames * info["width"] * info["height"] * 1.5 * (1 + scale * scale))
@@ -360,6 +360,8 @@ def run_upscale(job: sqlite3.Row, settings: dict[str, Any]) -> None:
                                                                             original=segment, color=color)))
         processed["seconds"] += segment_duration
         throughput.end(segment_frames_count)
+        if not config.OVERLAP:
+            finish_encode()  # une étape à la fois : la carte graphique attend la fin de l'encodage
 
     try:
         if overlap:
@@ -583,6 +585,7 @@ def prepare_segments(job_id: str, source: Path, work: Path, info: dict[str, Any]
     if not segments:
         raise JobError("Aucun segment produit")
     (work / "segments.json").write_text(json.dumps({"segments": segments}), encoding="utf-8")
+    db.log_line(job_id, f"[{db.now()}] Découpe terminée : {len(segments)} segment(s)")
     progress.update(share, force=True)
 
 

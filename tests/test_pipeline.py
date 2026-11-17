@@ -175,6 +175,38 @@ def test_upscaling_starts_during_cut(env, fake_docker, monkeypatch):
 
 
 @needs_ffmpeg
+def test_overlap_off_runs_one_step_at_a_time(env, fake_docker, monkeypatch):
+    # UPSCALE_OVERLAP=0 : découpe terminée avant l'IA, et l'encodage d'un segment fini avant l'IA du suivant.
+    monkeypatch.setattr(config, "SEGMENT_SECONDS", 1)
+    monkeypatch.setattr(config, "OVERLAP", False)
+    encodes_running = []
+    real_finish = pipeline.runner.RunningProcess
+
+    class Sequential(real_finish):
+        def __init__(self, *args, **kwargs):
+            encodes_running.append(self)
+            super().__init__(*args, **kwargs)
+
+    seen = {"max": 0}
+    real_upscale = pipeline.upscale_video
+
+    def upscale(*args, **kwargs):
+        seen["max"] = max(seen["max"], sum(1 for p in encodes_running if p.running()))
+        return real_upscale(*args, **kwargs)
+
+    monkeypatch.setattr(pipeline.runner, "RunningProcess", Sequential)
+    monkeypatch.setattr(pipeline, "upscale_video", upscale)
+    make_video(env / "videos" / "long.mp4", width=320, height=240, seconds=4, rate=25)
+    [row] = process_all(env)
+    assert row["status"] == "completed" and row["warning"] is None, job_log(row)
+    log = job_log(row).splitlines()
+    first_ai = next(i for i, line in enumerate(log) if line.startswith("$ docker run"))
+    cut_done = next(i for i, line in enumerate(log) if "Découpe terminée" in line)
+    assert cut_done < first_ai, "la découpe doit être finie avant l'IA"
+    assert seen["max"] == 0, "aucun encodage ne doit tourner pendant l'IA"
+
+
+@needs_ffmpeg
 def test_segments_resume_after_pause(env, fake_docker, monkeypatch):
     monkeypatch.setattr(config, "SEGMENT_SECONDS", 1)
     make_video(env / "videos" / "long.mp4", seconds=3)

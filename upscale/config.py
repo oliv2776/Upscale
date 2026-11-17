@@ -114,6 +114,11 @@ def log_dir() -> Path:
     return STATE_DIR / "logs"
 
 
+# Travail simultané (2.22) : la découpe, l'IA sur la carte graphique et l'encodage du segment précédent avancent
+# en même temps. Plus rapide, mais le processeur et la carte graphique tirent alors leur puissance maximale
+# ensemble. 0 : une étape à la fois (pic de consommation plus bas, pour une alimentation juste).
+OVERLAP = _env("UPSCALE_OVERLAP", "1").strip().lower() not in {"0", "false", "non", ""}
+
 # Débruitage « Fort » sur la carte graphique quand c'est possible (0 pour forcer le processeur).
 _gpu_denoise = _env("UPSCALE_GPU_DENOISE", "1").strip().lower()
 GPU_DENOISE: bool | str = "force" if _gpu_denoise == "force" else _gpu_denoise not in {"0", "false", "non", ""}

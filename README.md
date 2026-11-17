@@ -330,6 +330,7 @@ N'expose pas le port 11434 sur Internet.
 | UPSCALE_CONVERTER_DROP_PRIVILEGES | 1 | Exécute la conversion des modèles en « nobody » (setpriv) quand le conteneur est root |
 | UPSCALE_UPDATE_CHECK | 1 | Vérifie les nouvelles releases GitHub dans **Système** (0 pour un NAS hors ligne) |
 | UPSCALE_SCAN_WORKERS | 4 | Nombre de ffprobe simultanés pendant l'analyse d'une grande bibliothèque (1 à 16) |
+| UPSCALE_OVERLAP | 1 | Découpe, IA (carte graphique) et encodage (processeur) en même temps ; 0 : une étape à la fois, plus lent mais avec un pic de consommation bien plus bas (voir « Le NAS se coupe pendant un traitement ») |
 | UPSCALE_GPU_DENOISE | 1 | Débruitage fort sur la carte graphique quand elle le permet ; 0 force le processeur |
 | UPSCALE_AUTO_UPDATE_TIME | 04:00 | Heure du minuteur installé par `update.sh --installer-auto` |
 | UPSCALE_MIN_FREE_GB | 5 | Espace libre minimal conservé |
@@ -404,6 +405,7 @@ docker volume rm upscale_uscale-state
 - **« Aucun mot de passe configuré » / interface en lecture seule** : définis UPSCALE_PASSWORD dans .env puis `docker compose up -d`. Pour assumer l'absence de mot de passe sur un réseau de confiance : UPSCALE_ALLOW_ANONYMOUS=1.
 - **Une tâche échoue** : bouton **Logs** dans la file. Corrige la cause puis **Relancer** : les segments déjà encodés sont conservés.
 - **Encodage VAAPI en erreur** : vérifie VAAPI_DEVICE (le renderD* de la Radeon) ; sinon utilise un encodeur logiciel.
+- **Le NAS se coupe pendant un traitement** (redémarrage brutal, sans message d'erreur) : un logiciel ne peut pas couper le courant, mais Upscale fait travailler à fond la carte graphique (IA) et le processeur (encodage) en même temps, ce qui révèle une alimentation trop juste ou fatiguée (disques qui se réinitialisent, `CommWake` dans `journalctl -k`). Pour confirmer, mets `UPSCALE_OVERLAP=0` dans .env puis `docker compose up -d` : une seule étape à la fois, pic de consommation bien plus bas. Tu peux aussi plafonner la carte AMD sur l'hôte, ex. 70 W : `echo 70000000 | sudo tee /sys/class/drm/card*/device/hwmon/hwmon*/power1_cap` (perdu au redémarrage). Si les coupures cessent, vérifie l'alimentation (puissance, câbles PCIe et SATA directs, sans répartiteur).
 - **Redémarrage pendant un traitement** : le conteneur Video2X orphelin est supprimé au démarrage et la tâche reprend au segment en cours.
 - **L'interface ne change pas après une mise à jour** : vérifie la version en bas de page. Si ce n'est pas la dernière, le conteneur n'a pas été reconstruit : `bash update.sh`, ou `docker compose up -d --build --force-recreate`. Si la version est bonne, force le rafraîchissement du navigateur (Ctrl/Cmd + Shift + R).
 

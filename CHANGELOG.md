@@ -3,6 +3,20 @@
 Toutes les évolutions notables sont consignées ici. Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/)
 et le projet utilise le [versionnage sémantique](https://semver.org/lang/fr/).
 
+## [2.22.1] — 2026-11-17
+
+### Ajouté
+
+- **`UPSCALE_OVERLAP=0`** : une étape à la fois (découpe, puis IA, puis encodage de chaque segment) au lieu de
+  les faire avancer ensemble. Plus lent, mais le processeur et la carte graphique ne tirent plus leur puissance
+  maximale en même temps : utile si le NAS se coupe pendant les traitements (alimentation juste).
+- Dépannage « Le NAS se coupe pendant un traitement » dans le README (plafond de puissance de la carte AMD).
+
+### Modifié
+
+- `UPSCALE_GPU_DENOISE` est maintenant transmis par les fichiers docker-compose (il était ignoré).
+- Journal : « Découpe terminée » aussi quand la découpe précède l'IA.
+
 ## [2.22.0] — 2026-11-13
 
 ### Ajouté
