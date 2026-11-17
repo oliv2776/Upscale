@@ -1,7 +1,7 @@
 # Seul le client Docker est nécessaire (binaire statique) : pas besoin du daemon complet.
 FROM docker:27-cli AS docker-cli
 
-FROM python:3.12-slim
+FROM python:3.15-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 
